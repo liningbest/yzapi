@@ -5,6 +5,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gorm.io/gorm"
@@ -19,10 +20,15 @@ type Store struct {
 	wg      sync.WaitGroup
 	stop    chan struct{}
 	retDays func() int
+	dropped atomic.Int64
+	failed  atomic.Int64
 }
 
+// Dropped reports how many records were discarded (queue full or persistent write failure).
+func (s *Store) Dropped() int64 { return s.dropped.Load() }
+
 func New(db *gorm.DB, retentionDays func() int) *Store {
-	s := &Store{db: db, ch: make(chan *model.CallLog, 8192), stop: make(chan struct{}), retDays: retentionDays}
+	s := &Store{db: db, ch: make(chan *model.CallLog, 32768), stop: make(chan struct{}), retDays: retentionDays}
 	s.wg.Add(2)
 	go s.writer()
 	go s.janitor()
@@ -34,7 +40,9 @@ func (s *Store) Record(l *model.CallLog) {
 	select {
 	case s.ch <- l:
 	default:
-		slog.Warn("call log queue full, dropping record", "request_id", l.RequestID)
+		if n := s.dropped.Add(1); n == 1 || n%1000 == 0 {
+			slog.Warn("call log queue full, dropping records", "dropped_total", n)
+		}
 	}
 }
 
@@ -47,10 +55,23 @@ func (s *Store) writer() {
 		if len(batch) == 0 {
 			return
 		}
-		if err := s.db.CreateInBatches(batch, 256).Error; err != nil {
-			slog.Error("write call logs", "err", err, "n", len(batch))
+		// Retry transient failures (e.g. SQLite busy) before giving up; the rollup is only
+		// applied when the raw logs were persisted so logs and statistics stay consistent.
+		var err error
+		for attempt := 0; attempt < 5; attempt++ {
+			if err = s.db.CreateInBatches(batch, 256).Error; err == nil {
+				break
+			}
+			time.Sleep(time.Duration(attempt+1) * 200 * time.Millisecond)
 		}
-		s.rollup(batch)
+		if err != nil {
+			s.dropped.Add(int64(len(batch)))
+			if n := s.failed.Add(1); n == 1 || n%100 == 0 {
+				slog.Error("write call logs failed, batch discarded", "err", err, "n", len(batch), "failures", n)
+			}
+		} else {
+			s.rollup(batch)
+		}
 		batch = batch[:0]
 	}
 	for {

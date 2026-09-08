@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"log/slog"
 	"sync"
 	"time"
 
@@ -34,13 +35,25 @@ func (q *quotaTracker) refresh() {
 		Total   int64
 	}
 	var rows []row
-	q.db.Model(&model.UsageHourly{}).Select("group_id, SUM(total_tokens) AS total").
-		Where("hour >= ?", start).Group("group_id").Scan(&rows)
+	if err := q.db.Model(&model.UsageHourly{}).Select("group_id, SUM(total_tokens) AS total").
+		Where("hour >= ?", start).Group("group_id").Scan(&rows).Error; err != nil {
+		slog.Warn("quota refresh query failed, keeping in-memory counters", "err", err)
+		return
+	}
 	m := make(map[uint]int64, len(rows))
 	for _, r := range rows {
 		m[r.GroupID] = r.Total
 	}
 	q.mu.Lock()
+	if q.month == start {
+		// Logs are persisted asynchronously, so the DB may lag the in-memory counter by a
+		// few seconds. Never let a refresh lower a counter below what we already observed.
+		for gid, v := range q.used {
+			if v > m[gid] {
+				m[gid] = v
+			}
+		}
+	}
 	q.used = m
 	q.month = start
 	q.mu.Unlock()

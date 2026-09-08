@@ -86,7 +86,7 @@ func (g *Gateway) doUpstream(ctx context.Context, c *upstreamCall) (*http.Respon
 	} else {
 		req.Header.Set("Accept", "application/json")
 	}
-	return g.client.Do(req)
+	return g.client.Load().Do(req)
 }
 
 // readErrorBody extracts a human-readable message from an upstream error response.

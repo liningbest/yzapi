@@ -27,7 +27,7 @@ export default defineConfig({
           if (id.includes('node_modules')) {
             if (id.includes('echarts') || id.includes('zrender')) return 'echarts';
             if (id.includes('antd') || id.includes('@ant-design') || id.includes('rc-')) return 'antd';
-            if (id.includes('react') || id.includes('scheduler')) return 'react';
+            if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) return 'react';
             if (id.includes('i18next')) return 'i18n';
             if (id.includes('dnd-kit')) return 'dnd';
             return 'vendor';

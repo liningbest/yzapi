@@ -71,8 +71,8 @@ type Gateway struct {
 	apikeys  *counterMap
 	accounts *counterMap
 
-	transport *http.Transport
-	client    *http.Client
+	transport atomic.Pointer[http.Transport]
+	client    atomic.Pointer[http.Client]
 
 	router  atomic.Pointer[Router]
 	checker atomic.Pointer[Checker]
@@ -142,10 +142,9 @@ func (g *Gateway) buildTransport(perf settings.Performance) {
 	} else {
 		tr.Proxy = http.ProxyFromEnvironment
 	}
-	old := g.transport
-	g.transport = tr
-	g.client = &http.Client{Transport: tr, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	if old != nil {
+	g.client.Store(&http.Client{Transport: tr, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }})
+	if old := g.transport.Swap(tr); old != nil {
+		// In-flight requests keep their own reference; only idle connections are dropped.
 		old.CloseIdleConnections()
 	}
 }
@@ -166,7 +165,7 @@ func (g *Gateway) ResetHealth(id uint)      { g.health.reset(id) }
 func (g *Gateway) SetRouter(r Router)       { g.router.Store(&r) }
 func (g *Gateway) SetChecker(c Checker)     { g.checker.Store(&c) }
 func (g *Gateway) Snapshot() *Snapshot      { return g.snap.get() }
-func (g *Gateway) HTTPClient() *http.Client { return g.client }
+func (g *Gateway) HTTPClient() *http.Client { return g.client.Load() }
 func (g *Gateway) Cipher() *crypto.Cipher   { return g.cipher }
 func (g *Gateway) GroupUsage(id uint) int64 { return g.quota.usage(id) }
 
