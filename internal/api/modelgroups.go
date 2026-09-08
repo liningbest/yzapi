@@ -21,10 +21,10 @@ func (s *Server) modelGroupView(mg *model.ModelGroup) gin.H {
 		mg.Models = model.StringList{}
 	}
 	var roles []string
-	if sr.SimpleGroupID == mg.ID {
+	if sr.Enabled && sr.SimpleGroupID == mg.ID {
 		roles = append(roles, "simple")
 	}
-	if sr.ComplexGroupID == mg.ID {
+	if sr.Enabled && sr.ComplexGroupID == mg.ID {
 		roles = append(roles, "complex")
 	}
 	if roles == nil {
@@ -153,9 +153,23 @@ func (s *Server) deleteModelGroup(c *gin.Context) {
 		return
 	}
 	sr := s.st.Get().SmartRoute
-	if sr.SimpleGroupID == id || sr.ComplexGroupID == id {
+	referenced := sr.SimpleGroupID == id || sr.ComplexGroupID == id
+	if referenced && sr.Enabled {
 		fail(c, 409, "in_use", "该分组正被智能路由引用，请先在设置中更换")
 		return
+	}
+	if referenced {
+		// Smart routing is off: drop the stale reference so settings stay consistent.
+		if sr.SimpleGroupID == id {
+			sr.SimpleGroupID = 0
+		}
+		if sr.ComplexGroupID == id {
+			sr.ComplexGroupID = 0
+		}
+		if err := s.st.SetSmartRoute(sr); err != nil {
+			serverError(c, err)
+			return
+		}
 	}
 	if err := s.db.Exec("DELETE FROM user_group_model_groups WHERE model_group_id = ?", id).Error; err != nil {
 		serverError(c, err)
