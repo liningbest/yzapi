@@ -592,6 +592,8 @@ export interface UsageDim {
   key: string | number;
   name: string;
   requests: number;
+  /** Upstream attempts booked on this dimension; tokens follow attempts, requests follow the final answer. */
+  attempts?: number;
   total_tokens: number;
   cached_tokens: number;
 }

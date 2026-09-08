@@ -13,6 +13,7 @@
   },
   "dim": {
     "account": "上游帳號",
-    "count": "{{count}} 項"
+    "count": "{{count}} 項",
+    "attemptsHint": "含 {{count}} 次上游嘗試；Token 按實際消耗的嘗試歸屬，請求數按最終應答歸屬"
   }
 }

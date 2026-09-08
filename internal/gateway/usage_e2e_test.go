@@ -269,3 +269,144 @@ func TestLocalRejectionStaysNone(t *testing.T) {
 		t.Fatalf("attempts = %+v", att)
 	}
 }
+
+// B1: the hourly rollup books tokens on the account (and provider) of the attempt that
+// consumed them while the request itself is counted once, and Rebuild agrees.
+func TestAccountRollupKeepsAttemptAttribution(t *testing.T) {
+	bad := jsonUpstream(500, err500WithUsage)
+	defer bad.Close()
+	good := jsonUpstream(200, ok200)
+	defer good.Close()
+	e := newE2E(t, bad.URL, good.URL)
+	// Make the retry cross providers to check provider attribution too.
+	e.db.Model(&model.Account{}).Where("name = ?", "acc0").Update("provider", "deepseek")
+	if err := e.g.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	if w := e.chat(t, context.Background(), false); w.Code != 200 {
+		t.Fatalf("status %d", w.Code)
+	}
+	l, att := e.callLog(t)
+	check := func(stage string) {
+		t.Helper()
+		var rows []model.UsageHourly
+		e.db.Find(&rows)
+		byAcc := map[uint]int64{}
+		byProv := map[string]int64{}
+		var reqs, attempts, tokens int64
+		for _, r := range rows {
+			byAcc[r.AccountID] += r.TotalTokens
+			byProv[r.Provider] += r.TotalTokens
+			reqs += r.Requests
+			attempts += r.Attempts
+			tokens += r.TotalTokens
+		}
+		if byAcc[att[0].AccountID] != 13 || byAcc[att[1].AccountID] != 25 {
+			t.Fatalf("%s: per-account tokens = %v", stage, byAcc)
+		}
+		if byProv["deepseek"] != 13 || byProv["openai"] != 25 {
+			t.Fatalf("%s: per-provider tokens = %v", stage, byProv)
+		}
+		if reqs != 1 || attempts != 2 || tokens != l.TotalTokens || tokens != 38 {
+			t.Fatalf("%s: requests=%d attempts=%d tokens=%d", stage, reqs, attempts, tokens)
+		}
+	}
+	check("live")
+	if _, _, err := logstore.Rebuild(e.db, l.CreatedAt.Add(-time.Hour), l.CreatedAt, 30); err != nil {
+		t.Fatal(err)
+	}
+	check("rebuilt")
+}
+
+// B1: a request whose every attempt failed still books each attempt's tokens on its own
+// account, and an unknown attempt followed by success does not move tokens around.
+func TestAccountRollupFailedAndUnknownAttempts(t *testing.T) {
+	t.Run("all failed", func(t *testing.T) {
+		a := jsonUpstream(500, err500WithUsage)
+		defer a.Close()
+		b := jsonUpstream(500, `{"error":{"message":"boom"},"usage":{"prompt_tokens":4,"completion_tokens":2}}`)
+		defer b.Close()
+		e := newE2E(t, a.URL, b.URL)
+		if w := e.chat(t, context.Background(), false); w.Code != 502 {
+			t.Fatalf("status %d", w.Code)
+		}
+		l, att := e.callLog(t)
+		var rows []model.UsageHourly
+		e.db.Find(&rows)
+		byAcc := map[uint]int64{}
+		var reqs, failed int64
+		for _, r := range rows {
+			byAcc[r.AccountID] += r.TotalTokens
+			reqs += r.Requests
+			failed += r.Failed
+		}
+		if byAcc[att[0].AccountID] != 13 || byAcc[att[1].AccountID] != 6 || reqs != 1 || failed != 1 || l.TotalTokens != 19 {
+			t.Fatalf("all-failed attribution: %v reqs=%d failed=%d total=%d", byAcc, reqs, failed, l.TotalTokens)
+		}
+	})
+	t.Run("unknown then success", func(t *testing.T) {
+		a := jsonUpstream(500, err500NoUsage)
+		defer a.Close()
+		b := jsonUpstream(200, ok200)
+		defer b.Close()
+		e := newE2E(t, a.URL, b.URL)
+		e.chat(t, context.Background(), false)
+		_, att := e.callLog(t)
+		var rows []model.UsageHourly
+		e.db.Find(&rows)
+		byAcc := map[uint]int64{}
+		var unknown, attempts int64
+		for _, r := range rows {
+			byAcc[r.AccountID] += r.TotalTokens
+			unknown += r.UnknownUsage
+			attempts += r.Attempts
+		}
+		if byAcc[att[0].AccountID] != 0 || byAcc[att[1].AccountID] != 25 || unknown != 1 || attempts != 2 {
+			t.Fatalf("unknown-then-success attribution: %v unknown=%d attempts=%d", byAcc, unknown, attempts)
+		}
+	})
+}
+
+// B2: an attempt that received HTTP 200 but whose body could not be read (or converted)
+// is "unknown", never "none"; usage parsed before a conversion failure is kept.
+func TestBodyTruncatedAfter200IsUnknown(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", "1000")
+		w.WriteHeader(200)
+		_, _ = io.WriteString(w, `{"id":"partial"`)
+	}))
+	defer up.Close()
+	e := newE2E(t, up.URL)
+	if w := e.chat(t, context.Background(), false); w.Code != 502 {
+		t.Fatalf("status %d", w.Code)
+	}
+	l, att := e.callLog(t)
+	if l.UsageStatus != model.UsageUnknown || l.EstPromptTokens == 0 {
+		t.Fatalf("truncated body: usage=%s est=%d", l.UsageStatus, l.EstPromptTokens)
+	}
+	if len(att) != 1 || att[0].StatusCode != 200 || att[0].UsageStatus != model.UsageUnknown {
+		t.Fatalf("attempts = %+v", att)
+	}
+}
+
+func TestConversionFailureKeepsReportedUsage(t *testing.T) {
+	// Upstream speaks Anthropic; the client asked in OpenAI format. The body carries a
+	// valid usage block but a content shape the converter cannot handle.
+	up := jsonUpstream(200, `{"id":"m1","type":"message","role":"assistant","model":"m","content":"not-an-array","stop_reason":"end_turn","usage":{"input_tokens":7,"output_tokens":2}}`)
+	defer up.Close()
+	e := newE2E(t, up.URL)
+	e.db.Model(&model.Account{}).Where("name = ?", "acc0").Updates(map[string]any{"provider": "anthropic", "protocols": model.StringList{model.ProtoAnthropicMessages}})
+	if err := e.g.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	w := e.chat(t, context.Background(), false)
+	l, att := e.callLog(t)
+	if w.Code == 200 {
+		t.Skip("converter accepted the body; conversion-failure path not exercised")
+	}
+	if l.UsageStatus != model.UsageConfirmed || l.TotalTokens != 9 || len(att) != 1 || att[0].PromptTokens != 7 {
+		t.Fatalf("status %d usage=%s total=%d attempts=%+v", w.Code, l.UsageStatus, l.TotalTokens, att)
+	}
+}

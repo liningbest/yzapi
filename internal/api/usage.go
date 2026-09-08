@@ -26,6 +26,7 @@ type usageRow struct {
 	ModelGroup       string
 	APIType          string
 	Requests         int64
+	Attempts         int64
 	Success          int64
 	Failed           int64
 	PromptTokens     int64
@@ -40,6 +41,7 @@ type dist struct {
 	Key              string `json:"key"`
 	Name             string `json:"name"`
 	Requests         int64  `json:"requests"`
+	Attempts         int64  `json:"attempts"` // upstream attempts booked on this dimension (tokens follow attempts)
 	TotalTokens      int64  `json:"total_tokens"`
 	CachedTokens     int64  `json:"cached_tokens"`
 	PromptTokens     int64  `json:"prompt_tokens"`
@@ -151,6 +153,7 @@ func (s *Server) usageReport(c *gin.Context, scopedUser uint) gin.H {
 			agg[kind][key] = d
 		}
 		d.Requests += r.Requests
+		d.Attempts += r.Attempts
 		d.TotalTokens += r.TotalTokens
 		d.CachedTokens += r.CachedTokens
 		d.PromptTokens += r.PromptTokens
@@ -323,8 +326,11 @@ func (s *Server) rebuildUsage(c *gin.Context) {
 	}
 	hours, rows, err := logstore.Rebuild(s.db, in.From, in.To, retention)
 	if errors.Is(err, logstore.ErrRebuildOutsideRetention) {
-		pb, _ := logstore.PurgedBefore(s.db)
-		fail(c, 400, "outside_retention", fmt.Sprintf("该区间的原始明细已于 %s 之前清理，无法重建；调大保留期不会恢复已删除的明细", pb.Local().Format("2006-01-02 15:04")))
+		msg := "该区间的原始明细已清理，无法重建；调大保留期不会恢复已删除的明细"
+		if pb, ok, perr := logstore.PurgedBefore(s.db); perr == nil && ok {
+			msg = fmt.Sprintf("该区间的原始明细已于 %s 之前清理，无法重建；调大保留期不会恢复已删除的明细", pb.Local().Format("2006-01-02 15:04"))
+		}
+		fail(c, 400, "outside_retention", msg)
 		return
 	}
 	if err != nil {

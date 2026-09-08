@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -84,9 +85,14 @@ func New(db *gorm.DB, dataDir string, retentionDays func() int) (*Store, error) 
 		slog.Info("replayed journal records into the database", "records", n)
 	}
 	// Databases from before the purge marker existed: assume everything older than the
-	// current retention window may already be gone (conservative for rebuilds).
-	if _, ok := PurgedBefore(db); !ok {
-		_ = setPurgedBefore(db, s.cutoff())
+	// current retention window may already be gone (conservative for rebuilds). This must
+	// succeed, otherwise a later rebuild could not tell purged hours from empty ones.
+	if _, ok, err := PurgedBefore(db); err != nil {
+		return nil, err
+	} else if !ok {
+		if err := setPurgedBefore(db, s.cutoff()); err != nil {
+			return nil, fmt.Errorf("initialise purge boundary: %w", err)
+		}
 	}
 	s.wg.Add(3)
 	go s.writer()
@@ -99,26 +105,41 @@ func New(db *gorm.DB, dataDir string, retentionDays func() int) (*Store, error) 
 // Rebuilding the rollup for hours before it would replace real history with zeros.
 const purgedKey = "logs_purged_before"
 
-// PurgedBefore returns the persisted purge boundary, if any.
-func PurgedBefore(db *gorm.DB) (time.Time, bool) {
+// PurgedBefore returns the persisted purge boundary. ok is false only when no boundary
+// has ever been written; a failed read or an unparsable value is an error, which callers
+// must treat as "unknown completeness", never as "nothing was purged".
+func PurgedBefore(db *gorm.DB) (t time.Time, ok bool, err error) {
 	var row model.Setting
 	if err := db.Where("key = ?", purgedKey).First(&row).Error; err != nil {
-		return time.Time{}, false
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return time.Time{}, false, nil
+		}
+		return time.Time{}, false, fmt.Errorf("read purge boundary: %w", err)
 	}
-	t, err := time.Parse(time.RFC3339, row.Value)
-	if err != nil {
-		return time.Time{}, false
+	t, perr := time.Parse(time.RFC3339, row.Value)
+	if perr != nil {
+		return time.Time{}, false, fmt.Errorf("purge boundary %q is malformed: %w", row.Value, perr)
 	}
-	return t, true
+	return t, true, nil
 }
 
 // setPurgedBefore advances the persisted purge boundary (it never moves backwards).
 func setPurgedBefore(db *gorm.DB, t time.Time) error {
-	if cur, ok := PurgedBefore(db); ok && !t.After(cur) {
+	cur, ok, err := PurgedBefore(db)
+	if err != nil {
+		return err
+	}
+	if ok && !t.After(cur) {
 		return nil
 	}
 	return db.Save(&model.Setting{Key: purgedKey, Value: t.UTC().Format(time.RFC3339), UpdatedAt: time.Now()}).Error
 }
+
+// maintMu serialises raw-log purging against rollup rebuilds within this process, so a
+// rebuild cannot check the boundary and then aggregate hours the janitor is deleting.
+// (Multi-instance deployments on PostgreSQL run the janitor on every instance; a rebuild
+// there should be issued while no instance is inside its hourly cleanup.)
+var maintMu sync.Mutex
 
 func (s *Store) cutoff() time.Time {
 	days := s.retDays()
@@ -243,7 +264,7 @@ func (s *Store) Stats() Stats {
 	s.mu.Unlock()
 	st := Stats{PendingBytes: size - s.ckpt.Load(), OverflowRecords: overflow, Dirty: dirty, Dropped: s.dropped.Load(),
 		Replayed: s.replayed.Load(), Failures: s.failures.Load(), SyncFailures: s.syncFailures.Load()}
-	if pb, ok := PurgedBefore(s.db); ok {
+	if pb, ok, err := PurgedBefore(s.db); err == nil && ok {
 		st.PurgedBefore = &pb
 	}
 	if t := s.lastOK.Load(); t > 0 {
@@ -435,30 +456,70 @@ type dimKey struct {
 }
 
 // Aggregate folds call logs into hourly rows (exported for the rebuild tool).
+// logAttempt is the subset of the gateway's per-attempt record that accounting needs.
+type logAttempt struct {
+	AccountID        uint   `json:"account_id"`
+	Provider         string `json:"provider"`
+	UsageStatus      string `json:"usage_status"`
+	PromptTokens     int64  `json:"prompt_tokens"`
+	CompletionTokens int64  `json:"completion_tokens"`
+}
+
+// Aggregate folds call logs into hourly rows. Request-level counters go to the account
+// that answered (CallLog.AccountID); tokens go to the account of the attempt that
+// consumed them, so a request retried across accounts is one request whose tokens are
+// split by attempt. Any difference between the request totals and the attempt totals
+// (logs written before attempts carried usage) stays on the answering account, so user,
+// group and key totals always equal the request totals. Both the live commit path and
+// Rebuild use this function.
 func Aggregate(batch []*model.CallLog) []*model.UsageHourly {
 	agg := map[dimKey]*model.UsageHourly{}
-	for _, l := range batch {
-		h := l.CreatedAt.Truncate(time.Hour)
-		k := dimKey{h.Unix(), l.UserID, l.GroupID, l.APIKeyID, l.AccountID, l.Provider, l.RequestModel, l.ModelGroup, l.APIType}
+	row := func(l *model.CallLog, h time.Time, accountID uint, provider string) *model.UsageHourly {
+		k := dimKey{h.Unix(), l.UserID, l.GroupID, l.APIKeyID, accountID, provider, l.RequestModel, l.ModelGroup, l.APIType}
 		u, ok := agg[k]
 		if !ok {
-			u = &model.UsageHourly{Hour: h, UserID: l.UserID, GroupID: l.GroupID, APIKeyID: l.APIKeyID, AccountID: l.AccountID,
-				Provider: l.Provider, RequestModel: l.RequestModel, ModelGroup: l.ModelGroup, APIType: l.APIType}
+			u = &model.UsageHourly{Hour: h, UserID: l.UserID, GroupID: l.GroupID, APIKeyID: l.APIKeyID, AccountID: accountID,
+				Provider: provider, RequestModel: l.RequestModel, ModelGroup: l.ModelGroup, APIType: l.APIType}
 			agg[k] = u
 		}
+		return u
+	}
+	for _, l := range batch {
+		h := l.CreatedAt.Truncate(time.Hour)
+		u := row(l, h, l.AccountID, l.Provider)
 		u.Requests++
 		if l.Result == "success" {
 			u.Success++
 		} else {
 			u.Failed++
 		}
-		u.PromptTokens += l.PromptTokens
-		u.CompletionTokens += l.CompletionTokens
-		u.TotalTokens += l.TotalTokens
 		u.CachedTokens += l.CachedTokens
 		u.LatencyMs += l.LatencyMs
 		if l.UsageStatus == model.UsagePartial || l.UsageStatus == model.UsageUnknown {
 			u.UnknownUsage++
+		}
+		var attempts []logAttempt
+		if len(l.Attempts) > 0 {
+			_ = json.Unmarshal([]byte(l.Attempts), &attempts)
+		}
+		var ap, ac int64
+		for _, a := range attempts {
+			au := row(l, h, a.AccountID, a.Provider)
+			au.Attempts++
+			if a.UsageStatus != model.UsageConfirmed && a.UsageStatus != model.UsagePartial {
+				continue
+			}
+			au.PromptTokens += a.PromptTokens
+			au.CompletionTokens += a.CompletionTokens
+			au.TotalTokens += a.PromptTokens + a.CompletionTokens
+			ap += a.PromptTokens
+			ac += a.CompletionTokens
+		}
+		// Remainder (legacy logs without per-attempt usage) is booked on the answering account.
+		if rp, rc := l.PromptTokens-ap, l.CompletionTokens-ac; rp > 0 || rc > 0 {
+			u.PromptTokens += max(rp, 0)
+			u.CompletionTokens += max(rc, 0)
+			u.TotalTokens += max(rp, 0) + max(rc, 0)
 		}
 	}
 	out := make([]*model.UsageHourly, 0, len(agg))
@@ -475,6 +536,7 @@ func applyRollup(tx *gorm.DB, batch []*model.CallLog) error {
 				{Name: "provider"}, {Name: "request_model"}, {Name: "model_group"}, {Name: "api_type"}},
 			DoUpdates: clause.Assignments(map[string]any{
 				"requests":          gorm.Expr("usage_hourlies.requests + ?", u.Requests),
+				"attempts":          gorm.Expr("usage_hourlies.attempts + ?", u.Attempts),
 				"success":           gorm.Expr("usage_hourlies.success + ?", u.Success),
 				"failed":            gorm.Expr("usage_hourlies.failed + ?", u.Failed),
 				"prompt_tokens":     gorm.Expr("usage_hourlies.prompt_tokens + ?", u.PromptTokens),
@@ -512,14 +574,18 @@ func Rebuild(db *gorm.DB, from, to time.Time, retentionDays int) (hours int, row
 	if !RebuildAllowed(from, retentionDays, time.Now()) {
 		return 0, 0, ErrRebuildOutsideRetention
 	}
-	// The persisted purge boundary wins over the current retention setting: raising the
-	// retention later does not bring purged raw logs back.
-	if pb, ok := PurgedBefore(db); ok && from.Truncate(time.Hour).Before(pb.Add(time.Hour).Truncate(time.Hour)) {
-		return 0, 0, ErrRebuildOutsideRetention
-	}
 	from = from.Truncate(time.Hour)
 	to = to.Truncate(time.Hour).Add(time.Hour)
+	maintMu.Lock()
+	defer maintMu.Unlock()
 	err = db.Transaction(func(tx *gorm.DB) error {
+		// The persisted purge boundary wins over the current retention setting: raising
+		// the retention later does not bring purged raw logs back. It is checked inside
+		// the transaction and under the maintenance lock; a read failure refuses the
+		// rebuild because completeness cannot be established.
+		if err := purgeBoundaryAllows(tx, from); err != nil {
+			return err
+		}
 		if err := tx.Where("hour >= ? AND hour < ?", from, to).Delete(&model.UsageHourly{}).Error; err != nil {
 			return err
 		}
@@ -550,6 +616,19 @@ type Mismatch struct {
 	RollupRequests int64     `json:"rollup_requests"`
 	LogTokens      int64     `json:"log_tokens"`
 	RollupTokens   int64     `json:"rollup_tokens"`
+}
+
+// purgeBoundaryAllows reports whether hours from `from` onwards still have complete raw
+// logs according to the persisted boundary.
+func purgeBoundaryAllows(db *gorm.DB, from time.Time) error {
+	pb, ok, err := PurgedBefore(db)
+	if err != nil {
+		return err
+	}
+	if ok && from.Truncate(time.Hour).Before(pb.Add(time.Hour).Truncate(time.Hour)) {
+		return ErrRebuildOutsideRetention
+	}
+	return nil
 }
 
 // Reconcile compares raw logs against the rollup per hour and returns the differences.
@@ -644,6 +723,8 @@ func (s *Store) janitor() {
 }
 
 func (s *Store) cleanup() {
+	maintMu.Lock()
+	defer maintMu.Unlock()
 	cutoff := s.cutoff()
 	// Persist the boundary first: if we crash mid-delete, rebuilds still refuse the range.
 	if err := setPurgedBefore(s.db, cutoff); err != nil {

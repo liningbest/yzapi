@@ -672,8 +672,10 @@ func (g *Gateway) forward(req *request, cands []string) {
 				return
 			}
 
-			// Success path.
+			// Success path. The upstream has processed the request, so until a usable
+			// usage block is seen this attempt's consumption is undeterminable.
 			g.Metrics.UpstreamAttempts.With(metrics.Label("outcome", "ok")).Inc()
+			rec.UsageStatus = model.UsageUnknown
 			req.attempts = append(req.attempts, rec)
 			req.log.AccountID, req.log.AccountName, req.log.Provider = up.ID, up.Name, up.Provider
 			req.log.UpstreamModel, req.log.UpstreamProtocol = upstreamModel, proto
@@ -965,6 +967,7 @@ func (g *Gateway) relay(req *request, resp *http.Response, upProto string, dropU
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	req.log.UpstreamLatencyMs += time.Since(t0).Milliseconds()
 	if err != nil {
+		// Attempt stays "unknown": the upstream answered 2xx, so it consumed the request.
 		g.fail(req, newErr(502, "upstream_read_failed", "Failed reading upstream response: "+err.Error()))
 		return
 	}
@@ -972,6 +975,9 @@ func (g *Gateway) relay(req *request, resp *http.Response, upProto string, dropU
 		// Client wanted a stream but upstream answered with JSON: fall through and send JSON.
 		req.stream = false
 	}
+	// Book the reported usage first so a conversion failure cannot lose it.
+	u, ok := usageFromJSON(upProto, raw)
+	setUsage(req, u, ok, true)
 	out := raw
 	if upProto != req.proto {
 		out, err = convertResponse(raw, upProto, req.proto, req.model)
@@ -980,8 +986,6 @@ func (g *Gateway) relay(req *request, resp *http.Response, upProto string, dropU
 			return
 		}
 	}
-	u, ok := usageFromJSON(upProto, raw)
-	setUsage(req, u, ok, true)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = dst.Write(out)

@@ -13,6 +13,7 @@
   },
   "dim": {
     "account": "Upstream account",
-    "count": "{{count}} items"
+    "count": "{{count}} items",
+    "attemptsHint": "{{count}} upstream attempts; tokens follow the attempt that consumed them, requests follow the final answer"
   }
 }

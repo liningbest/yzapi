@@ -3,6 +3,7 @@ package logstore
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -250,7 +251,7 @@ func TestExtendedRetentionMustNotEraseHistory(t *testing.T) {
 	if n != 0 {
 		t.Fatalf("raw log should be purged, %d left", n)
 	}
-	pb, ok := PurgedBefore(db)
+	pb, ok, _ := PurgedBefore(db)
 	if !ok || pb.Before(now.AddDate(0, 0, -31)) {
 		t.Fatalf("purge boundary not persisted: %v %v", pb, ok)
 	}
@@ -283,7 +284,7 @@ func TestExtendedRetentionMustNotEraseHistory(t *testing.T) {
 // current retention cutoff, so a later retention increase cannot rebuild over it.
 func TestLegacyDBGetsConservativePurgeBoundary(t *testing.T) {
 	db := testDB(t)
-	if _, ok := PurgedBefore(db); ok {
+	if _, ok, _ := PurgedBefore(db); ok {
 		t.Fatal("fresh db must not have a boundary yet")
 	}
 	s, err := New(db, t.TempDir(), func() int { return 30 })
@@ -291,7 +292,7 @@ func TestLegacyDBGetsConservativePurgeBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Close(context.Background())
-	pb, ok := PurgedBefore(db)
+	pb, ok, _ := PurgedBefore(db)
 	if !ok || time.Since(pb) > 31*24*time.Hour || time.Since(pb) < 29*24*time.Hour {
 		t.Fatalf("boundary = %v ok=%v", pb, ok)
 	}
@@ -299,7 +300,7 @@ func TestLegacyDBGetsConservativePurgeBoundary(t *testing.T) {
 	if err := setPurgedBefore(db, pb.AddDate(0, 0, -10)); err != nil {
 		t.Fatal(err)
 	}
-	if pb2, _ := PurgedBefore(db); !pb2.Equal(pb) {
+	if pb2, _, _ := PurgedBefore(db); !pb2.Equal(pb) {
 		t.Fatalf("boundary moved backwards: %v -> %v", pb, pb2)
 	}
 }
@@ -325,5 +326,86 @@ func TestStatsExposeNonDurableState(t *testing.T) {
 	s.fsync()
 	if st := s.Stats(); st.SyncFailures != 1 || !st.Dirty {
 		t.Fatalf("failed fsync must stay dirty and be counted: %+v", st)
+	}
+}
+
+// B3: when the purge boundary cannot be read or is malformed, a rebuild must refuse and
+// leave the existing rollup untouched; a Store must not start without a boundary.
+func TestPurgeBoundaryFailuresRejectRebuild(t *testing.T) {
+	now := time.Now().UTC()
+	old := now.AddDate(0, 0, -60).Truncate(time.Hour)
+	setup := func(t *testing.T) *gorm.DB {
+		db := testDB(t)
+		if err := setPurgedBefore(db, now.AddDate(0, 0, -30)); err != nil {
+			t.Fatal(err)
+		}
+		db.Create(&model.UsageHourly{Hour: old, Requests: 1, TotalTokens: 42, Provider: "p", RequestModel: "m", APIType: "text"})
+		return db
+	}
+	rollupIntact := func(t *testing.T, db *gorm.DB) {
+		t.Helper()
+		var n int64
+		db.Model(&model.UsageHourly{}).Count(&n)
+		if n != 1 {
+			t.Fatalf("historical rollup must be untouched, rows=%d", n)
+		}
+	}
+	t.Run("read error", func(t *testing.T) {
+		db := setup(t)
+		db.Callback().Query().Before("gorm:query").Register("test_marker_fail", func(tx *gorm.DB) {
+			if tx.Statement.Table == "settings" {
+				tx.AddError(errors.New("injected"))
+			}
+		})
+		if _, _, err := Rebuild(db, old, old, 90); err == nil {
+			t.Fatal("rebuild must fail when the boundary cannot be read")
+		}
+		rollupIntact(t, db)
+		if _, err := New(db, t.TempDir(), func() int { return 30 }); err == nil {
+			t.Fatal("store must not start when the boundary cannot be read")
+		}
+	})
+	t.Run("malformed", func(t *testing.T) {
+		db := setup(t)
+		db.Model(&model.Setting{}).Where("key = ?", purgedKey).Update("value", "not-a-time")
+		if _, _, err := Rebuild(db, old, old, 90); err == nil {
+			t.Fatal("rebuild must fail on a malformed boundary")
+		}
+		rollupIntact(t, db)
+	})
+	t.Run("boundary ok", func(t *testing.T) {
+		db := setup(t)
+		if _, _, err := Rebuild(db, old, old, 90); err != ErrRebuildOutsideRetention {
+			t.Fatalf("purged hour must be refused: %v", err)
+		}
+		rollupIntact(t, db)
+		recent := now.AddDate(0, 0, -7).Truncate(time.Hour)
+		if _, _, err := Rebuild(db, recent, now, 90); err != nil {
+			t.Fatalf("complete window must rebuild: %v", err)
+		}
+	})
+}
+
+// Rollups split tokens by attempt account while counting the request once; logs from
+// before attempts carried usage keep their totals on the answering account.
+func TestAggregateAttemptAttribution(t *testing.T) {
+	l := sample("att1", 0)
+	l.AccountID, l.Provider = 2, "openai"
+	l.PromptTokens, l.CompletionTokens, l.TotalTokens = 30, 8, 38
+	l.Attempts = model.JSON(`[{"account_id":1,"provider":"deepseek","status_code":500,"usage_status":"confirmed","prompt_tokens":10,"completion_tokens":3},` +
+		`{"account_id":2,"provider":"openai","status_code":200,"usage_status":"confirmed","prompt_tokens":20,"completion_tokens":5}]`)
+	legacy := sample("legacy", 9)
+	legacy.AccountID, legacy.Provider = 2, "openai"
+	legacy.Attempts = model.JSON(`[{"account_id":2,"provider":"openai","status_code":200,"usage_status":""}]`)
+	rows := Aggregate([]*model.CallLog{l, legacy})
+	byAcc := map[uint]*model.UsageHourly{}
+	for _, r := range rows {
+		byAcc[r.AccountID] = r
+	}
+	if a := byAcc[1]; a == nil || a.TotalTokens != 13 || a.Requests != 0 || a.Attempts != 1 || a.Provider != "deepseek" {
+		t.Fatalf("account 1 = %+v", a)
+	}
+	if b := byAcc[2]; b == nil || b.TotalTokens != 25+9 || b.Requests != 2 || b.Attempts != 2 {
+		t.Fatalf("account 2 = %+v", b)
 	}
 }

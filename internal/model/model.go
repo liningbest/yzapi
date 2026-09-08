@@ -231,25 +231,30 @@ type CallLog struct {
 
 // UsageHourly is a pre-aggregated rollup used by dashboards.
 type UsageHourly struct {
-	ID               uint      `gorm:"primaryKey" json:"id"`
-	Hour             time.Time `gorm:"index:idx_usage_dims,unique;index" json:"hour"`
-	UserID           uint      `gorm:"index:idx_usage_dims,unique" json:"user_id"`
-	GroupID          uint      `gorm:"index:idx_usage_dims,unique" json:"group_id"`
-	APIKeyID         uint      `gorm:"index:idx_usage_dims,unique" json:"api_key_id"`
-	AccountID        uint      `gorm:"index:idx_usage_dims,unique" json:"account_id"`
-	Provider         string    `gorm:"size:32;index:idx_usage_dims,unique" json:"provider"`
-	RequestModel     string    `gorm:"size:128;index:idx_usage_dims,unique" json:"request_model"`
-	ModelGroup       string    `gorm:"size:64;index:idx_usage_dims,unique" json:"model_group"`
-	APIType          string    `gorm:"size:16;index:idx_usage_dims,unique" json:"api_type"`
-	Requests         int64     `json:"requests"`
-	Success          int64     `json:"success"`
-	Failed           int64     `json:"failed"`
-	PromptTokens     int64     `json:"prompt_tokens"`
-	CompletionTokens int64     `json:"completion_tokens"`
-	TotalTokens      int64     `json:"total_tokens"`
-	CachedTokens     int64     `json:"cached_tokens"`
-	UnknownUsage     int64     `json:"unknown_usage"` // requests whose usage is partial or unknown
-	LatencyMs        int64     `json:"latency_ms"`
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	Hour         time.Time `gorm:"index:idx_usage_dims,unique;index" json:"hour"`
+	UserID       uint      `gorm:"index:idx_usage_dims,unique" json:"user_id"`
+	GroupID      uint      `gorm:"index:idx_usage_dims,unique" json:"group_id"`
+	APIKeyID     uint      `gorm:"index:idx_usage_dims,unique" json:"api_key_id"`
+	AccountID    uint      `gorm:"index:idx_usage_dims,unique" json:"account_id"`
+	Provider     string    `gorm:"size:32;index:idx_usage_dims,unique" json:"provider"`
+	RequestModel string    `gorm:"size:128;index:idx_usage_dims,unique" json:"request_model"`
+	ModelGroup   string    `gorm:"size:64;index:idx_usage_dims,unique" json:"model_group"`
+	APIType      string    `gorm:"size:16;index:idx_usage_dims,unique" json:"api_type"`
+	// Requests / Success / Failed / LatencyMs / UnknownUsage count requests and are booked
+	// on the account that produced the final response. Tokens and Attempts are booked on
+	// the account of the attempt that consumed them, so a retried request can spread its
+	// tokens over several rows while still counting as one request.
+	Requests         int64 `json:"requests"`
+	Attempts         int64 `json:"attempts"`
+	Success          int64 `json:"success"`
+	Failed           int64 `json:"failed"`
+	PromptTokens     int64 `json:"prompt_tokens"`
+	CompletionTokens int64 `json:"completion_tokens"`
+	TotalTokens      int64 `json:"total_tokens"`
+	CachedTokens     int64 `json:"cached_tokens"`
+	UnknownUsage     int64 `json:"unknown_usage"` // requests whose usage is partial or unknown
+	LatencyMs        int64 `json:"latency_ms"`
 }
 
 // RouteSample is a labelled example used by smart routing.

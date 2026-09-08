@@ -111,8 +111,8 @@
 `key` 为 id 或名称，`name` 为显示名；已删除资源 name 追加 `(已删除)`。
 
 ### 计量维护 `/api/admin/usage`
-- 用量响应的 `summary` 与各分布项含 `unknown_usage`（用量为 partial / unknown 的请求数）。
-- `POST /api/admin/usage/rebuild {from, to}`（RFC3339，最多 92 天；`from` 不得早于调用日志保留期，也不得早于持久化的明细清理边界 `purged_before`，否则 400 `outside_retention`，避免用已清理的明细抹掉历史聚合。调大保留期不会恢复已删除的明细，因此边界只前进不后退）→ `{hours, rows}`：从原始调用日志重建小时聚合。
+- 用量响应的 `summary` 与各分布项含 `unknown_usage`（用量为 partial / unknown 的请求数）；各分布项另含 `attempts`。归属规则：`requests` / 成功失败 / 延迟按最终应答的账号记，Token 按实际消耗它的那次上游尝试的账号与供应商记，因此跨账号重试的一次请求会把 Token 拆到多行，但请求数只计一次；用户、用户组、API Key 的 Token 总量始终等于请求总量。小时表 `usage_hourlies` 同样带 `attempts` 列，常规入库与重建使用同一聚合函数。
+- `POST /api/admin/usage/rebuild {from, to}`（RFC3339，最多 92 天；`from` 不得早于调用日志保留期，也不得早于持久化的明细清理边界 `purged_before`，否则 400 `outside_retention`，避免用已清理的明细抹掉历史聚合。调大保留期不会恢复已删除的明细，因此边界只前进不后退。边界读取失败或格式错误时重建直接报错且不改动聚合；边界校验在重建事务内进行，并与清理协程互斥）→ `{hours, rows}`：从原始调用日志重建小时聚合。
 - `GET /api/admin/usage/reconcile?range=` → `{consistent, mismatches:[{hour, log_requests, rollup_requests, log_tokens, rollup_tokens}]}`：逐小时对账。
 - `GET /api/admin/usage/metering` → `{pending_bytes, overflow_records, dirty, dropped, replayed, write_failures, sync_failures, last_commit_at, purged_before}`：计量 journal 状态。`overflow_records` > 0 或 `dirty` 长期为 true、`sync_failures` 增长，都表示有记录尚未持久化。
 

@@ -57,7 +57,17 @@ export default function DimTable({ title, icon, items, loading, provider, color 
       width: 90,
       align: 'right',
       sorter: (a, b) => a.requests - b.requests,
-      render: (v: number) => <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatNumber(v)}</span>,
+      render: (v: number, r) => {
+        const cell = <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatNumber(v)}</span>;
+        if (r.attempts != null && r.attempts !== v) {
+          return (
+            <Tooltip title={t('usage:dim.attemptsHint', { count: r.attempts })}>
+              <span style={{ borderBottom: '1px dotted currentColor', cursor: 'help' }}>{cell}</span>
+            </Tooltip>
+          );
+        }
+        return cell;
+      },
     },
     {
       title: t('common:common.totalTokens'),
