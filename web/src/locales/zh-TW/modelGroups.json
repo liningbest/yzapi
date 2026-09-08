@@ -42,5 +42,12 @@
     "dragHint": "拖曳排序",
     "note": "備註",
     "orderHint": "序號越小優先順序越高"
-  }
+  },
+  "routeRole": {
+    "simple": "智慧路由 · 簡單請求組",
+    "complex": "智慧路由 · 複雜請求組"
+  },
+  "routeRoleHint": "在「設定 → 智慧路由」中被選為該角色，點擊前往",
+  "deleteDisabledDetail": "此模型組在「設定 → 智慧路由」中被設為 {{roles}}，請先更換後再刪除",
+  "goToRouteSettings": "前往智慧路由設定 →"
 }

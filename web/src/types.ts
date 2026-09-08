@@ -222,6 +222,7 @@ export interface ModelGroup {
   created_at: string;
   updated_at: string;
   in_use_by_route: boolean;
+  route_roles?: ('simple' | 'complex')[];
 }
 
 export interface ModelGroupInput {

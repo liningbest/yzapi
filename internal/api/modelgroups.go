@@ -20,9 +20,19 @@ func (s *Server) modelGroupView(mg *model.ModelGroup) gin.H {
 	if mg.Models == nil {
 		mg.Models = model.StringList{}
 	}
+	var roles []string
+	if sr.SimpleGroupID == mg.ID {
+		roles = append(roles, "simple")
+	}
+	if sr.ComplexGroupID == mg.ID {
+		roles = append(roles, "complex")
+	}
+	if roles == nil {
+		roles = []string{}
+	}
 	return gin.H{"id": mg.ID, "name": mg.Name, "type": mg.Type, "models": mg.Models, "note": mg.Note,
 		"created_at": mg.CreatedAt, "updated_at": mg.UpdatedAt,
-		"in_use_by_route": sr.SimpleGroupID == mg.ID || sr.ComplexGroupID == mg.ID}
+		"in_use_by_route": len(roles) > 0, "route_roles": roles}
 }
 
 func (s *Server) listModelGroups(c *gin.Context) {

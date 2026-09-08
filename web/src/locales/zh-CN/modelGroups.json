@@ -42,5 +42,12 @@
     "dragHint": "拖动排序",
     "note": "备注",
     "orderHint": "序号越小优先级越高"
-  }
+  },
+  "routeRole": {
+    "simple": "智能路由 · 简单请求组",
+    "complex": "智能路由 · 复杂请求组"
+  },
+  "routeRoleHint": "在「设置 → 智能路由」中被选为该角色，点击前往",
+  "deleteDisabledDetail": "该模型组在「设置 → 智能路由」中被设为 {{roles}}，请先更换后再删除",
+  "goToRouteSettings": "前往智能路由设置 →"
 }

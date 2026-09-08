@@ -56,7 +56,7 @@
 - `POST /api/admin/accounts/test` 同 POST 账号 body（可带 `account_id`）→ `{ok, latency_ms, message, model}`
 
 ### 模型组 `/api/admin/model-groups`
-对象：`{id, name, type, models:["a","b"], note, created_at, updated_at, in_use_by_route:bool}`
+对象：`{id, name, type, models:["a","b"], note, created_at, updated_at, in_use_by_route:bool, route_roles:["simple"|"complex"]}`
 - `GET`（支持 `type=`、`q=`）、`POST`、`GET /:id`、`PUT /:id`、`DELETE /:id`（被智能路由引用返回 409）
 
 ### 用户 `/api/admin/users`

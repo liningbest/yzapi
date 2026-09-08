@@ -42,5 +42,12 @@
     "dragHint": "Drag to reorder",
     "note": "Note",
     "orderHint": "Lower position means higher priority"
-  }
+  },
+  "routeRole": {
+    "simple": "Smart Route · simple group",
+    "complex": "Smart Route · complex group"
+  },
+  "routeRoleHint": "Selected for this role in Settings → Smart Route; click to open",
+  "deleteDisabledDetail": "This group is set as {{roles}} in Settings → Smart Route. Change it there before deleting.",
+  "goToRouteSettings": "Open Smart Route settings →"
 }

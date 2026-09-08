@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { App, Button, Card, Input, Popconfirm, Segmented, Space, Table, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
@@ -56,9 +57,13 @@ export default function ModelGroups() {
       render: (v: string, g) => (
         <Space size={6} wrap>
           <span style={{ fontWeight: 600 }}>{v}</span>
-          {g.in_use_by_route ? (
-            <NeutralTag>{t('modelGroups:inUseByRoute')}</NeutralTag>
-          ) : null}
+          {(g.route_roles ?? []).map((r) => (
+            <Tooltip key={r} title={t('modelGroups:routeRoleHint')}>
+              <Link to="/admin/settings?tab=smart_route">
+                <NeutralTag>{t(`modelGroups:routeRole.${r}`)}</NeutralTag>
+              </Link>
+            </Tooltip>
+          ))}
         </Space>
       ),
     },
@@ -138,7 +143,19 @@ export default function ModelGroups() {
             <Button type="text" icon={<EditOutlined />} onClick={() => openDrawer(g)} />
           </Tooltip>
           {g.in_use_by_route ? (
-            <Tooltip title={t('modelGroups:deleteDisabled')}>
+            <Tooltip
+              title={
+                <span>
+                  {t('modelGroups:deleteDisabledDetail', {
+                    roles: (g.route_roles ?? []).map((r) => t(`modelGroups:routeRole.${r}`)).join(' / '),
+                  })}
+                  <br />
+                  <Link to="/admin/settings?tab=smart_route" style={{ color: '#93c5fd' }}>
+                    {t('modelGroups:goToRouteSettings')}
+                  </Link>
+                </span>
+              }
+            >
               <Button type="text" danger icon={<DeleteOutlined />} disabled />
             </Tooltip>
           ) : (
