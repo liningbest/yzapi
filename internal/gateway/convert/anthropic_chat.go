@@ -495,6 +495,11 @@ func ChatStreamToAnthropic(r io.Reader, w io.Writer, flush func(), model string)
 	if err := closeTools(); err != nil {
 		return usage, err
 	}
+	if !done {
+		// No [DONE] from upstream: emit an Anthropic error event rather than message_stop.
+		_ = emit("error", map[string]any{"type": "error", "error": map[string]string{"type": "api_error", "message": ErrIncomplete.Error()}})
+		return usage, ErrIncomplete
+	}
 	outTokens := 0
 	u := map[string]any{"output_tokens": 0}
 	if usage != nil {
@@ -509,11 +514,5 @@ func ChatStreamToAnthropic(r io.Reader, w io.Writer, flush func(), model string)
 		"delta": map[string]any{"stop_reason": stopReason, "stop_sequence": nil}, "usage": u}); err != nil {
 		return usage, err
 	}
-	if err := emit("message_stop", map[string]any{"type": "message_stop"}); err != nil {
-		return usage, err
-	}
-	if !done {
-		return usage, ErrIncomplete
-	}
-	return usage, nil
+	return usage, emit("message_stop", map[string]any{"type": "message_stop"})
 }

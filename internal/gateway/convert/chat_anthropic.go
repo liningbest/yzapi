@@ -415,7 +415,9 @@ func AnthropicStreamToChat(r io.Reader, w io.Writer, flush func(), model string,
 		}
 	}
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
-	_ = WriteSSE(w, "", "[DONE]")
+	// Upstream ended without message_stop: surface an error chunk instead of [DONE].
+	b, _ := json.Marshal(map[string]any{"error": map[string]any{"message": ErrIncomplete.Error(), "type": "upstream_incomplete"}})
+	_ = WriteSSE(w, "", string(b))
 	flush()
 	return usage, ErrIncomplete
 }

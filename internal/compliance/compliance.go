@@ -105,14 +105,16 @@ type index struct {
 	ac      *matcher
 	words   []wordEntry
 	samples []sampleEntry
+	stale   int // enabled samples skipped because their vectors were built with another model
 }
 
 // Engine is the content-compliance engine.
 type Engine struct {
-	db    *gorm.DB
-	st    *settings.Store
-	embed EmbedFunc
-	idx   atomic.Pointer[index]
+	db       *gorm.DB
+	st       *settings.Store
+	embed    EmbedFunc
+	idx      atomic.Pointer[index]
+	identity func() string
 }
 
 // New creates an engine and loads its index. New never fails so the gateway
@@ -163,7 +165,7 @@ func (e *Engine) Reload() error {
 		Order("id").Find(&samples).Error; err != nil {
 		return err
 	}
-	cur := VectorModelID(e.st)
+	cur := e.vectorID()
 	skipped := 0
 	for _, s := range samples {
 		if len(s.Vector) == 0 {
@@ -175,6 +177,7 @@ func (e *Engine) Reload() error {
 		}
 		idx.samples = append(idx.samples, sampleEntry{ID: s.ID, Text: s.Text, Vec: vector.Decode(s.Vector), Policy: pol[s.PolicyGroupID]})
 	}
+	idx.stale = skipped
 	if skipped > 0 {
 		slog.Warn("audit samples built with a different embedding model were skipped; rebuild vectors", "skipped", skipped)
 	}
@@ -215,6 +218,13 @@ func (e *Engine) check(ctx context.Context, text string, threshold float64) Verd
 	}
 
 	// Semantic pass.
+	if len(idx.samples) == 0 && idx.stale > 0 {
+		// Samples are configured but none is usable with the current embedding model:
+		// the semantic check cannot run, which is a degradation, not a clean pass.
+		v := aggregate(hits)
+		v.Degraded, v.DegradedReason = true, fmt.Sprintf("%d audit samples were built with a different embedding model; rebuild vectors", idx.stale)
+		return v
+	}
 	if len(idx.samples) > 0 && e.embed != nil {
 		if threshold <= 0 {
 			threshold = DefaultSemanticThreshold
@@ -231,10 +241,12 @@ func (e *Engine) check(ctx context.Context, text string, threshold float64) Verd
 			return v
 		}
 		q := vecs[0]
+		compatible := 0
 		for _, s := range idx.samples {
 			if len(s.Vec) != len(q) {
 				continue // built with a different model; skipped until rebuilt
 			}
+			compatible++
 			score := vector.Dot(q, s.Vec)
 			if score >= threshold {
 				hits = append(hits, HitEntry{
@@ -244,8 +256,27 @@ func (e *Engine) check(ctx context.Context, text string, threshold float64) Verd
 				})
 			}
 		}
+		if compatible == 0 {
+			// Samples exist but none can be compared: the semantic check did not happen.
+			v := aggregate(hits)
+			v.Degraded, v.DegradedReason = true, fmt.Sprintf("no audit sample matches the query vector dimension (%d); rebuild vectors", len(q))
+			return v
+		}
 	}
 	return aggregate(hits)
+}
+
+// SetVectorIdentity overrides how the embedding identity is computed (the API layer
+// resolves account, base URL and mapped upstream model).
+func (e *Engine) SetVectorIdentity(fn func() string) { e.identity = fn }
+
+func (e *Engine) vectorID() string {
+	if e.identity != nil {
+		if id := e.identity(); id != "" {
+			return id
+		}
+	}
+	return VectorModelID(e.st)
 }
 
 // VectorModelID identifies the configured embedding model; vectors built with another
@@ -346,7 +377,7 @@ func (e *Engine) BuildVectors(ctx context.Context, ids []uint) (built int, faile
 				continue
 			}
 			uerr := e.db.Model(&model.AuditSample{}).Where("id = ?", r.ID).
-				Updates(map[string]any{"vector": vector.Encode(v), "vector_dim": len(v), "vector_model": VectorModelID(e.st), "updated_at": time.Now()}).Error
+				Updates(map[string]any{"vector": vector.Encode(v), "vector_dim": len(v), "vector_model": e.vectorID(), "updated_at": time.Now()}).Error
 			if uerr != nil {
 				failed++
 				continue

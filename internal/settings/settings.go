@@ -4,6 +4,7 @@ package settings
 
 import (
 	"encoding/json"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -132,6 +133,7 @@ type Store struct {
 	db      *gorm.DB
 	cur     atomic.Pointer[All]
 	onApply []func(All)
+	saveMu  sync.Mutex // one save -> reload -> apply sequence at a time
 }
 
 func New(db *gorm.DB) (*Store, error) {
@@ -174,6 +176,8 @@ func (s *Store) Reload() error {
 }
 
 func (s *Store) save(key string, v any) error {
+	s.saveMu.Lock()
+	defer s.saveMu.Unlock()
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err

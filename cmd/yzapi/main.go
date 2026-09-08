@@ -92,6 +92,8 @@ func main() {
 	embed := mgmt.VectorEmbedFunc()
 	routeEng := routing.New(database, st, embed)
 	compEng := compliance.New(database, st, embed)
+	routeEng.SetVectorIdentity(mgmt.VectorIdentity)
+	compEng.SetVectorIdentity(mgmt.VectorIdentity)
 	mgmt.SetEngines(api.Engines{Route: routeAdapter{routeEng}, Compliance: complianceAdapter{compEng}, ES: es})
 	gw.SetRouter(routeAdapter{routeEng})
 	gw.SetChecker(complianceAdapter{compEng})

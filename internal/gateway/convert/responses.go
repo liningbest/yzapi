@@ -462,13 +462,16 @@ func ChatStreamToResponses(r io.Reader, w io.Writer, flush func(), model string)
 	if usage != nil {
 		final["usage"] = toRespUsage(usage)
 	}
-	if err := emit("response.completed", map[string]any{"response": final}); err != nil {
-		return usage, err
-	}
 	if !done {
+		// The upstream closed the stream without finishing: tell the client the response
+		// failed instead of fabricating a successful completion.
+		final["status"] = "failed"
+		final["error"] = map[string]any{"code": "upstream_incomplete", "message": ErrIncomplete.Error()}
+		_ = emit("response.failed", map[string]any{"response": final})
+		_ = emit("error", map[string]any{"code": "upstream_incomplete", "message": ErrIncomplete.Error()})
 		return usage, ErrIncomplete
 	}
-	return usage, nil
+	return usage, emit("response.completed", map[string]any{"response": final})
 }
 
 type toolState struct {
@@ -744,7 +747,9 @@ func ResponsesStreamToChat(r io.Reader, w io.Writer, flush func(), model string,
 			return usage, fmt.Errorf("upstream error: %s", e.Message)
 		}
 	}
-	_ = WriteSSE(w, "", "[DONE]")
+	// Upstream ended without response.completed: surface an error chunk to the client.
+	b, _ := json.Marshal(map[string]any{"error": map[string]any{"message": ErrIncomplete.Error(), "type": "upstream_incomplete"}})
+	_ = WriteSSE(w, "", string(b))
 	flush()
 	return usage, ErrIncomplete
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -321,5 +322,52 @@ func TestBuildVectors(t *testing.T) {
 	built, failed, err = e2.BuildVectors(context.Background(), []uint{1, 2})
 	if !errors.Is(err, boom) || built != 0 || failed != 2 {
 		t.Errorf("built=%d failed=%d err=%v", built, failed, err)
+	}
+}
+
+// A query vector that matches no stored sample dimension means the semantic check did
+// not run: the verdict must be degraded so an on_failure=block policy can act on it.
+func TestCheckDegradedOnDimensionMismatch(t *testing.T) {
+	db := newTestDB(t)
+	seedPolicies(t, db)
+	st := newStore(t, db, settings.Compliance{Enabled: true, SemanticThreshold: 0.85})
+	// Samples were built with 3-dim vectors; the "current" model returns 4-dim vectors.
+	e := New(db, st, func(_ context.Context, in []string) ([][]float32, error) {
+		out := make([][]float32, len(in))
+		for i := range in {
+			out[i] = vector.Normalize([]float32{1, 0, 0, 0})
+		}
+		return out, nil
+	})
+	if len(e.idx.Load().samples) == 0 {
+		t.Fatal("test needs vectorized samples")
+	}
+	v := e.Check(context.Background(), "some harmless text")
+	if !v.Degraded || v.Block {
+		t.Fatalf("expected degraded, non-blocking verdict, got %+v", v)
+	}
+	if !strings.Contains(v.DegradedReason, "dimension") {
+		t.Fatalf("reason=%q", v.DegradedReason)
+	}
+}
+
+// Samples that exist but were built with another embedding model must not silently
+// disable the semantic check.
+func TestCheckDegradedWhenAllSamplesStale(t *testing.T) {
+	db := newTestDB(t)
+	seedPolicies(t, db)
+	db.Model(&model.AuditSample{}).Where("1 = 1").Update("vector_model", "old-account|old-url|old-model")
+	st := newStore(t, db, settings.Compliance{Enabled: true, SemanticThreshold: 0.85})
+	e := New(db, st, fakeEmbed(nil))
+	e.SetVectorIdentity(func() string { return "new-account|new-url|new-model" })
+	if err := e.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	if idx := e.idx.Load(); len(idx.samples) != 0 || idx.stale == 0 {
+		t.Fatalf("expected all samples skipped as stale, got samples=%d stale=%d", len(idx.samples), idx.stale)
+	}
+	v := e.Check(context.Background(), "some harmless text")
+	if !v.Degraded {
+		t.Fatalf("expected degraded verdict, got %+v", v)
 	}
 }

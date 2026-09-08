@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -121,16 +120,64 @@ func (s *Server) vectorClient(accountID uint, mdl string) (*vector.Client, strin
 // of concurrent embedding calls. It is invalidated whenever vector settings or the
 // underlying account change.
 type vectorRuntime struct {
+	mu      sync.Mutex
+	key     string // resolved identity "<account>|<base url>|<upstream model>"
+	client  *vector.Client
+	gen     uint64 // bumped on every invalidation; stale calls must not fill the cache
+	cache   *embedLRU
+	limiter vecLimiter
+}
+
+// vecLimiter bounds concurrent embedding calls with a limit that can change at runtime
+// without losing track of calls already in flight.
+type vecLimiter struct {
 	mu       sync.Mutex
-	key      string // "<account>:<model>"
-	client   *vector.Client
-	sem      chan struct{}
-	inflight atomic.Int64
-	cache    *embedLRU
+	cond     *sync.Cond
+	inflight int
+	limit    int
+}
+
+func (l *vecLimiter) init() {
+	if l.cond == nil {
+		l.cond = sync.NewCond(&l.mu)
+	}
+}
+
+func (l *vecLimiter) acquire(ctx context.Context, limit int) bool {
+	l.mu.Lock()
+	l.init()
+	l.limit = limit
+	stop := context.AfterFunc(ctx, func() { l.cond.Broadcast() })
+	defer stop()
+	for l.limit > 0 && l.inflight >= l.limit {
+		if ctx.Err() != nil {
+			l.mu.Unlock()
+			return false
+		}
+		l.cond.Wait()
+	}
+	l.inflight++
+	l.mu.Unlock()
+	return true
+}
+
+func (l *vecLimiter) release() {
+	l.mu.Lock()
+	l.init()
+	l.inflight--
+	l.mu.Unlock()
+	l.cond.Broadcast()
+}
+
+func (l *vecLimiter) current() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.inflight
 }
 
 func (s *Server) InvalidateVector() {
 	s.vec.mu.Lock()
+	s.vec.gen++
 	s.vec.key, s.vec.client = "", nil
 	if s.vec.cache != nil {
 		s.vec.cache.clear()
@@ -139,32 +186,53 @@ func (s *Server) InvalidateVector() {
 }
 
 // VectorInflight reports concurrent embedding calls (for /metrics).
-func (s *Server) VectorInflight() int64 { return s.vec.inflight.Load() }
+func (s *Server) VectorInflight() int64 { return int64(s.vec.limiter.current()) }
+
+// VectorIdentity resolves the embedding identity actually in use: account id, base URL
+// and the mapped upstream model. Changing any of them invalidates stored vectors.
+func (s *Server) VectorIdentity() string {
+	v := s.st.Get().Vector
+	if v.AccountID == 0 {
+		return ""
+	}
+	cl, _ := s.resolveVectorClient(v)
+	if cl == nil {
+		return fmt.Sprintf("%d:%s", v.AccountID, v.Model)
+	}
+	return fmt.Sprintf("%d|%s|%s", v.AccountID, cl.BaseURL, cl.Model)
+}
+
+// resolveVectorClient returns the cached client for the current vector settings.
+func (s *Server) resolveVectorClient(v settings.Vector) (*vector.Client, string) {
+	s.vec.mu.Lock()
+	defer s.vec.mu.Unlock()
+	if s.vec.client != nil {
+		return s.vec.client, s.vec.key
+	}
+	cl, msg := s.vectorClient(v.AccountID, v.Model)
+	if cl == nil {
+		return nil, msg
+	}
+	s.vec.client = cl
+	s.vec.key = fmt.Sprintf("%d|%s|%s", v.AccountID, cl.BaseURL, cl.Model)
+	if s.vec.cache == nil {
+		s.vec.cache = newEmbedLRU(4096, 10*time.Minute)
+	}
+	return cl, s.vec.key
+}
 
 // VectorEmbedFunc returns an embedding function bound to the current vector settings.
 func (s *Server) VectorEmbedFunc() func(ctx context.Context, inputs []string) ([][]float32, error) {
 	return func(ctx context.Context, inputs []string) ([][]float32, error) {
 		v := s.st.Get().Vector
 		perf := s.st.Get().Performance
-		key := fmt.Sprintf("%d:%s", v.AccountID, v.Model)
+		cl, keyOrMsg := s.resolveVectorClient(v)
+		if cl == nil {
+			return nil, errVector(keyOrMsg)
+		}
+		key := keyOrMsg
 		s.vec.mu.Lock()
-		if s.vec.cache == nil {
-			s.vec.cache = newEmbedLRU(4096, 10*time.Minute)
-		}
-		if s.vec.client == nil || s.vec.key != key {
-			cl, msg := s.vectorClient(v.AccountID, v.Model)
-			if cl == nil {
-				s.vec.mu.Unlock()
-				return nil, errVector(msg)
-			}
-			s.vec.client, s.vec.key = cl, key
-			s.vec.cache.clear()
-		}
-		want := max(perf.VectorMaxConcurrency, 1)
-		if s.vec.sem == nil || cap(s.vec.sem) != want {
-			s.vec.sem = make(chan struct{}, want)
-		}
-		cl, sem, cache := s.vec.client, s.vec.sem, s.vec.cache
+		gen, cache := s.vec.gen, s.vec.cache
 		s.vec.mu.Unlock()
 
 		// Serve from cache when every input is known.
@@ -183,13 +251,10 @@ func (s *Server) VectorEmbedFunc() func(ctx context.Context, inputs []string) ([
 		timeout := time.Duration(max(perf.VectorTimeoutSec, 1)) * time.Second
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
-		select {
-		case sem <- struct{}{}:
-		case <-ctx.Done():
+		if !s.vec.limiter.acquire(ctx, max(perf.VectorMaxConcurrency, 1)) {
 			return nil, errVector("embedding concurrency limit reached (timeout waiting)")
 		}
-		s.vec.inflight.Add(1)
-		defer func() { s.vec.inflight.Add(-1); <-sem }()
+		defer s.vec.limiter.release()
 		batch := make([]string, len(missing))
 		for j, i := range missing {
 			batch[j] = inputs[i]
@@ -201,9 +266,15 @@ func (s *Server) VectorEmbedFunc() func(ctx context.Context, inputs []string) ([
 		if len(vecs) != len(batch) {
 			return nil, errVector("embedding returned wrong number of vectors")
 		}
+		// Only fill the cache if nothing was invalidated while the call was in flight.
+		s.vec.mu.Lock()
+		fresh := s.vec.gen == gen
+		s.vec.mu.Unlock()
 		for j, i := range missing {
 			out[i] = vecs[j]
-			cache.put(key, inputs[i], vecs[j])
+			if fresh {
+				cache.put(key, inputs[i], vecs[j])
+			}
 		}
 		return out, nil
 	}

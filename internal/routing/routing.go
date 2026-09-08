@@ -104,10 +104,11 @@ type Sample struct {
 
 // Engine is the smart-routing engine.
 type Engine struct {
-	db    *gorm.DB
-	st    *settings.Store
-	embed EmbedFunc
-	index atomic.Pointer[[]Sample]
+	db       *gorm.DB
+	st       *settings.Store
+	embed    EmbedFunc
+	index    atomic.Pointer[[]Sample]
+	identity func() string
 }
 
 // New creates an engine and loads the sample index. A load error is logged by
@@ -128,7 +129,7 @@ func (e *Engine) Reload() error {
 		return err
 	}
 	idx := make([]Sample, 0, len(rows))
-	cur := VectorModelID(e.st)
+	cur := e.vectorID()
 	skipped := 0
 	for _, r := range rows {
 		if len(r.Vector) == 0 {
@@ -145,6 +146,18 @@ func (e *Engine) Reload() error {
 	}
 	e.index.Store(&idx)
 	return nil
+}
+
+// SetVectorIdentity overrides how the embedding identity is computed.
+func (e *Engine) SetVectorIdentity(fn func() string) { e.identity = fn }
+
+func (e *Engine) vectorID() string {
+	if e.identity != nil {
+		if id := e.identity(); id != "" {
+			return id
+		}
+	}
+	return VectorModelID(e.st)
 }
 
 // VectorModelID identifies the configured embedding model ("<account>:<model>").
@@ -459,7 +472,7 @@ func (e *Engine) BuildVectors(ctx context.Context, ids []uint) (built int, faile
 				continue
 			}
 			uerr := e.db.Model(&model.RouteSample{}).Where("id = ?", r.ID).
-				Updates(map[string]any{"vector": vector.Encode(v), "vector_dim": len(v), "vector_model": VectorModelID(e.st), "updated_at": time.Now()}).Error
+				Updates(map[string]any{"vector": vector.Encode(v), "vector_dim": len(v), "vector_model": e.vectorID(), "updated_at": time.Now()}).Error
 			if uerr != nil {
 				failed++
 				continue
