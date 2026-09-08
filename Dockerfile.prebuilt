@@ -1,0 +1,13 @@
+# Image from a binary cross-compiled elsewhere (scripts/package-release.sh): no Go
+# toolchain, no compilation on the server, builds in seconds with almost no memory.
+#   docker build -f Dockerfile.prebuilt -t yzapi/gateway:1.0.0 .
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates tzdata curl && adduser -D -u 10001 yzapi
+ENV YZAPI_DATA_DIR=/opt/yzapi YZAPI_LISTEN=0.0.0.0:8080 TZ=Asia/Shanghai
+COPY yzapi /usr/local/bin/yzapi
+RUN chmod 0755 /usr/local/bin/yzapi && mkdir -p /opt/yzapi && chown -R yzapi:yzapi /opt/yzapi
+USER yzapi
+VOLUME ["/opt/yzapi"]
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD curl -fsS http://127.0.0.1:8080/health/ready || exit 1
+ENTRYPOINT ["/usr/local/bin/yzapi"]

@@ -47,6 +47,22 @@ tar xzf yzapi-src.tar.gz && cd yzapi && docker build -t yzapi/gateway:1.0.0 .
 
 也可以在 1Panel「容器 → 镜像 → 构建」里填名称 `yzapi/gateway:1.0.0`、Dockerfile 选择解压目录中的 `Dockerfile`，效果相同。直接 `git clone` 到服务器再构建则需要先在服务器上 `cd web && pnpm install && pnpm build`。
 
+**A2. 预编译二进制包（小内存服务器首选）**
+
+`go build` 需要 1.5 GB 以上内存，1 到 2 GB 的云主机上会把系统卡死。改为在本机交叉编译，服务器只做一次几秒钟的镜像打包：
+
+```bash
+./scripts/package-release.sh ~/Desktop/yzapi-release.tar.gz     # 含静态二进制、Dockerfile.prebuilt、deploy/
+```
+
+服务器上：
+
+```bash
+tar xzf yzapi-release.tar.gz && cd yzapi && docker build -f Dockerfile.prebuilt -t yzapi/gateway:1.0.0 .
+```
+
+同一个包也可直接用于第 5 节的 systemd 部署，二进制就是里面的 `yzapi`。
+
 **B. 本机构建后导入**（Apple Silicon 注意跨架构）
 
 ```bash
