@@ -768,3 +768,106 @@ body {
 .ant-form-item-extra {
   font-size: 12px;
 }
+
+/* ---------- login hero: content blocks ---------- */
+.yz-login-hero-body {
+  max-width: 520px;
+}
+.yz-login-code {
+  margin-top: 28px;
+  border: 1px solid #2e2e33;
+  border-radius: 6px;
+  background: #1c1c20;
+  overflow: hidden;
+}
+.yz-login-code-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  border-bottom: 1px solid #2e2e33;
+  font-family: var(--yz-mono);
+  font-size: 11px;
+  color: #71717a;
+}
+.yz-login-code-path {
+  color: #a1a1aa;
+}
+.yz-login-code pre {
+  margin: 0;
+  padding: 12px 14px;
+  font-family: var(--yz-mono);
+  font-size: 12px;
+  line-height: 1.7;
+  color: #d4d4d8;
+  white-space: pre;
+  overflow-x: auto;
+}
+.yz-login-code .c-cmd {
+  color: #fafafa;
+  font-weight: 600;
+}
+.yz-login-code .c-flag {
+  color: #71717a;
+}
+.yz-login-code .c-str {
+  color: #93c5fd;
+}
+.yz-login-points {
+  list-style: none;
+  margin: 28px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+.yz-login-points li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.yz-login-points li > .anticon {
+  margin-top: 3px;
+  font-size: 14px;
+  color: #a1a1aa;
+  flex-shrink: 0;
+}
+.yz-login-points b {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fafafa;
+}
+.yz-login-points span {
+  display: block;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #a1a1aa;
+  margin-top: 2px;
+}
+.yz-login-facts {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid #27272a;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+.yz-login-facts b {
+  display: block;
+  font-size: 20px;
+  font-weight: 600;
+  color: #fafafa;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.3px;
+}
+.yz-login-facts span {
+  display: block;
+  font-size: 11px;
+  color: #71717a;
+  margin-top: 2px;
+}
+@media (max-height: 820px) {
+  .yz-login-points {
+    display: none;
+  }
+}

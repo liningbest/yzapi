@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { startTransition, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Alert, Button, Dropdown, Form, Input, Typography } from 'antd';
-import { GlobalOutlined } from '@ant-design/icons';
+import { ApiOutlined, BranchesOutlined, GlobalOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { authApi } from '@/api';
 import type { NormalizedError } from '@/api';
@@ -20,15 +20,26 @@ export default function Login() {
   const dark = useThemeStore((s) => s.mode) === 'dark';
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [baseUrl, setBaseUrl] = useState(`${window.location.origin}/v1`);
+  useEffect(() => {
+    authApi
+      .publicInfo()
+      .then((info) => {
+        if (info?.base_url) setBaseUrl(info.base_url);
+      })
+      .catch(() => undefined);
+  }, []);
 
   const onFinish = async (values: { username: string; password: string }) => {
     setLoading(true);
     setError(null);
     try {
       const res = await authApi.login(values.username.trim(), values.password);
-      setAuth(res.token, res.user);
-      if (res.user.must_change_password) navigate('/change-password', { replace: true });
-      else navigate(homeFor(res.user.role), { replace: true });
+      startTransition(() => {
+        setAuth(res.token, res.user);
+        if (res.user.must_change_password) navigate('/change-password', { replace: true });
+        else navigate(homeFor(res.user.role), { replace: true });
+      });
     } catch (e) {
       const err = e as NormalizedError;
       if (err.status === 423) setError(t('auth:login.locked'));
@@ -53,6 +64,62 @@ export default function Login() {
           <div className="yz-login-hero-body">
             <h1 className="yz-login-headline">{t('auth:login.headline')}</h1>
             <p className="yz-login-desc">{t('auth:login.description')}</p>
+
+            <div className="yz-login-code" aria-hidden>
+              <div className="yz-login-code-bar">
+                <span>curl</span>
+                <span className="yz-login-code-path">POST /v1/chat/completions</span>
+              </div>
+              <pre>
+                <span className="c-cmd">curl</span> {baseUrl}/chat/completions \{'\n'}
+                {'  '}<span className="c-flag">-H</span> <span className="c-str">"Authorization: Bearer sk-your-key"</span> \{'\n'}
+                {'  '}<span className="c-flag">-d</span> <span className="c-str">{`'{"model": "yz-auto",`}</span>{'\n'}
+                {'       '}<span className="c-str">{`"messages": [{"role": "user", "content": "你好"}]}'`}</span>
+              </pre>
+            </div>
+
+            <ul className="yz-login-points">
+              <li>
+                <ApiOutlined />
+                <div>
+                  <b>{t('auth:login.point1Title')}</b>
+                  <span>{t('auth:login.point1Desc')}</span>
+                </div>
+              </li>
+              <li>
+                <BranchesOutlined />
+                <div>
+                  <b>{t('auth:login.point2Title')}</b>
+                  <span>{t('auth:login.point2Desc')}</span>
+                </div>
+              </li>
+              <li>
+                <SafetyCertificateOutlined />
+                <div>
+                  <b>{t('auth:login.point3Title')}</b>
+                  <span>{t('auth:login.point3Desc')}</span>
+                </div>
+              </li>
+            </ul>
+
+            <div className="yz-login-facts">
+              <div>
+                <b>18</b>
+                <span>{t('auth:login.factProviders')}</span>
+              </div>
+              <div>
+                <b>6</b>
+                <span>{t('auth:login.factEndpoints')}</span>
+              </div>
+              <div>
+                <b>3</b>
+                <span>{t('auth:login.factProtocols')}</span>
+              </div>
+              <div>
+                <b>&lt; 3 ms</b>
+                <span>{t('auth:login.factLatency')}</span>
+              </div>
+            </div>
           </div>
 
           <div className="yz-login-hero-foot">{t('auth:login.footer')}</div>

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { Suspense, useMemo } from 'react';
 import { RouterProvider } from 'react-router-dom';
 import { App as AntdApp, ConfigProvider, theme as antdTheme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
@@ -133,7 +133,9 @@ export default function App() {
     <ConfigProvider theme={themeConfig} locale={ANTD_LOCALES[locale]}>
       <AntdApp>
         <QueryClientProvider client={queryClient}>
-          <RouterProvider router={router} />
+          <Suspense fallback={<div style={{ minHeight: '100vh' }} />}>
+            <RouterProvider router={router} />
+          </Suspense>
         </QueryClientProvider>
       </AntdApp>
     </ConfigProvider>
