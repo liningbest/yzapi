@@ -350,3 +350,22 @@ func TestStats(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// The vector identity resolver is installed after New() loads the index; installing it
+// must re-evaluate sample compatibility, otherwise valid samples stay skipped after restart.
+func TestSetVectorIdentityReloads(t *testing.T) {
+	db := newTestDB(t)
+	st := newStore(t, db, settings.SmartRoute{Enabled: true, VirtualModel: "auto", SimpleGroupID: 1, ComplexGroupID: 2, Threshold: 0.5, TopK: 5})
+	if err := st.SetVector(settings.Vector{AccountID: 7, Model: "embed"}); err != nil {
+		t.Fatal(err)
+	}
+	db.Create(&model.RouteSample{Label: LabelSimple, Text: "hi", Vector: vector.Encode([]float32{1, 0, 0}), VectorDim: 3, VectorModel: "7|http://vec|embed-v2"})
+	e := New(db, st, nil) // startup: identity falls back to "7:embed", so the sample looks stale
+	if n := len(e.Samples()); n != 0 {
+		t.Fatalf("before identity is known the new-format sample is treated as stale, got %d", n)
+	}
+	e.SetVectorIdentity(func() string { return "7|http://vec|embed-v2" })
+	if n := len(e.Samples()); n != 1 {
+		t.Fatalf("expected the sample to load once the identity matches, got %d", n)
+	}
+}

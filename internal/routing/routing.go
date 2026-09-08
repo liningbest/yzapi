@@ -148,8 +148,13 @@ func (e *Engine) Reload() error {
 	return nil
 }
 
-// SetVectorIdentity overrides how the embedding identity is computed.
-func (e *Engine) SetVectorIdentity(fn func() string) { e.identity = fn }
+// SetVectorIdentity overrides how the embedding identity is computed and reloads the
+// index at once, so samples are never judged against an identity format that differs
+// from the one used at startup.
+func (e *Engine) SetVectorIdentity(fn func() string) {
+	e.identity = fn
+	_ = e.Reload()
+}
 
 func (e *Engine) vectorID() string {
 	if e.identity != nil {

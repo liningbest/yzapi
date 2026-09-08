@@ -268,7 +268,10 @@ func (e *Engine) check(ctx context.Context, text string, threshold float64) Verd
 
 // SetVectorIdentity overrides how the embedding identity is computed (the API layer
 // resolves account, base URL and mapped upstream model).
-func (e *Engine) SetVectorIdentity(fn func() string) { e.identity = fn }
+func (e *Engine) SetVectorIdentity(fn func() string) {
+	e.identity = fn
+	_ = e.Reload()
+}
 
 func (e *Engine) vectorID() string {
 	if e.identity != nil {

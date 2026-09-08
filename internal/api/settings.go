@@ -175,6 +175,19 @@ func (l *vecLimiter) current() int {
 	return l.inflight
 }
 
+// vectorChanged is called whenever the vector account, its mappings or the vector
+// settings change: it drops the cached client/embeddings and re-evaluates sample
+// compatibility in both engines.
+func (s *Server) vectorChanged() {
+	s.InvalidateVector()
+	if s.eng.Route != nil {
+		_ = s.eng.Route.Reload()
+	}
+	if s.eng.Compliance != nil {
+		_ = s.eng.Compliance.Reload()
+	}
+}
+
 func (s *Server) InvalidateVector() {
 	s.vec.mu.Lock()
 	s.vec.gen++
@@ -266,16 +279,19 @@ func (s *Server) VectorEmbedFunc() func(ctx context.Context, inputs []string) ([
 		if len(vecs) != len(batch) {
 			return nil, errVector("embedding returned wrong number of vectors")
 		}
-		// Only fill the cache if nothing was invalidated while the call was in flight.
-		s.vec.mu.Lock()
-		fresh := s.vec.gen == gen
-		s.vec.mu.Unlock()
 		for j, i := range missing {
 			out[i] = vecs[j]
-			if fresh {
+		}
+		// Fill the cache only if nothing was invalidated while the call was in flight;
+		// the check and the writes happen under the same lock so an invalidation cannot
+		// slip in between them.
+		s.vec.mu.Lock()
+		if s.vec.gen == gen && s.vec.cache == cache {
+			for j, i := range missing {
 				cache.put(key, inputs[i], vecs[j])
 			}
 		}
+		s.vec.mu.Unlock()
 		return out, nil
 	}
 }
@@ -366,13 +382,7 @@ func (s *Server) putVector(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
-	s.InvalidateVector()
-	if s.eng.Route != nil {
-		_ = s.eng.Route.Reload()
-	}
-	if s.eng.Compliance != nil {
-		_ = s.eng.Compliance.Reload()
-	}
+	s.vectorChanged()
 	c.JSON(200, in)
 }
 
