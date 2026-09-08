@@ -612,3 +612,118 @@ func TestUpgradeHourlyAttemptsAfterSchemaChange(t *testing.T) {
 		}
 	})
 }
+
+// D1: a provider-reported total beyond prompt + completion that normalizeLegacyUsage
+// keeps on the request must also reach the rollup, on both the rebuild and the journal
+// path, without touching the attempts' own 13 / 25 and without double counting.
+func TestExtraTotalTokensReachRollup(t *testing.T) {
+	at := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Hour).Add(time.Minute)
+	mk := func(id string, total int64) *model.CallLog {
+		l := legacyLog(id, at)
+		l.PromptTokens, l.CompletionTokens, l.TotalTokens, l.UsageStatus, l.TokensKnown = 20, 5, total, model.UsageConfirmed, true
+		l.Attempts = model.JSON(`[{"account_id":1,"provider":"openai","status_code":500,"usage_status":"confirmed","prompt_tokens":10,"completion_tokens":3},` +
+			`{"account_id":2,"provider":"openai","status_code":200,"usage_status":"confirmed","prompt_tokens":20,"completion_tokens":5}]`)
+		return l
+	}
+	check := func(t *testing.T, db *gorm.DB, wantTotal int64, extra int64) {
+		t.Helper()
+		var got model.CallLog
+		db.Where("request_id = ?", "extra").First(&got)
+		if got.TotalTokens != wantTotal || got.PromptTokens != 30 || got.CompletionTokens != 8 {
+			t.Fatalf("log = %d/%d/%d", got.PromptTokens, got.CompletionTokens, got.TotalTokens)
+		}
+		var rows []model.UsageHourly
+		db.Find(&rows)
+		byAcc := map[uint]*model.UsageHourly{}
+		var total, prompt, completion int64
+		for i := range rows {
+			byAcc[rows[i].AccountID] = &rows[i]
+			total += rows[i].TotalTokens
+			prompt += rows[i].PromptTokens
+			completion += rows[i].CompletionTokens
+		}
+		if byAcc[1] == nil || byAcc[1].TotalTokens != 13 || byAcc[2] == nil || byAcc[2].TotalTokens != 25+extra {
+			t.Fatalf("attribution: acc1=%+v acc2=%+v", byAcc[1], byAcc[2])
+		}
+		if total != wantTotal || prompt != 30 || completion != 8 {
+			t.Fatalf("rollup sums = %d/%d/%d, want 30/8/%d", prompt, completion, total, wantTotal)
+		}
+		if mm, err := Reconcile(db, at, at); err != nil || len(mm) != 0 {
+			t.Fatalf("reconcile: %v %+v", err, mm)
+		}
+	}
+	for _, tc := range []struct {
+		name  string
+		total int64
+		want  int64
+		extra int64
+	}{{"extra 5", 30, 43, 5}, {"no extra", 25, 38, 0}} {
+		t.Run("rebuild/"+tc.name, func(t *testing.T) {
+			db := testDB(t)
+			db.Create(mk("extra", tc.total))
+			if _, _, err := Rebuild(db, at, at, 30); err != nil {
+				t.Fatal(err)
+			}
+			check(t, db, tc.want, tc.extra)
+			if _, _, err := Rebuild(db, at, at, 30); err != nil {
+				t.Fatal(err)
+			}
+			check(t, db, tc.want, tc.extra) // second rebuild: unchanged
+		})
+		t.Run("journal/"+tc.name, func(t *testing.T) {
+			db := testDB(t)
+			s := &Store{db: db}
+			if err := s.commit([]*model.CallLog{mk("extra", tc.total)}); err != nil {
+				t.Fatal(err)
+			}
+			check(t, db, tc.want, tc.extra)
+			if err := s.commit([]*model.CallLog{mk("extra", tc.total)}); err != nil { // replay: idempotent
+				t.Fatal(err)
+			}
+			check(t, db, tc.want, tc.extra)
+		})
+	}
+}
+
+// A database upgraded under an older rollup version rebuilds its complete window once
+// more; a marker at the current version is left alone; a failed marker write retries.
+func TestUpgradeVersionBumpRebuildsOnce(t *testing.T) {
+	db := testDB(t)
+	at := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Hour).Add(time.Minute)
+	l := legacyLog("v2", at)
+	l.PromptTokens, l.CompletionTokens, l.TotalTokens, l.UsageStatus = 20, 5, 30, model.UsageConfirmed
+	l.Attempts = model.JSON(`[{"account_id":1,"provider":"openai","usage_status":"confirmed","prompt_tokens":10,"completion_tokens":3},` +
+		`{"account_id":2,"provider":"openai","usage_status":"confirmed","prompt_tokens":20,"completion_tokens":5}]`)
+	db.Create(l)
+	// Rollup as the version-2 code left it (38, extra lost) plus a version-less marker.
+	db.Create(&model.UsageHourly{Hour: at.Truncate(time.Hour), UserID: 1, GroupID: 1, AccountID: 2, Provider: "openai", RequestModel: "m", APIType: "text", Requests: 1, Attempts: 2, TotalTokens: 38})
+	db.Create(&model.Setting{Key: usageUpgradeKey, Value: `{"at":"2026-09-09T00:00:00Z","attempts_since":"2026-08-01T00:00:00Z","hours":2}`})
+	s := &Store{db: db, retDays: func() int { return 30 }}
+	if err := s.upgradeUsageRollup(); err != nil {
+		t.Fatal(err)
+	}
+	u, _ := readUsageUpgrade(db)
+	if u == nil || u.Version != usageUpgradeVersion || !u.AttemptsSince.Equal(time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("marker after re-upgrade: %+v", u)
+	}
+	if mm, _ := Reconcile(db, at, at); len(mm) != 0 {
+		t.Fatalf("still inconsistent after versioned re-upgrade: %+v", mm)
+	}
+	var rows []model.UsageHourly
+	db.Find(&rows)
+	var total int64
+	for _, r := range rows {
+		total += r.TotalTokens
+	}
+	if total != 43 {
+		t.Fatalf("rollup total after re-upgrade = %d", total)
+	}
+	db.Exec("UPDATE usage_hourlies SET total_tokens = 1")
+	if err := s.upgradeUsageRollup(); err != nil {
+		t.Fatal(err)
+	}
+	db.Find(&rows)
+	if rows[0].TotalTokens != 1 {
+		t.Fatal("current-version marker must not trigger another rebuild")
+	}
+}

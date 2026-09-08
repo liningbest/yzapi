@@ -526,12 +526,17 @@ func Aggregate(batch []*model.CallLog) []*model.UsageHourly {
 			ap += a.PromptTokens
 			ac += a.CompletionTokens
 		}
-		// Remainder (legacy logs without per-attempt usage) is booked on the answering account.
-		if rp, rc := l.PromptTokens-ap, l.CompletionTokens-ac; rp > 0 || rc > 0 {
-			u.PromptTokens += max(rp, 0)
-			u.CompletionTokens += max(rc, 0)
-			u.TotalTokens += max(rp, 0) + max(rc, 0)
-		}
+		// Whatever the request knows beyond its attempts is booked on the answering
+		// account: prompt / completion remainders (legacy logs without per-attempt usage)
+		// and any total-only remainder (provider-reported tokens outside prompt and
+		// completion, kept by normalizeLegacyUsage). The invariant is that the rollup's
+		// TotalTokens for a request always equals CallLog.TotalTokens, which is what
+		// Reconcile checks.
+		rp, rc := max(l.PromptTokens-ap, 0), max(l.CompletionTokens-ac, 0)
+		rt := max(l.TotalTokens-(ap+ac)-rp-rc, 0)
+		u.PromptTokens += rp
+		u.CompletionTokens += rc
+		u.TotalTokens += rp + rc + rt
 	}
 	out := make([]*model.UsageHourly, 0, len(agg))
 	for _, u := range agg {
@@ -718,7 +723,14 @@ func normalizeLegacyUsage(l *model.CallLog) bool {
 // was attempted.
 const usageUpgradeKey = "usage_rollup_upgrade_v2"
 
+// usageUpgradeVersion bumps whenever the rollup derivation changes in a way that makes
+// already-upgraded databases rebuild their complete window once more:
+//   2: per-attempt attribution + attempts column
+//   3: total-only remainder (provider extras kept by normalizeLegacyUsage) enters the rollup
+const usageUpgradeVersion = 3
+
 type usageUpgrade struct {
+	Version       int       `json:"version"`
 	At            time.Time `json:"at"`
 	AttemptsSince time.Time `json:"attempts_since"`
 	Hours         int       `json:"hours"`
@@ -745,9 +757,11 @@ func readUsageUpgrade(db *gorm.DB) (*usageUpgrade, error) {
 // requests are corrected. Hours before the window keep their old rollup (attempts 0 =
 // not recorded). Safe to re-run: the marker is only written after success.
 func (s *Store) upgradeUsageRollup() error {
-	if done, err := readUsageUpgrade(s.db); err != nil {
+	done, err := readUsageUpgrade(s.db)
+	if err != nil {
 		return err
-	} else if done != nil {
+	}
+	if done != nil && done.Version >= usageUpgradeVersion {
 		return nil
 	}
 	if err := s.db.Exec("UPDATE usage_hourlies SET attempts = 0 WHERE attempts IS NULL").Error; err != nil {
@@ -772,11 +786,14 @@ func (s *Store) upgradeUsageRollup() error {
 	if err != nil {
 		return err
 	}
-	b, _ := json.Marshal(usageUpgrade{At: now, AttemptsSince: from, Hours: hours})
+	if done != nil && done.AttemptsSince.Before(from) {
+		from = done.AttemptsSince // attempt counts were already recorded from the earlier upgrade on
+	}
+	b, _ := json.Marshal(usageUpgrade{Version: usageUpgradeVersion, At: now, AttemptsSince: from, Hours: hours})
 	if err := s.db.Save(&model.Setting{Key: usageUpgradeKey, Value: string(b), UpdatedAt: now}).Error; err != nil {
 		return err
 	}
-	slog.Info("usage rollup upgraded: per-attempt attribution and attempt counts rebuilt from raw logs", "from", from, "hours", hours)
+	slog.Info("usage rollup upgraded: rebuilt from raw logs", "version", usageUpgradeVersion, "from", from, "hours", hours)
 	return nil
 }
 
