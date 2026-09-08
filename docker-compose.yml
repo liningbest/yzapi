@@ -1,0 +1,41 @@
+# 最简部署：单容器 + SQLite
+#   docker compose up -d
+# 首次启动后查看临时管理员密码：
+#   docker compose logs yzapi | grep -A3 "initial administrator"
+#
+# 使用 PostgreSQL：docker compose --profile postgres up -d
+# 并把 yzapi 服务的环境变量改为 YZAPI_DB_DRIVER=postgres 与对应 DSN。
+
+services:
+  yzapi:
+    image: yzapi/gateway:latest
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-dev}
+    container_name: yzapi
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/opt/yzapi
+    environment:
+      # 可选：显式指定首次管理员密码（不设则打印随机临时密码到日志）
+      # YZAPI_INITIAL_ADMIN_PASSWORD: "ChangeMe12345!"
+      # 可选：上游代理
+      # YZAPI_HTTP_PROXY: "http://proxy:7890"
+      # PostgreSQL 示例：
+      # YZAPI_DB_DRIVER: postgres
+      # YZAPI_DB_DSN: "host=postgres user=yzapi password=yzapi dbname=yzapi port=5432 sslmode=disable TimeZone=Asia/Shanghai"
+      TZ: Asia/Shanghai
+
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["postgres"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: yzapi
+      POSTGRES_PASSWORD: yzapi
+      POSTGRES_DB: yzapi
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data

@@ -1,0 +1,11 @@
+bin/
+data/
+pgdata/
+*.db
+*.db-wal
+*.db-shm
+web/node_modules/
+web/dist/*
+!web/dist/.gitkeep
+.DS_Store
+*.log

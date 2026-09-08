@@ -1,0 +1,37 @@
+{
+  "title": "Overview",
+  "subtitle": "Live gateway status and usage at a glance",
+  "autoRefresh": "Auto refresh every {{seconds}}s",
+  "live": {
+    "activeUsers": "Active users",
+    "activeUsersHint": "Users with recent requests",
+    "streams": "Streaming requests",
+    "streamsHint": "Streaming responses in progress",
+    "inflight": "Gateway concurrency",
+    "waiting": "Waiting queue"
+  },
+  "accounts": {
+    "title": "Account concurrency",
+    "empty": "No accounts",
+    "emptyHint": "Add upstream accounts in the account pool to see live concurrency here."
+  },
+  "groups": {
+    "title": "User group concurrency",
+    "tokenUsage": "Token usage",
+    "empty": "No user groups",
+    "emptyHint": "Create a user group to see live concurrency and monthly token usage here."
+  },
+  "usage": {
+    "title": "Usage",
+    "cacheRate": "Cache hit rate",
+    "requests": "Requests",
+    "success": "Succeeded",
+    "failed": "Failed",
+    "failRate": "Failure rate",
+    "activeUsers": "Active users",
+    "activeKeys": "API keys",
+    "trend": "Token trend",
+    "trendEmpty": "No trend data",
+    "trendEmptyHint": "No requests were recorded in the selected time range."
+  }
+}

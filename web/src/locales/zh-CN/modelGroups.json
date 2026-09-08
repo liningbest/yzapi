@@ -1,0 +1,46 @@
+{
+  "title": "模型组",
+  "subtitle": "将多个请求模型组合为有序候选列表，请求按顺序派发，当前模型不可用时自动尝试下一个。",
+  "add": "添加模型组",
+  "edit": "编辑模型组",
+  "filter": {
+    "keywordPlaceholder": "搜索名称 / 模型"
+  },
+  "columns": {
+    "name": "名称",
+    "type": "类型",
+    "models": "模型",
+    "note": "备注",
+    "updatedAt": "更新时间",
+    "actions": "操作"
+  },
+  "inUseByRoute": "智能路由使用中",
+  "moreModels": "其余 {{count}} 个模型",
+  "modelsCount": "共 {{count}} 个",
+  "deleteDisabled": "该模型组正被智能路由引用，无法删除",
+  "delete": {
+    "confirm": "确定删除模型组「{{name}}」吗？此操作不可恢复。"
+  },
+  "empty": {
+    "hint": "还没有模型组，创建后可在用户组中授权使用。"
+  },
+  "form": {
+    "name": "名称",
+    "namePlaceholder": "例如：chat-default",
+    "nameExtra": "名称需唯一，用户组授权后可直接作为模型名调用。",
+    "type": "协议类型",
+    "typeExtra": "创建后不可修改，组内只能加入同类型的模型。",
+    "typeLocked": "创建后不可修改",
+    "models": "模型列表",
+    "modelsExtra": "请求按顺序派发，当前模型不可用时自动尝试下一个。1–100 个，可从候选中选择或手动输入。",
+    "modelsPlaceholder": "选择或输入请求模型名称，回车添加",
+    "modelsMin": "请至少添加一个模型",
+    "modelsMax": "最多 100 个模型",
+    "modelsDuplicate": "模型名称重复：{{name}}",
+    "modelsEmpty": "尚未添加模型，请在上方选择或输入。",
+    "modelExists": "该模型已在列表中",
+    "dragHint": "拖动排序",
+    "note": "备注",
+    "orderHint": "序号越小优先级越高"
+  }
+}

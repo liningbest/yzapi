@@ -1,0 +1,123 @@
+{
+  "title": "Accounts",
+  "subtitle": "Manage upstream provider accounts, supported protocols and model mappings. The gateway dispatches requests by priority and health.",
+  "add": "Add Account",
+  "edit": "Edit Account",
+  "filter": {
+    "provider": "Provider",
+    "type": "Type",
+    "protocol": "Protocol",
+    "enabled": "Status",
+    "health": "Health",
+    "keywordPlaceholder": "Search name / URL / model"
+  },
+  "columns": {
+    "account": "Account",
+    "type": "Type",
+    "protocols": "Protocols",
+    "models": "Models",
+    "priority": "Priority",
+    "maxConcurrency": "Max Concurrency",
+    "health": "Health",
+    "enabled": "Enabled",
+    "updatedAt": "Updated",
+    "actions": "Actions",
+    "chooser": "Columns"
+  },
+  "modelsCount": "{{count}} models",
+  "noModels": "No models",
+  "mappingsPopoverTitle": "Model mappings (request → upstream)",
+  "empty": {
+    "hint": "No upstream accounts yet. Add one to start serving models through the gateway."
+  },
+  "resetHealth": {
+    "confirm": "Reset this account's health? Cooldown will be cleared and it will be marked available.",
+    "success": "Health reset",
+    "alreadyAvailable": "Already available"
+  },
+  "delete": {
+    "confirm": "Delete account \"{{name}}\"? This cannot be undone."
+  },
+  "steps": {
+    "provider": "Provider",
+    "basic": "Basics",
+    "protocols": "Protocols",
+    "mappings": "Mappings",
+    "schedule": "Scheduling",
+    "prev": "Previous",
+    "next": "Next"
+  },
+  "form": {
+    "provider": "Provider",
+    "providerRequired": "Please select a provider",
+    "providerHint": "Built-in providers pre-fill the base URL and available protocols; the custom provider connects to any OpenAI-compatible service.",
+    "docs": "View {{name}} API docs",
+    "accountType": "Account Type",
+    "accountTypeExtra": "Each account type uses its own base URL; switching updates it automatically.",
+    "type": "Type",
+    "typeExtra": "Choose one of Text / Image / Embedding. Cannot be changed after creation.",
+    "typeLocked": "Cannot be changed after creation",
+    "name": "Name",
+    "namePlaceholder": "e.g. OpenAI primary",
+    "nameExtra": "Display name used in lists, logs and the overview.",
+    "baseUrl": "Base URL",
+    "baseUrlExtra": "Pre-filled for built-in providers; edit if needed.",
+    "baseUrlCustomExtra": "Enter an OpenAI-compatible base URL, usually ending with /v1.",
+    "baseUrlInvalid": "Enter a URL starting with http:// or https://",
+    "apiKey": "API Key",
+    "apiKeyPlaceholder": "Enter the upstream API key",
+    "apiKeyExtra": "Stored encrypted and only used to call the upstream service.",
+    "apiKeyEditPlaceholder": "Leave blank to keep the saved key",
+    "apiKeyCurrent": "Currently saved: {{masked}}",
+    "protocols": "Supported Protocols",
+    "protocolsExtra": "Clients can call this account with the selected protocols; with protocol conversion enabled the gateway converts between them automatically.",
+    "protocolsRequired": "Select at least one protocol",
+    "protocolsNone": "This provider has no protocols available for the selected type.",
+    "mappings": "Model Mappings",
+    "mappingsExtra": "Clients call the \"request model\"; the gateway replaces it with the \"upstream model\" when forwarding. 1–100 rows; request model names must be unique within the account.",
+    "requestModel": "Request model",
+    "upstreamModel": "Upstream model",
+    "requestModelPlaceholder": "Name clients use",
+    "upstreamModelPlaceholder": "Provider's actual model ID",
+    "addMapping": "Add mapping",
+    "discover": "Discover models",
+    "mappingsMin": "Add at least one model mapping",
+    "mappingsMax": "At most 100 model mappings",
+    "requestModelDuplicate": "Duplicate request model name",
+    "mappingsEmpty": "No mappings yet. Add one manually or discover models from the upstream.",
+    "priority": "Priority",
+    "priorityExtra": "0–1000; lower values are preferred. Default 100.",
+    "maxConcurrency": "Max Concurrency",
+    "maxConcurrencyExtra": "0–100000; 0 means unlimited.",
+    "testModel": "Test Model",
+    "testModelPlaceholder": "Pick from the upstream models in your mappings",
+    "testModelExtra": "Used for a minimal validation call on save; image accounts are not actually called.",
+    "note": "Note",
+    "enabled": "Enabled",
+    "enabledExtra": "When disabled the gateway will not dispatch requests to this account."
+  },
+  "test": {
+    "success": "Connection succeeded",
+    "successDetail": "Model {{model}} · {{latency}} ms",
+    "failed": "Connection failed",
+    "testing": "Testing connection…"
+  },
+  "validation": {
+    "title": "Pre-save validation failed",
+    "skip": "Skip validation and save"
+  },
+  "discover": {
+    "title": "Discover Models",
+    "searchPlaceholder": "Search models",
+    "empty": "The upstream returned no models",
+    "noMatch": "No matching models",
+    "selected": "{{count}} selected",
+    "mapped": "Mapped",
+    "confirm": "Add selected",
+    "selectAll": "Select all unmapped",
+    "clear": "Clear selection",
+    "needBaseUrl": "Fill in the base URL first",
+    "needKey": "Fill in the API key first",
+    "hint": "Already-mapped models are pre-checked and locked; newly checked models are added as mappings with the same name."
+  }
+}

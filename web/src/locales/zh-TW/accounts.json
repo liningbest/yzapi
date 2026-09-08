@@ -1,0 +1,123 @@
+{
+  "title": "帳號池",
+  "subtitle": "管理上游供應商帳號、支援協定與模型對應，閘道依優先順序與健康狀態調度請求。",
+  "add": "新增帳號",
+  "edit": "編輯帳號",
+  "filter": {
+    "provider": "供應商",
+    "type": "協定類型",
+    "protocol": "具體協定",
+    "enabled": "狀態",
+    "health": "健康",
+    "keywordPlaceholder": "搜尋名稱 / 位址 / 模型"
+  },
+  "columns": {
+    "account": "帳號",
+    "type": "類型",
+    "protocols": "支援協定",
+    "models": "模型",
+    "priority": "優先順序",
+    "maxConcurrency": "最大並行",
+    "health": "健康",
+    "enabled": "啟用",
+    "updatedAt": "更新時間",
+    "actions": "操作",
+    "chooser": "顯示欄位"
+  },
+  "modelsCount": "{{count}} 個模型",
+  "noModels": "未設定模型",
+  "mappingsPopoverTitle": "模型對應（請求模型 → 上游模型）",
+  "empty": {
+    "hint": "尚未新增任何上游帳號，新增後即可透過閘道呼叫模型。"
+  },
+  "resetHealth": {
+    "confirm": "確定重設此帳號的健康狀態嗎？將清除冷卻並重新標記為可用。",
+    "success": "已重設健康狀態",
+    "alreadyAvailable": "目前狀態已是可用"
+  },
+  "delete": {
+    "confirm": "確定刪除帳號「{{name}}」嗎？此操作無法復原。"
+  },
+  "steps": {
+    "provider": "供應商",
+    "basic": "基本資訊",
+    "protocols": "協定設定",
+    "mappings": "模型對應",
+    "schedule": "調度參數",
+    "prev": "上一步",
+    "next": "下一步"
+  },
+  "form": {
+    "provider": "供應商",
+    "providerRequired": "請選擇供應商",
+    "providerHint": "內建供應商會自動填入服務位址與可用協定；自訂供應商可接入任意 OpenAI 相容服務。",
+    "docs": "檢視 {{name}} 接入文件",
+    "accountType": "帳號類型",
+    "accountTypeExtra": "不同帳號類型對應不同的服務位址，切換後會自動更新。",
+    "type": "協定類型",
+    "typeExtra": "文字 / 文生圖 / 向量三選一，建立後不可修改。",
+    "typeLocked": "建立後不可修改",
+    "name": "名稱",
+    "namePlaceholder": "例如：OpenAI 主帳號",
+    "nameExtra": "顯示名稱，便於在列表、日誌與總覽中識別。",
+    "baseUrl": "服務位址",
+    "baseUrlExtra": "內建供應商自動填入，可依需求修改。",
+    "baseUrlCustomExtra": "需填寫 OpenAI 相容的服務位址，通常以 /v1 結尾。",
+    "baseUrlInvalid": "請輸入以 http:// 或 https:// 開頭的位址",
+    "apiKey": "API Key",
+    "apiKeyPlaceholder": "請輸入上游 API Key",
+    "apiKeyExtra": "加密儲存，僅用於呼叫上游服務。",
+    "apiKeyEditPlaceholder": "留空則沿用已儲存的 Key",
+    "apiKeyCurrent": "目前已儲存：{{masked}}",
+    "protocols": "支援協定",
+    "protocolsExtra": "用戶端可使用勾選的協定呼叫此帳號；開啟協定轉換後，閘道可在協定之間自動轉換。",
+    "protocolsRequired": "請至少選擇一種協定",
+    "protocolsNone": "目前供應商在此協定類型下沒有可用協定。",
+    "mappings": "模型對應",
+    "mappingsExtra": "用戶端使用「請求模型名稱」呼叫，閘道轉發時替換為「上游模型名稱」。1–100 筆，同帳號內請求模型名稱需唯一。",
+    "requestModel": "請求模型名稱",
+    "upstreamModel": "上游模型名稱",
+    "requestModelPlaceholder": "用戶端呼叫時使用的名稱",
+    "upstreamModelPlaceholder": "供應商實際的模型 ID",
+    "addMapping": "新增對應",
+    "discover": "探索模型",
+    "mappingsMin": "請至少新增一筆模型對應",
+    "mappingsMax": "最多 100 筆模型對應",
+    "requestModelDuplicate": "請求模型名稱重複",
+    "mappingsEmpty": "尚未新增模型對應，可手動新增或從上游探索。",
+    "priority": "優先順序",
+    "priorityExtra": "0–1000，數值越小越優先，預設 100。",
+    "maxConcurrency": "最大並行",
+    "maxConcurrencyExtra": "0–100000，0 表示不限制。",
+    "testModel": "測試模型",
+    "testModelPlaceholder": "從模型對應的上游模型中選擇",
+    "testModelExtra": "儲存時用於最小呼叫驗證；文生圖帳號不會真實呼叫。",
+    "note": "備註",
+    "enabled": "啟用",
+    "enabledExtra": "停用後閘道不會向此帳號派發請求。"
+  },
+  "test": {
+    "success": "連線成功",
+    "successDetail": "模型 {{model}} · 耗時 {{latency}} ms",
+    "failed": "連線失敗",
+    "testing": "正在測試連線…"
+  },
+  "validation": {
+    "title": "儲存前驗證失敗",
+    "skip": "略過驗證並儲存"
+  },
+  "discover": {
+    "title": "探索模型",
+    "searchPlaceholder": "搜尋模型",
+    "empty": "上游未回傳任何模型",
+    "noMatch": "沒有符合的模型",
+    "selected": "已選 {{count}} 個",
+    "mapped": "已對應",
+    "confirm": "新增所選",
+    "selectAll": "全選未對應",
+    "clear": "清除選取",
+    "needBaseUrl": "請先填寫服務位址",
+    "needKey": "請先填寫 API Key",
+    "hint": "已對應的模型會自動勾選且無法取消；新勾選的模型將以相同名稱加入對應。"
+  }
+}

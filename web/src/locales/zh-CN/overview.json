@@ -1,0 +1,37 @@
+{
+  "title": "概览",
+  "subtitle": "网关实时状态与用量概况",
+  "autoRefresh": "自动刷新 {{seconds}}s",
+  "live": {
+    "activeUsers": "当前活跃用户",
+    "activeUsersHint": "近期有请求的用户数",
+    "streams": "当前流式请求",
+    "streamsHint": "正在进行的流式响应数",
+    "inflight": "当前网关并发",
+    "waiting": "当前等待队列"
+  },
+  "accounts": {
+    "title": "模型账号并发",
+    "empty": "暂无账号",
+    "emptyHint": "前往账号池添加上游账号后，这里会显示实时并发。"
+  },
+  "groups": {
+    "title": "用户组并发",
+    "tokenUsage": "Token 用量",
+    "empty": "暂无用户组",
+    "emptyHint": "创建用户组后，这里会显示实时并发与本月 Token 用量。"
+  },
+  "usage": {
+    "title": "用量统计",
+    "cacheRate": "缓存命中率",
+    "requests": "请求总数",
+    "success": "成功",
+    "failed": "失败",
+    "failRate": "失败率",
+    "activeUsers": "活跃用户",
+    "activeKeys": "API Key 数",
+    "trend": "Token 趋势",
+    "trendEmpty": "暂无趋势数据",
+    "trendEmptyHint": "所选时间范围内没有调用记录。"
+  }
+}

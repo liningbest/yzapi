@@ -1,0 +1,37 @@
+{
+  "title": "總覽",
+  "subtitle": "閘道即時狀態與用量概況",
+  "autoRefresh": "自動重新整理 {{seconds}}s",
+  "live": {
+    "activeUsers": "目前活躍使用者",
+    "activeUsersHint": "近期有請求的使用者數",
+    "streams": "目前串流請求",
+    "streamsHint": "正在進行的串流回應數",
+    "inflight": "目前閘道並行",
+    "waiting": "目前等待佇列"
+  },
+  "accounts": {
+    "title": "模型帳號並行",
+    "empty": "尚無帳號",
+    "emptyHint": "前往帳號池新增上游帳號後，這裡會顯示即時並行。"
+  },
+  "groups": {
+    "title": "使用者群組並行",
+    "tokenUsage": "Token 用量",
+    "empty": "尚無使用者群組",
+    "emptyHint": "建立使用者群組後，這裡會顯示即時並行與本月 Token 用量。"
+  },
+  "usage": {
+    "title": "用量統計",
+    "cacheRate": "快取命中率",
+    "requests": "請求總數",
+    "success": "成功",
+    "failed": "失敗",
+    "failRate": "失敗率",
+    "activeUsers": "活躍使用者",
+    "activeKeys": "API Key 數",
+    "trend": "Token 趨勢",
+    "trendEmpty": "尚無趨勢資料",
+    "trendEmptyHint": "所選時間範圍內沒有呼叫記錄。"
+  }
+}

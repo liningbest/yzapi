@@ -1,0 +1,46 @@
+{
+  "title": "模型組",
+  "subtitle": "將多個請求模型組合為有序候選清單，請求依序派發，目前模型不可用時自動嘗試下一個。",
+  "add": "新增模型組",
+  "edit": "編輯模型組",
+  "filter": {
+    "keywordPlaceholder": "搜尋名稱 / 模型"
+  },
+  "columns": {
+    "name": "名稱",
+    "type": "類型",
+    "models": "模型",
+    "note": "備註",
+    "updatedAt": "更新時間",
+    "actions": "操作"
+  },
+  "inUseByRoute": "智慧路由使用中",
+  "moreModels": "其餘 {{count}} 個模型",
+  "modelsCount": "共 {{count}} 個",
+  "deleteDisabled": "此模型組正被智慧路由引用，無法刪除",
+  "delete": {
+    "confirm": "確定刪除模型組「{{name}}」嗎？此操作無法復原。"
+  },
+  "empty": {
+    "hint": "尚未建立模型組，建立後可在使用者群組中授權使用。"
+  },
+  "form": {
+    "name": "名稱",
+    "namePlaceholder": "例如：chat-default",
+    "nameExtra": "名稱需唯一，使用者群組授權後可直接作為模型名稱呼叫。",
+    "type": "協定類型",
+    "typeExtra": "建立後不可修改，組內只能加入同類型的模型。",
+    "typeLocked": "建立後不可修改",
+    "models": "模型清單",
+    "modelsExtra": "請求依序派發，目前模型不可用時自動嘗試下一個。1–100 個，可從候選中選擇或手動輸入。",
+    "modelsPlaceholder": "選擇或輸入請求模型名稱，按 Enter 新增",
+    "modelsMin": "請至少新增一個模型",
+    "modelsMax": "最多 100 個模型",
+    "modelsDuplicate": "模型名稱重複：{{name}}",
+    "modelsEmpty": "尚未新增模型，請在上方選擇或輸入。",
+    "modelExists": "此模型已在清單中",
+    "dragHint": "拖曳排序",
+    "note": "備註",
+    "orderHint": "序號越小優先順序越高"
+  }
+}

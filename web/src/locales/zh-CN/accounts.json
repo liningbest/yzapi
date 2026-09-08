@@ -1,0 +1,123 @@
+{
+  "title": "账号池",
+  "subtitle": "管理上游供应商账号、支持协议与模型映射，网关按优先级与健康状态调度请求。",
+  "add": "添加账号",
+  "edit": "编辑账号",
+  "filter": {
+    "provider": "供应商",
+    "type": "协议类型",
+    "protocol": "具体协议",
+    "enabled": "状态",
+    "health": "健康",
+    "keywordPlaceholder": "搜索名称 / 地址 / 模型"
+  },
+  "columns": {
+    "account": "账号",
+    "type": "类型",
+    "protocols": "支持协议",
+    "models": "模型",
+    "priority": "优先级",
+    "maxConcurrency": "最大并发",
+    "health": "健康",
+    "enabled": "启用",
+    "updatedAt": "更新时间",
+    "actions": "操作",
+    "chooser": "显示列"
+  },
+  "modelsCount": "{{count}} 个模型",
+  "noModels": "未配置模型",
+  "mappingsPopoverTitle": "模型映射（请求模型 → 上游模型）",
+  "empty": {
+    "hint": "还没有添加任何上游账号，添加后即可通过网关调用模型。"
+  },
+  "resetHealth": {
+    "confirm": "确定重置该账号的健康状态吗？将清除冷却并重新标记为可用。",
+    "success": "已重置健康状态",
+    "alreadyAvailable": "当前状态已是可用"
+  },
+  "delete": {
+    "confirm": "确定删除账号「{{name}}」吗？此操作不可恢复。"
+  },
+  "steps": {
+    "provider": "供应商",
+    "basic": "基本信息",
+    "protocols": "协议配置",
+    "mappings": "模型映射",
+    "schedule": "调度参数",
+    "prev": "上一步",
+    "next": "下一步"
+  },
+  "form": {
+    "provider": "供应商",
+    "providerRequired": "请选择供应商",
+    "providerHint": "内置供应商会自动填充服务地址与可用协议；自定义供应商可接入任意 OpenAI 兼容服务。",
+    "docs": "查看 {{name}} 接入文档",
+    "accountType": "账号类型",
+    "accountTypeExtra": "不同账号类型对应不同的服务地址，切换后会自动更新。",
+    "type": "协议类型",
+    "typeExtra": "文本 / 文生图 / 向量三选一，创建后不可修改。",
+    "typeLocked": "创建后不可修改",
+    "name": "名称",
+    "namePlaceholder": "例如：OpenAI 主账号",
+    "nameExtra": "显示名，便于在列表、日志和概览中识别。",
+    "baseUrl": "服务地址",
+    "baseUrlExtra": "内置供应商自动填充，可按需修改。",
+    "baseUrlCustomExtra": "需填写 OpenAI 兼容的服务地址，通常以 /v1 结尾。",
+    "baseUrlInvalid": "请输入以 http:// 或 https:// 开头的地址",
+    "apiKey": "API Key",
+    "apiKeyPlaceholder": "请输入上游 API Key",
+    "apiKeyExtra": "加密存储，仅用于调用上游服务。",
+    "apiKeyEditPlaceholder": "留空则沿用已保存的 Key",
+    "apiKeyCurrent": "当前已保存：{{masked}}",
+    "protocols": "支持协议",
+    "protocolsExtra": "客户端可使用勾选的协议调用此账号；开启协议转换后，网关可在协议之间自动转换。",
+    "protocolsRequired": "请至少选择一种协议",
+    "protocolsNone": "当前供应商在该协议类型下没有可用协议。",
+    "mappings": "模型映射",
+    "mappingsExtra": "客户端使用“请求模型名称”调用，网关转发时替换为“上游模型名称”。1–100 条，同账号内请求模型名称需唯一。",
+    "requestModel": "请求模型名称",
+    "upstreamModel": "上游模型名称",
+    "requestModelPlaceholder": "客户端调用时使用的名称",
+    "upstreamModelPlaceholder": "供应商实际的模型 ID",
+    "addMapping": "添加映射",
+    "discover": "发现模型",
+    "mappingsMin": "请至少添加一条模型映射",
+    "mappingsMax": "最多 100 条模型映射",
+    "requestModelDuplicate": "请求模型名称重复",
+    "mappingsEmpty": "尚未添加模型映射，可手动添加或从上游发现。",
+    "priority": "优先级",
+    "priorityExtra": "0–1000，数值越小越优先，默认 100。",
+    "maxConcurrency": "最大并发",
+    "maxConcurrencyExtra": "0–100000，0 表示不限制。",
+    "testModel": "测试模型",
+    "testModelPlaceholder": "从模型映射的上游模型中选择",
+    "testModelExtra": "保存时用于最小调用验证；文生图账号不会真实调用。",
+    "note": "备注",
+    "enabled": "启用",
+    "enabledExtra": "禁用后网关不会向该账号派发请求。"
+  },
+  "test": {
+    "success": "连接成功",
+    "successDetail": "模型 {{model}} · 耗时 {{latency}} ms",
+    "failed": "连接失败",
+    "testing": "正在测试连接…"
+  },
+  "validation": {
+    "title": "保存前验证失败",
+    "skip": "跳过验证并保存"
+  },
+  "discover": {
+    "title": "发现模型",
+    "searchPlaceholder": "搜索模型",
+    "empty": "上游未返回任何模型",
+    "noMatch": "没有匹配的模型",
+    "selected": "已选 {{count}} 个",
+    "mapped": "已映射",
+    "confirm": "添加所选",
+    "selectAll": "全选未映射",
+    "clear": "清空选择",
+    "needBaseUrl": "请先填写服务地址",
+    "needKey": "请先填写 API Key",
+    "hint": "已映射的模型会被自动勾选且不可取消；新勾选的模型将以相同名称加入映射。"
+  }
+}

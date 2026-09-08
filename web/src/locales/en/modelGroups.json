@@ -1,0 +1,46 @@
+{
+  "title": "Model Groups",
+  "subtitle": "Combine several request models into an ordered candidate list. Requests are dispatched in order and fall through to the next model when the current one is unavailable.",
+  "add": "Add Model Group",
+  "edit": "Edit Model Group",
+  "filter": {
+    "keywordPlaceholder": "Search name / model"
+  },
+  "columns": {
+    "name": "Name",
+    "type": "Type",
+    "models": "Models",
+    "note": "Note",
+    "updatedAt": "Updated",
+    "actions": "Actions"
+  },
+  "inUseByRoute": "Used by Smart Route",
+  "moreModels": "{{count}} more models",
+  "modelsCount": "{{count}} in total",
+  "deleteDisabled": "This group is referenced by Smart Route and cannot be deleted",
+  "delete": {
+    "confirm": "Delete model group \"{{name}}\"? This cannot be undone."
+  },
+  "empty": {
+    "hint": "No model groups yet. Create one and grant it to user groups."
+  },
+  "form": {
+    "name": "Name",
+    "namePlaceholder": "e.g. chat-default",
+    "nameExtra": "Must be unique. Once granted to a user group it can be called directly as a model name.",
+    "type": "Type",
+    "typeExtra": "Cannot be changed after creation; only models of the same type can be added.",
+    "typeLocked": "Cannot be changed after creation",
+    "models": "Models",
+    "modelsExtra": "Requests are dispatched in order and fall through to the next model when the current one is unavailable. 1–100 models; pick from candidates or type your own.",
+    "modelsPlaceholder": "Select or type a request model name and press Enter",
+    "modelsMin": "Add at least one model",
+    "modelsMax": "At most 100 models",
+    "modelsDuplicate": "Duplicate model name: {{name}}",
+    "modelsEmpty": "No models yet. Select or type one above.",
+    "modelExists": "This model is already in the list",
+    "dragHint": "Drag to reorder",
+    "note": "Note",
+    "orderHint": "Lower position means higher priority"
+  }
+}
