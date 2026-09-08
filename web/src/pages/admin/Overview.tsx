@@ -396,8 +396,7 @@ export default function Overview() {
           {t('overview:usage.title')}
         </SectionTitle>
 
-        <Row gutter={[16, 16]}>
-          <Col xs={24} sm={12} xl={4} xxl={4}>
+        <div className="yz-stat-grid yz-stat-grid-5">
             <StatCard
               size="small"
               title={t('common:common.totalTokens')}
@@ -406,8 +405,6 @@ export default function Overview() {
               color={CHART_PALETTE[0]}
               loading={usage.isLoading}
             />
-          </Col>
-          <Col xs={24} sm={12} xl={5}>
             <StatCard
               size="small"
               title={t('common:common.promptTokens')}
@@ -416,8 +413,6 @@ export default function Overview() {
               color={CHART_PALETTE[1]}
               loading={usage.isLoading}
             />
-          </Col>
-          <Col xs={24} sm={12} xl={5}>
             <StatCard
               size="small"
               title={t('common:common.completionTokens')}
@@ -426,8 +421,6 @@ export default function Overview() {
               color={CHART_PALETTE[5]}
               loading={usage.isLoading}
             />
-          </Col>
-          <Col xs={24} sm={12} xl={5}>
             <StatCard
               size="small"
               title={t('common:common.cachedTokens')}
@@ -436,8 +429,6 @@ export default function Overview() {
               color={CHART_PALETTE[3]}
               loading={usage.isLoading}
             />
-          </Col>
-          <Col xs={24} sm={12} xl={5}>
             <StatCard
               size="small"
               title={t('overview:usage.cacheRate')}
@@ -446,11 +437,9 @@ export default function Overview() {
               color={CHART_PALETTE[2]}
               loading={usage.isLoading}
             />
-          </Col>
-        </Row>
+        </div>
 
-        <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-          <Col xs={24} sm={12} xl={4}>
+        <div className="yz-stat-grid yz-stat-grid-6">
             <StatCard
               size="small"
               title={t('overview:usage.requests')}
@@ -459,8 +448,6 @@ export default function Overview() {
               color={CHART_PALETTE[0]}
               loading={usage.isLoading}
             />
-          </Col>
-          <Col xs={24} sm={12} xl={4}>
             <StatCard
               size="small"
               title={t('overview:usage.success')}
@@ -469,8 +456,6 @@ export default function Overview() {
               color={CHART_PALETTE[3]}
               loading={usage.isLoading}
             />
-          </Col>
-          <Col xs={24} sm={12} xl={4}>
             <StatCard
               size="small"
               title={t('overview:usage.failed')}
@@ -479,8 +464,6 @@ export default function Overview() {
               color={CHART_PALETTE[4]}
               loading={usage.isLoading}
             />
-          </Col>
-          <Col xs={24} sm={12} xl={4}>
             <StatCard
               size="small"
               title={t('overview:usage.failRate')}
@@ -489,8 +472,6 @@ export default function Overview() {
               color={CHART_PALETTE[2]}
               loading={usage.isLoading}
             />
-          </Col>
-          <Col xs={24} sm={12} xl={4}>
             <StatCard
               size="small"
               title={t('overview:usage.activeUsers')}
@@ -499,8 +480,6 @@ export default function Overview() {
               color={CHART_PALETTE[1]}
               loading={usage.isLoading}
             />
-          </Col>
-          <Col xs={24} sm={12} xl={4}>
             <StatCard
               size="small"
               title={t('overview:usage.activeKeys')}
@@ -509,8 +488,7 @@ export default function Overview() {
               color={CHART_PALETTE[5]}
               loading={usage.isLoading}
             />
-          </Col>
-        </Row>
+        </div>
 
         <SectionTitle style={{ marginTop: 24 }}>{t('overview:usage.trend')}</SectionTitle>
         {!usage.isLoading && trend.length === 0 ? (

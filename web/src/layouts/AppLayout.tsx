@@ -212,18 +212,17 @@ export default function AppLayout({ area }: Props) {
                 onClick={() => (mobile ? setMobileOpen(true) : setCollapsed((c) => !c))}
               />
             </Tooltip>
-            <div style={{ minWidth: 0 }}>
+            {mobile ? (
               <div className="yz-header-title">{current ? t(`nav.${current.navKey}`) : t('app.name')}</div>
-              {!mobile ? (
-                <Breadcrumb
-                  style={{ fontSize: 12, lineHeight: 1 }}
-                  items={[
-                    { title: area === 'admin' ? t('app.adminConsole') : t('app.userConsole') },
-                    ...(current ? [{ title: t(`nav.${current.navKey}`) }] : []),
-                  ]}
-                />
-              ) : null}
-            </div>
+            ) : (
+              <Breadcrumb
+                className="yz-header-crumb"
+                items={[
+                  { title: area === 'admin' ? t('app.adminConsole') : t('app.userConsole') },
+                  ...(current ? [{ title: <span className="yz-header-current">{t(`nav.${current.navKey}`)}</span> }] : []),
+                ]}
+              />
+            )}
           </div>
           <div className="yz-header-right">
             <Dropdown menu={{ items: langMenu, selectedKeys: [locale] }} placement="bottomRight">

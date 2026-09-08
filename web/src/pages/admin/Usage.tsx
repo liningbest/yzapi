@@ -231,13 +231,11 @@ export default function Usage() {
         </FilterBar>
       </Card>
 
-      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        {stats.map((st, i) => (
-          <Col key={st.key} xs={24} sm={12} xl={i === 0 ? 8 : 4}>
-            <StatCard title={st.title} value={st.value} hint={st.hint} icon={st.icon} color={st.color} loading={loading} />
-          </Col>
+      <div className="yz-stat-grid">
+        {stats.map((st) => (
+          <StatCard key={st.key} title={st.title} value={st.value} hint={st.hint} icon={st.icon} color={st.color} loading={loading} />
         ))}
-      </Row>
+      </div>
 
       <Card className="yz-card" style={{ marginBottom: 16 }}>
         <SectionTitle

@@ -76,7 +76,7 @@ export default function StatCard({
     </div>
   );
   return (
-    <Card className="yz-card" style={style} styles={{ body: { padding: size === 'small' ? 16 : 20 } }}>
+    <Card className="yz-card" style={{ height: '100%', ...style }} styles={{ body: { padding: size === 'small' ? 16 : 20 } }}>
       {tooltip ? <Tooltip title={tooltip}>{body}</Tooltip> : body}
     </Card>
   );
