@@ -1,9 +1,11 @@
 # ---------- frontend ----------
 FROM node:22-alpine AS web
 WORKDIR /src/web
-RUN corepack enable && corepack prepare pnpm@latest --activate
-COPY web/package.json web/pnpm-lock.yaml* ./
-RUN pnpm install --frozen-lockfile || pnpm install
+# Pin pnpm: newer majors turn "ignored build scripts" into a hard error (ERR_PNPM_IGNORED_BUILDS)
+RUN corepack enable && corepack prepare pnpm@11.22.0 --activate
+# pnpm-workspace.yaml carries allowBuilds (esbuild); without it pnpm refuses the install
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
 COPY web/ ./
 RUN pnpm build
 
