@@ -4,6 +4,7 @@ import {
   App,
   Button,
   Checkbox,
+  Divider,
   Form,
   Input,
   InputNumber,
@@ -11,7 +12,6 @@ import {
   Select,
   Space,
   Spin,
-  Steps,
   Switch,
   Typography,
 } from 'antd';
@@ -27,11 +27,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { accountsApi } from '@/api';
 import type { NormalizedError } from '@/api';
-import { FormDrawer } from '@/components';
+import { FormDrawer, ProviderAvatar } from '@/components';
 import type { AccountInput, AccountTestResult, ModelMapping, ModelType, Protocol, Provider } from '@/types';
 import { MODEL_TYPES, PROTOCOLS_BY_TYPE, PROTOCOL_LABELS } from '@/utils/constants';
 import { PROVIDER_DOCS } from '@/utils/provider';
-import ProviderPicker from './ProviderPicker';
 import DiscoverModal from './DiscoverModal';
 
 interface Props {
@@ -59,16 +58,6 @@ interface FormValues {
   enabled: boolean;
 }
 
-type StepStatus = 'wait' | 'process' | 'finish' | 'error';
-
-const STEP_KEYS = ['provider', 'basic', 'protocols', 'mappings', 'schedule'] as const;
-const STEP_FIELDS: (keyof FormValues)[][] = [
-  ['provider', 'account_type', 'type'],
-  ['name', 'base_url', 'api_key'],
-  ['protocols'],
-  ['mappings'],
-  ['priority', 'max_concurrency', 'test_model', 'note', 'enabled'],
-];
 
 function protocolOptions(p: Provider | undefined, type: ModelType | undefined): Protocol[] {
   if (!type) return [];
@@ -115,8 +104,6 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
   const [form] = Form.useForm<FormValues>();
   const isEdit = id !== undefined;
 
-  const [step, setStep] = useState(0);
-  const [status, setStatus] = useState<Record<number, StepStatus>>({});
   const [testResult, setTestResult] = useState<{ ok: boolean; title: string; detail?: string } | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [discover, setDiscover] = useState<{ open: boolean; models: string[] }>({ open: false, models: [] });
@@ -193,36 +180,17 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
     }
   };
 
-  // ---------- steps ----------
-  const validateStep = async (i: number): Promise<boolean> => {
-    try {
-      await form.validateFields(STEP_FIELDS[i], { recursive: true });
-      setStatus((s) => ({ ...s, [i]: 'finish' }));
-      return true;
-    } catch {
-      setStatus((s) => ({ ...s, [i]: 'error' }));
-      return false;
-    }
-  };
-
-  const goTo = (i: number) => {
-    if (i === step) return;
-    void validateStep(step);
-    setStep(i);
-  };
-
-  const next = async () => {
-    if (await validateStep(step)) setStep(Math.min(step + 1, STEP_KEYS.length - 1));
-  };
-
+  // ---------- validation ----------
   const validateAll = async (): Promise<FormValues | null> => {
-    const results = await Promise.all(STEP_KEYS.map((_, i) => validateStep(i)));
-    const firstBad = results.findIndex((ok) => !ok);
-    if (firstBad >= 0) {
-      setStep(firstBad);
+    try {
+      await form.validateFields({ recursive: true });
+      return form.getFieldsValue(true) as FormValues;
+    } catch (e) {
+      const err = e as { errorFields?: { name: (string | number)[] }[] };
+      const first = err.errorFields?.[0]?.name;
+      if (first) form.scrollToField(first, { block: 'center', behavior: 'smooth' });
       return null;
     }
-    return form.getFieldsValue(true) as FormValues;
   };
 
   // ---------- mutations ----------
@@ -289,12 +257,12 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
     const apiKey = ((form.getFieldValue('api_key') as string | undefined) ?? '').trim();
     if (!baseUrl) {
       message.warning(t('accounts:discover.needBaseUrl'));
-      setStep(1);
+      form.scrollToField('base_url', { block: 'center' });
       return;
     }
     if (!apiKey && !isEdit) {
       message.warning(t('accounts:discover.needKey'));
-      setStep(1);
+      form.scrollToField('api_key', { block: 'center' });
       return;
     }
     discoverMut.mutate({
@@ -331,18 +299,33 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
   const docsUrl = providerKey ? PROVIDER_DOCS[providerKey] : undefined;
   const requiredRule = { required: true, message: t('common:common.required') };
 
-  const stepItems = STEP_KEYS.map((k, i) => ({
-    title: t(`accounts:steps.${k}`),
-    status: (i === step ? 'process' : status[i] ?? 'wait') as StepStatus,
-    disabled: i > 0 && !providerKey,
+  const lockedKeys = isEdit && type ? providers.filter((p) => !p.types.includes(type)).map((p) => p.key) : [];
+  const providerOptions = providers.map((p) => ({
+    value: p.key,
+    disabled: lockedKeys.includes(p.key) && p.key !== providerKey,
+    searchText: `${p.name} ${p.key}`,
+    label: (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <ProviderAvatar provider={p.key} size={20} />
+        <span style={{ fontWeight: 500 }}>{p.name}</span>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {p.types.map((x) => t(`common:type.${x}`)).join(' / ')}
+        </Typography.Text>
+      </div>
+    ),
   }));
 
-  const show = (i: number): React.CSSProperties => ({ display: i === step ? 'block' : 'none' });
+  const Section = ({ title }: { title: string }) => (
+    <Divider orientation="left" orientationMargin={0} style={{ margin: '4px 0 12px', fontSize: 13 }}>
+      {title}
+    </Divider>
+  );
+  const twoCols: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 16 };
 
   return (
     <FormDrawer
       open={open}
-      width={640}
+      width={760}
       title={isEdit ? t('accounts:edit') : t('accounts:add')}
       onClose={onClose}
       onSubmit={() => void onSubmit()}
@@ -354,8 +337,6 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
       }
     >
       <Spin spinning={isEdit && detail.isLoading}>
-        <Steps size="small" current={step} onChange={goTo} items={stepItems} style={{ marginBottom: 20 }} />
-
         {testResult ? (
           <Alert
             type={testResult.ok ? 'success' : 'error'}
@@ -391,8 +372,9 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
           onValuesChange={onValuesChange}
           initialValues={{ type: 'text', protocols: [], mappings: [], priority: 100, max_concurrency: 0, enabled: true }}
         >
-          {/* ① provider */}
-          <div style={show(0)}>
+          {/* provider */}
+          <Section title={t('accounts:steps.provider')} />
+          <div style={twoCols}>
             <Form.Item
               name="provider"
               label={t('accounts:form.provider')}
@@ -408,25 +390,15 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
                 )
               }
             >
-              <ProviderPicker
-                providers={providers}
-                disabledKeys={isEdit && type ? providers.filter((p) => !p.types.includes(type)).map((p) => p.key) : []}
+              <Select
+                showSearch
+                placeholder={t('accounts:form.provider')}
+                options={providerOptions}
+                optionFilterProp="searchText"
+                optionLabelProp="label"
+                listHeight={320}
               />
             </Form.Item>
-            {provider?.account_types?.length ? (
-              <Form.Item
-                name="account_type"
-                label={t('accounts:form.accountType')}
-                extra={t('accounts:form.accountTypeExtra')}
-                rules={[requiredRule]}
-              >
-                <Radio.Group
-                  optionType="button"
-                  buttonStyle="solid"
-                  options={provider.account_types.map((a) => ({ label: a.name, value: a.key }))}
-                />
-              </Form.Item>
-            ) : null}
             <Form.Item
               name="type"
               label={t('accounts:form.type')}
@@ -436,9 +408,24 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
               <Radio.Group optionType="button" buttonStyle="solid" disabled={isEdit} options={typeOptions} />
             </Form.Item>
           </div>
+          {provider?.account_types?.length ? (
+            <Form.Item
+              name="account_type"
+              label={t('accounts:form.accountType')}
+              extra={t('accounts:form.accountTypeExtra')}
+              rules={[requiredRule]}
+            >
+              <Radio.Group
+                optionType="button"
+                buttonStyle="solid"
+                options={provider.account_types.map((a) => ({ label: a.name, value: a.key }))}
+              />
+            </Form.Item>
+          ) : null}
 
-          {/* ② basics */}
-          <div style={show(1)}>
+          {/* basics */}
+          <Section title={t('accounts:steps.basic')} />
+          <div style={twoCols}>
             <Form.Item
               name="name"
               label={t('accounts:form.name')}
@@ -458,7 +445,8 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
             >
               <Input className="yz-mono" placeholder="https://api.example.com/v1" />
             </Form.Item>
-            <Form.Item
+          </div>
+          <Form.Item
               name="api_key"
               label={t('accounts:form.apiKey')}
               extra={
@@ -473,51 +461,51 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
                 placeholder={isEdit ? t('accounts:form.apiKeyEditPlaceholder') : t('accounts:form.apiKeyPlaceholder')}
               />
             </Form.Item>
-          </div>
 
-          {/* ③ protocols */}
-          <div style={show(2)}>
-            <Form.Item
-              name="protocols"
-              label={t('accounts:form.protocols')}
-              extra={t('accounts:form.protocolsExtra')}
-              rules={[
-                {
-                  validator: async (_rule, v: Protocol[] | undefined) => {
-                    if (!v?.length) throw new Error(t('accounts:form.protocolsRequired'));
-                  },
+          {/* protocols */}
+          <Section title={t('accounts:steps.protocols')} />
+          <Form.Item
+            name="protocols"
+            label={t('accounts:form.protocols')}
+            extra={t('accounts:form.protocolsExtra')}
+            rules={[
+              {
+                validator: async (_rule, v: Protocol[] | undefined) => {
+                  if (!v?.length) throw new Error(t('accounts:form.protocolsRequired'));
                 },
-              ]}
-            >
-              <Checkbox.Group style={{ width: '100%' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {protoOpts.map((p) => (
-                    <Checkbox
-                      key={p}
-                      value={p}
-                      style={{
-                        width: '100%',
-                        margin: 0,
-                        padding: '10px 12px',
-                        border: '1px solid var(--yz-border)',
-                        borderRadius: 10,
-                        alignItems: 'center',
-                      }}
-                    >
-                      <div style={{ fontWeight: 500, lineHeight: 1.3 }}>{PROTOCOL_LABELS[p]}</div>
-                      <div className="yz-mono" style={{ color: 'var(--yz-text-secondary)', marginTop: 2 }}>
-                        {p}
-                      </div>
-                    </Checkbox>
-                  ))}
-                </div>
-              </Checkbox.Group>
-            </Form.Item>
-            {protoOpts.length === 0 ? <Alert type="warning" showIcon message={t('accounts:form.protocolsNone')} /> : null}
-          </div>
+              },
+            ]}
+          >
+            <Checkbox.Group style={{ width: '100%' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {protoOpts.map((p) => (
+                  <Checkbox
+                    key={p}
+                    value={p}
+                    style={{
+                      margin: 0,
+                      padding: '6px 12px 6px 10px',
+                      border: '1px solid var(--yz-border)',
+                      borderRadius: 8,
+                      alignItems: 'center',
+                    }}
+                  >
+                    <span style={{ fontWeight: 500 }}>{PROTOCOL_LABELS[p]}</span>
+                    <span className="yz-mono" style={{ color: 'var(--yz-text-secondary)', marginLeft: 6, fontSize: 12 }}>
+                      {p}
+                    </span>
+                  </Checkbox>
+                ))}
+              </div>
+            </Checkbox.Group>
+          </Form.Item>
+          {protoOpts.length === 0 ? (
+            <Alert type="warning" showIcon message={t('accounts:form.protocolsNone')} style={{ marginBottom: 16 }} />
+          ) : null}
 
-          {/* ④ mappings */}
-          <div style={show(3)}>
+          {/* mappings */}
+          <Section title={t('accounts:steps.mappings')} />
+          <div>
             <Form.Item label={t('accounts:form.mappings')} extra={t('accounts:form.mappingsExtra')} required>
               <Form.List
                 name="mappings"
@@ -636,9 +624,10 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
             </Form.Item>
           </div>
 
-          {/* ⑤ scheduling */}
-          <div style={show(4)}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 16 }}>
+          {/* scheduling */}
+          <Section title={t('accounts:steps.schedule')} />
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', columnGap: 16 }}>
               <Form.Item
                 name="priority"
                 label={t('accounts:form.priority')}
@@ -655,47 +644,30 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
               >
                 <InputNumber min={0} max={100000} precision={0} style={{ width: '100%' }} />
               </Form.Item>
+              <Form.Item name="test_model" label={t('accounts:form.testModel')} extra={t('accounts:form.testModelExtra')}>
+                <Select
+                  allowClear
+                  showSearch
+                  placeholder={t('accounts:form.testModelPlaceholder')}
+                  options={upstreamModels.map((m) => ({ value: m, label: m }))}
+                />
+              </Form.Item>
             </div>
-            <Form.Item name="test_model" label={t('accounts:form.testModel')} extra={t('accounts:form.testModelExtra')}>
-              <Select
-                allowClear
-                showSearch
-                placeholder={t('accounts:form.testModelPlaceholder')}
-                options={upstreamModels.map((m) => ({ value: m, label: m }))}
-              />
-            </Form.Item>
-            <Form.Item name="note" label={t('accounts:form.note')}>
-              <Input.TextArea rows={3} maxLength={500} showCount placeholder={t('common:common.notePlaceholder')} />
-            </Form.Item>
-            <Form.Item
-              name="enabled"
-              label={t('accounts:form.enabled')}
-              valuePropName="checked"
-              extra={t('accounts:form.enabledExtra')}
-            >
-              <Switch />
-            </Form.Item>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', columnGap: 24, alignItems: 'start' }}>
+              <Form.Item name="note" label={t('accounts:form.note')}>
+                <Input.TextArea rows={2} maxLength={500} showCount placeholder={t('common:common.notePlaceholder')} />
+              </Form.Item>
+              <Form.Item
+                name="enabled"
+                label={t('accounts:form.enabled')}
+                valuePropName="checked"
+                extra={t('accounts:form.enabledExtra')}
+              >
+                <Switch />
+              </Form.Item>
+            </div>
           </div>
         </Form>
-
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            marginTop: 8,
-            paddingTop: 16,
-            borderTop: '1px solid var(--yz-border)',
-          }}
-        >
-          <Button disabled={step === 0} onClick={() => goTo(step - 1)}>
-            {t('accounts:steps.prev')}
-          </Button>
-          {step < STEP_KEYS.length - 1 ? (
-            <Button type="primary" ghost onClick={() => void next()} disabled={!providerKey}>
-              {t('accounts:steps.next')}
-            </Button>
-          ) : null}
-        </div>
       </Spin>
 
       <DiscoverModal
