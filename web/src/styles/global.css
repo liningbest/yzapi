@@ -395,3 +395,186 @@ body {
     display: none;
   }
 }
+
+/* ---------- login: split layout ---------- */
+.yz-login {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 4fr);
+  background: var(--yz-bg, #f5f7fa);
+}
+.yz-login-hero {
+  position: relative;
+  overflow: hidden;
+  color: #fff;
+  background:
+    radial-gradient(55% 55% at 15% 15%, rgba(99, 102, 241, 0.45), transparent 60%),
+    radial-gradient(45% 45% at 85% 25%, rgba(6, 182, 212, 0.35), transparent 60%),
+    radial-gradient(50% 50% at 40% 100%, rgba(139, 92, 246, 0.35), transparent 60%),
+    linear-gradient(160deg, #0f172a 0%, #111a2e 55%, #0b1220 100%);
+}
+.yz-login-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(circle at 30% 40%, #000 20%, transparent 75%);
+  pointer-events: none;
+}
+.yz-login-hero::after {
+  content: '';
+  position: absolute;
+  right: -120px;
+  bottom: -160px;
+  width: 520px;
+  height: 520px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 60px rgba(255, 255, 255, 0.02), inset 0 0 0 120px rgba(255, 255, 255, 0.02);
+  pointer-events: none;
+}
+.yz-login-hero-inner {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 48px 8% 40px;
+}
+.yz-login-logo {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.yz-login-logo-name {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+.yz-login-logo-sub {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 2px;
+}
+.yz-login-hero-body {
+  max-width: 560px;
+  padding: 40px 0;
+}
+.yz-login-headline {
+  font-size: clamp(30px, 3.2vw, 44px);
+  line-height: 1.2;
+  font-weight: 700;
+  margin: 0 0 18px;
+  letter-spacing: -0.5px;
+  background: linear-gradient(90deg, #ffffff 0%, #c7d2fe 60%, #a5f3fc 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.yz-login-desc {
+  font-size: 15px;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.72);
+  margin: 0 0 32px;
+}
+.yz-login-features {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 14px;
+}
+.yz-login-features li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.88);
+}
+.yz-login-feature-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: #a5f3fc;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  flex-shrink: 0;
+}
+.yz-login-hero-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.yz-login-chip {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.yz-login-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--yz-panel, #ffffff);
+}
+.yz-login-panel-top {
+  display: flex;
+  justify-content: flex-end;
+  padding: 16px 24px 0;
+}
+.yz-login-form {
+  flex: 1;
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+  padding: 24px 24px 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.yz-login-form-mobile-brand {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 18px;
+  margin-bottom: 28px;
+}
+.yz-login-hint {
+  display: block;
+  margin-top: 20px;
+  font-size: 12px;
+  text-align: center;
+}
+.yz-login-panel-foot {
+  padding: 16px 24px 20px;
+  text-align: center;
+}
+[data-theme='dark'] .yz-login,
+.dark .yz-login {
+  --yz-bg: #0b1220;
+  --yz-panel: #0f172a;
+}
+@media (max-width: 991px) {
+  .yz-login {
+    grid-template-columns: 1fr;
+  }
+  .yz-login-hero {
+    display: none;
+  }
+  .yz-login-form-mobile-brand {
+    display: flex;
+  }
+}
