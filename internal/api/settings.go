@@ -215,23 +215,44 @@ func (s *Server) VectorIdentity() string {
 	return fmt.Sprintf("%d|%s|%s", v.AccountID, cl.BaseURL, cl.Model)
 }
 
-// resolveVectorClient returns the cached client for the current vector settings.
-func (s *Server) resolveVectorClient(v settings.Vector) (*vector.Client, string) {
+// vectorSnapshot is a consistent view of the vector runtime taken in one critical
+// section: the client, its identity key, the generation it belongs to and the cache
+// object. A call that embeds with this client may only fill this cache if the
+// generation is still current when it finishes.
+type vectorSnapshot struct {
+	client *vector.Client
+	key    string
+	gen    uint64
+	cache  *embedLRU
+}
+
+// snapshotVector resolves (creating if needed) the client and returns it together with
+// the generation and cache under a single lock, so a request can never pair an old
+// client with a newer generation.
+func (s *Server) snapshotVector(v settings.Vector) (vectorSnapshot, string) {
 	s.vec.mu.Lock()
 	defer s.vec.mu.Unlock()
-	if s.vec.client != nil {
-		return s.vec.client, s.vec.key
+	if s.vec.client == nil {
+		cl, msg := s.vectorClient(v.AccountID, v.Model)
+		if cl == nil {
+			return vectorSnapshot{}, msg
+		}
+		s.vec.client = cl
+		s.vec.key = fmt.Sprintf("%d|%s|%s", v.AccountID, cl.BaseURL, cl.Model)
 	}
-	cl, msg := s.vectorClient(v.AccountID, v.Model)
-	if cl == nil {
-		return nil, msg
-	}
-	s.vec.client = cl
-	s.vec.key = fmt.Sprintf("%d|%s|%s", v.AccountID, cl.BaseURL, cl.Model)
 	if s.vec.cache == nil {
 		s.vec.cache = newEmbedLRU(4096, 10*time.Minute)
 	}
-	return cl, s.vec.key
+	return vectorSnapshot{client: s.vec.client, key: s.vec.key, gen: s.vec.gen, cache: s.vec.cache}, ""
+}
+
+// resolveVectorClient returns the cached client for the current vector settings.
+func (s *Server) resolveVectorClient(v settings.Vector) (*vector.Client, string) {
+	snap, msg := s.snapshotVector(v)
+	if snap.client == nil {
+		return nil, msg
+	}
+	return snap.client, snap.key
 }
 
 // VectorEmbedFunc returns an embedding function bound to the current vector settings.
@@ -239,14 +260,11 @@ func (s *Server) VectorEmbedFunc() func(ctx context.Context, inputs []string) ([
 	return func(ctx context.Context, inputs []string) ([][]float32, error) {
 		v := s.st.Get().Vector
 		perf := s.st.Get().Performance
-		cl, keyOrMsg := s.resolveVectorClient(v)
-		if cl == nil {
-			return nil, errVector(keyOrMsg)
+		snap, msg := s.snapshotVector(v)
+		if snap.client == nil {
+			return nil, errVector(msg)
 		}
-		key := keyOrMsg
-		s.vec.mu.Lock()
-		gen, cache := s.vec.gen, s.vec.cache
-		s.vec.mu.Unlock()
+		cl, key, gen, cache := snap.client, snap.key, snap.gen, snap.cache
 
 		// Serve from cache when every input is known.
 		out := make([][]float32, len(inputs))
