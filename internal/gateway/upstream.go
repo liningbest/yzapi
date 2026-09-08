@@ -50,6 +50,11 @@ type attemptRecord struct {
 	StatusCode  int    `json:"status_code"`
 	LatencyMs   int64  `json:"latency_ms"`
 	Error       string `json:"error,omitempty"`
+	// Per-attempt usage: only the attempt that produced the response carries counts;
+	// failed attempts are "none" (rejected before generation) or "unknown".
+	UsageStatus      string `json:"usage_status"`
+	PromptTokens     int64  `json:"prompt_tokens,omitempty"`
+	CompletionTokens int64  `json:"completion_tokens,omitempty"`
 }
 
 // doUpstream sends the request and returns the response without reading the body.

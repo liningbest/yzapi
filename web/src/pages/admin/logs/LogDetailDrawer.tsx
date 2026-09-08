@@ -1,6 +1,6 @@
 import { Descriptions, Drawer, Space, Timeline, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
-import { NeutralTag, ProtocolTag, ProviderAvatar, ResultTag, SectionTitle, StatusCodeTag, TypeTag } from '@/components';
+import { NeutralTag, ProtocolTag, ProviderAvatar, ResultTag, SectionTitle, StatusCodeTag, TypeTag, UsageStatusTag } from '@/components';
 import { useIsMobile } from '@/hooks/useMediaQuery';
 import type { CallLog, LogAttempt } from '@/types';
 import { formatDateTime, formatMs, formatNumber } from '@/utils/format';
@@ -21,7 +21,18 @@ export default function LogDetailDrawer({ open, log, onClose }: Props) {
   const dash = '-';
 
   const tokensNode = (v: number) =>
-    log?.tokens_known === false ? <Secondary>{t('common:common.unknown')}</Secondary> : formatNumber(v);
+    log?.usage_status === 'none' || (log?.usage_status !== 'partial' && log?.tokens_known === false) ? (
+      <UsageStatusTag status={log?.usage_status ?? 'unknown'} estPrompt={log?.est_prompt_tokens} />
+    ) : (
+      <span>
+        {formatNumber(v)}
+        {log?.usage_status === 'partial' ? (
+          <span style={{ marginLeft: 6 }}>
+            <UsageStatusTag status="partial" />
+          </span>
+        ) : null}
+      </span>
+    );
 
   const attempts: LogAttempt[] = log?.attempts ?? [];
 

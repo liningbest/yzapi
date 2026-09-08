@@ -188,3 +188,23 @@ export function StatusCodeTag({ code }: { code: number | null | undefined }) {
     </NeutralTag>
   );
 }
+
+
+/** Usage status of a call log: confirmed numbers, partial / unknown flagged, none shown as a dash. */
+export function UsageStatusTag({ status, estPrompt }: { status?: string; estPrompt?: number }) {
+  const { t } = useTranslation('common');
+  switch (status) {
+    case 'partial':
+      return <NeutralTag tone="warning" title={t('usageStatus.partialHint')}>{t('usageStatus.partial')}</NeutralTag>;
+    case 'unknown':
+      return (
+        <NeutralTag tone="warning" title={estPrompt ? t('usageStatus.unknownHint', { n: estPrompt }) : undefined}>
+          {t('usageStatus.unknown')}
+        </NeutralTag>
+      );
+    case 'none':
+      return <span style={{ color: 'var(--yz-text-tertiary)' }}>-</span>;
+    default:
+      return null;
+  }
+}

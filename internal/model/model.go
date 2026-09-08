@@ -182,10 +182,18 @@ type APIKey struct {
 	UpdatedAt  time.Time  `json:"updated_at"`
 }
 
-// CallLog records one data-plane request.
+// Usage status of a call log: how trustworthy the token counts are.
+const (
+	UsageConfirmed = "confirmed" // upstream reported complete usage
+	UsagePartial   = "partial"   // stream interrupted; some usage seen (e.g. prompt only)
+	UsageUnknown   = "unknown"   // upstream consumed the request but reported no usage
+	UsageNone      = "none"      // request never reached / was never processed by an upstream
+)
+
+// CallLog records one data-plane request. RequestID is unique so journal replays are idempotent.
 type CallLog struct {
 	ID                uint      `gorm:"primaryKey" json:"id"`
-	RequestID         string    `gorm:"size:40;index" json:"request_id"`
+	RequestID         string    `gorm:"size:40;uniqueIndex" json:"request_id"`
 	UserID            uint      `gorm:"index" json:"user_id"`
 	Username          string    `gorm:"size:64" json:"username"`
 	GroupID           uint      `gorm:"index" json:"group_id"`
@@ -207,7 +215,9 @@ type CallLog struct {
 	TotalTokens       int64     `json:"total_tokens"`
 	CachedTokens      int64     `json:"cached_tokens"`
 	TokensKnown       bool      `json:"tokens_known"`
-	Result            string    `gorm:"size:16;index" json:"result"` // success | client_error | upstream_error | blocked
+	UsageStatus       string    `gorm:"size:12;index" json:"usage_status"` // confirmed | partial | unknown | none
+	EstPromptTokens   int64     `json:"est_prompt_tokens"`                 // rough lower bound (request bytes / 4) when usage is not confirmed
+	Result            string    `gorm:"size:16;index" json:"result"`       // success | client_error | upstream_error | blocked
 	StatusCode        int       `gorm:"index" json:"status_code"`
 	LatencyMs         int64     `json:"latency_ms"`
 	UpstreamLatencyMs int64     `json:"upstream_latency_ms"`
@@ -238,6 +248,7 @@ type UsageHourly struct {
 	CompletionTokens int64     `json:"completion_tokens"`
 	TotalTokens      int64     `json:"total_tokens"`
 	CachedTokens     int64     `json:"cached_tokens"`
+	UnknownUsage     int64     `json:"unknown_usage"` // requests whose usage is partial or unknown
 	LatencyMs        int64     `json:"latency_ms"`
 }
 

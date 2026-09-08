@@ -81,6 +81,9 @@ func (g *Gateway) fail(req *request, e *GatewayError) {
 	}
 	req.log.StatusCode = e.Status
 	req.log.Error = e.Message
+	if req.log.UsageStatus == "" {
+		req.log.UsageStatus = model.UsageNone
+	}
 	switch {
 	case e == ErrContentBlocked:
 		req.log.Result = "blocked"
@@ -101,6 +104,17 @@ func (g *Gateway) finish(req *request) {
 	}
 	l := req.log
 	l.LatencyMs = time.Since(req.start).Milliseconds()
+	if l.UsageStatus == "" {
+		l.UsageStatus = model.UsageNone
+	}
+	if l.UsageStatus != model.UsageConfirmed && l.UsageStatus != model.UsageNone {
+		l.EstPromptTokens = int64(len(req.body)) / 4
+	}
+	if n := len(req.attempts); n > 0 && req.attempts[n-1].StatusCode < 300 && req.attempts[n-1].Error == "" {
+		last := &req.attempts[n-1]
+		last.UsageStatus = l.UsageStatus
+		last.PromptTokens, last.CompletionTokens = l.PromptTokens, l.CompletionTokens
+	}
 	g.Metrics.Requests.With(metrics.Label("result", l.Result) + "," + metrics.Label("api_type", l.APIType)).Inc()
 	g.Metrics.Latency.Observe(float64(l.LatencyMs) / 1000)
 	if l.TotalTokens > 0 {
@@ -603,6 +617,7 @@ func (g *Gateway) forward(req *request, cands []string) {
 					return
 				}
 				rec.Error = err.Error()
+				rec.UsageStatus = model.UsageNone
 				req.attempts = append(req.attempts, rec)
 				g.Metrics.UpstreamAttempts.With(metrics.Label("outcome", "network")).Inc()
 				g.health.fail(up.ID, cooldown, err.Error())
@@ -616,6 +631,7 @@ func (g *Gateway) forward(req *request, cands []string) {
 				cancel()
 				ctr.release()
 				rec.Error = msg
+				rec.UsageStatus = model.UsageNone
 				req.attempts = append(req.attempts, rec)
 				req.log.UpstreamLatencyMs += rec.LatencyMs
 				if retryable(resp.StatusCode) {
@@ -863,7 +879,7 @@ func (g *Gateway) relay(req *request, resp *http.Response, upProto string, dropU
 			usage, known = *up, up.TotalTokens > 0 || up.PromptTokens > 0
 		}
 		req.log.UpstreamLatencyMs += time.Since(t0).Milliseconds()
-		setUsage(req.log, usage, known)
+		setUsage(req.log, usage, known, err == nil)
 		switch {
 		case err == nil:
 			req.log.Result, req.log.StatusCode = "success", 200
@@ -900,7 +916,7 @@ func (g *Gateway) relay(req *request, resp *http.Response, upProto string, dropU
 		}
 	}
 	u, ok := usageFromJSON(upProto, raw)
-	setUsage(req.log, u, ok)
+	setUsage(req.log, u, ok, true)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = dst.Write(out)
@@ -964,7 +980,9 @@ func convertResponse(raw []byte, upProto, clientProto, model string) ([]byte, er
 	return raw, nil
 }
 
-func setUsage(l *model.CallLog, u convert.Usage, known bool) {
+// setUsage stores reported usage and classifies how trustworthy it is. complete is
+// false when the upstream stream ended before its terminal event.
+func setUsage(l *model.CallLog, u convert.Usage, known bool, complete bool) {
 	l.PromptTokens = int64(u.PromptTokens)
 	l.CompletionTokens = int64(u.CompletionTokens)
 	l.TotalTokens = int64(u.TotalTokens)
@@ -974,7 +992,15 @@ func setUsage(l *model.CallLog, u convert.Usage, known bool) {
 	if u.PromptTokensDetails != nil {
 		l.CachedTokens = int64(u.PromptTokensDetails.CachedTokens)
 	}
-	l.TokensKnown = known && l.TotalTokens > 0
+	switch {
+	case known && l.TotalTokens > 0 && complete:
+		l.UsageStatus = model.UsageConfirmed
+	case known && l.TotalTokens > 0:
+		l.UsageStatus = model.UsagePartial // e.g. prompt tokens seen, output cut short
+	default:
+		l.UsageStatus = model.UsageUnknown // the upstream processed the request but reported nothing
+	}
+	l.TokensKnown = l.UsageStatus == model.UsageConfirmed
 }
 
 // extractSystem returns system / developer / instructions text for compliance checks.

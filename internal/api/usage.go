@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"yzapi/internal/logstore"
 	"yzapi/internal/model"
 	"yzapi/internal/provider"
 )
@@ -29,6 +30,7 @@ type usageRow struct {
 	CompletionTokens int64
 	TotalTokens      int64
 	CachedTokens     int64
+	UnknownUsage     int64
 	LatencyMs        int64
 }
 
@@ -40,6 +42,7 @@ type dist struct {
 	CachedTokens     int64  `json:"cached_tokens"`
 	PromptTokens     int64  `json:"prompt_tokens"`
 	CompletionTokens int64  `json:"completion_tokens"`
+	UnknownUsage     int64  `json:"unknown_usage"`
 }
 
 type trendPoint struct {
@@ -150,6 +153,7 @@ func (s *Server) usageReport(c *gin.Context, scopedUser uint) gin.H {
 		d.CachedTokens += r.CachedTokens
 		d.PromptTokens += r.PromptTokens
 		d.CompletionTokens += r.CompletionTokens
+		d.UnknownUsage += r.UnknownUsage
 	}
 	for i := range rows {
 		r := &rows[i]
@@ -158,6 +162,7 @@ func (s *Server) usageReport(c *gin.Context, scopedUser uint) gin.H {
 		summary.CachedTokens += r.CachedTokens
 		summary.PromptTokens += r.PromptTokens
 		summary.CompletionTokens += r.CompletionTokens
+		summary.UnknownUsage += r.UnknownUsage
 
 		bucket := r.Hour
 		if byDay {
@@ -232,7 +237,8 @@ func (s *Server) usageReport(c *gin.Context, scopedUser uint) gin.H {
 	}
 	return gin.H{
 		"summary": gin.H{"requests": summary.Requests, "success": success, "failed": failed, "prompt_tokens": summary.PromptTokens,
-			"completion_tokens": summary.CompletionTokens, "total_tokens": summary.TotalTokens, "cached_tokens": summary.CachedTokens},
+			"completion_tokens": summary.CompletionTokens, "total_tokens": summary.TotalTokens, "cached_tokens": summary.CachedTokens,
+			"unknown_usage": summary.UnknownUsage},
 		"trend":          tl,
 		"by_provider":    toList("provider"),
 		"by_model":       toList("model"),
@@ -287,4 +293,54 @@ func (s *Server) overviewUsage(c *gin.Context) {
 		"active_keys":  activeKeys,
 		"trend":        rep["trend"],
 	})
+}
+
+// ---- metering maintenance ----
+
+// rebuildUsage recomputes the hourly rollup from raw call logs for a time range.
+func (s *Server) rebuildUsage(c *gin.Context) {
+	var in struct {
+		From time.Time `json:"from"`
+		To   time.Time `json:"to"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil || in.From.IsZero() {
+		badRequest(c, "from/to (RFC3339) are required")
+		return
+	}
+	if in.To.IsZero() {
+		in.To = time.Now()
+	}
+	if in.To.Sub(in.From) > 92*24*time.Hour {
+		badRequest(c, "最多一次重建 92 天")
+		return
+	}
+	hours, rows, err := logstore.Rebuild(s.db, in.From, in.To)
+	if err != nil {
+		serverError(c, err)
+		return
+	}
+	c.JSON(200, gin.H{"hours": hours, "rows": rows, "from": in.From, "to": in.To})
+}
+
+// reconcileUsage reports hours where the rollup and the raw logs disagree.
+func (s *Server) reconcileUsage(c *gin.Context) {
+	from, to := timeRange(c)
+	mm, err := logstore.Reconcile(s.db, from, to)
+	if err != nil {
+		serverError(c, err)
+		return
+	}
+	if mm == nil {
+		mm = []logstore.Mismatch{}
+	}
+	c.JSON(200, gin.H{"from": from, "to": to, "mismatches": mm, "consistent": len(mm) == 0})
+}
+
+// meteringStatus exposes journal health.
+func (s *Server) meteringStatus(c *gin.Context) {
+	if s.eng.Logs == nil {
+		c.JSON(200, logstore.Stats{})
+		return
+	}
+	c.JSON(200, s.eng.Logs.Stats())
 }

@@ -500,6 +500,8 @@ export interface ComplianceTestResult {
 }
 
 // ---------- Logs ----------
+export type UsageStatus = 'confirmed' | 'partial' | 'unknown' | 'none';
+
 export interface LogAttempt {
   account_id: number;
   account_name: string;
@@ -535,6 +537,8 @@ export interface CallLog {
   total_tokens: number;
   cached_tokens: number;
   tokens_known: boolean;
+  usage_status?: UsageStatus;
+  est_prompt_tokens?: number;
   result: LogResult;
   status_code: number;
   latency_ms: number;

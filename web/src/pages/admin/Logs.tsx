@@ -5,7 +5,7 @@ import { ArrowRightOutlined, EyeOutlined, ReloadOutlined } from '@ant-design/ico
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { logsApi } from '@/api';
-import { EmptyState, FilterBar, NeutralTag, PageHeader, ProviderAvatar, RangeSelector, ResultTag, StatusCodeTag, TimeCell } from '@/components';
+import { EmptyState, FilterBar, PageHeader, ProviderAvatar, RangeSelector, ResultTag, StatusCodeTag, TimeCell, UsageStatusTag } from '@/components';
 import { useRange } from '@/hooks/useRange';
 import { useTableQuery } from '@/hooks/useTableQuery';
 import type { CallLog, LogResult } from '@/types';
@@ -137,8 +137,8 @@ export default function Logs() {
       width: 170,
       align: 'right',
       render: (_, r) =>
-        r.tokens_known === false ? (
-          <NeutralTag>{t('common:common.unknown')}</NeutralTag>
+        r.usage_status === 'none' || (r.usage_status !== 'partial' && r.tokens_known === false) ? (
+          <UsageStatusTag status={r.usage_status ?? 'unknown'} estPrompt={r.est_prompt_tokens} />
         ) : (
           <Tooltip
             title={

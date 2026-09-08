@@ -272,5 +272,13 @@
     "docs": "Documentation",
     "repo": "Repository",
     "copyright": "© {{year}} YZ AI Gateway. All rights reserved."
+  },
+  "usageStatus": {
+    "confirmed": "Confirmed",
+    "partial": "Partial",
+    "unknown": "Unknown",
+    "none": "None",
+    "partialHint": "Stream was interrupted; only partial usage was reported (e.g. prompt tokens only)",
+    "unknownHint": "Upstream reported no usage; estimated at least {{n}} prompt tokens from the request size"
   }
 }

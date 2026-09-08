@@ -71,7 +71,11 @@ func main() {
 		slog.Error("settings", "err", err)
 		os.Exit(1)
 	}
-	logs := logstore.New(database, func() int { return st.Get().Basic.LogRetentionDays })
+	logs, err := logstore.New(database, cfg.DataDir, func() int { return st.Get().Basic.LogRetentionDays })
+	if err != nil {
+		slog.Error("open metering journal", "err", err)
+		os.Exit(1)
+	}
 
 	gw, err := gateway.New(cfg, database, cipher, st, logs)
 	if err != nil {
@@ -94,7 +98,7 @@ func main() {
 	compEng := compliance.New(database, st, embed)
 	routeEng.SetVectorIdentity(mgmt.VectorIdentity)
 	compEng.SetVectorIdentity(mgmt.VectorIdentity)
-	mgmt.SetEngines(api.Engines{Route: routeAdapter{routeEng}, Compliance: complianceAdapter{compEng}, ES: es})
+	mgmt.SetEngines(api.Engines{Route: routeAdapter{routeEng}, Compliance: complianceAdapter{compEng}, ES: es, Logs: logs})
 	gw.SetRouter(routeAdapter{routeEng})
 	gw.SetChecker(complianceAdapter{compEng})
 	gw.BodySink = es
@@ -104,7 +108,11 @@ func main() {
 	})
 
 	srv := server.New(cfg, database, gw, mgmt, func(w *metrics.Writer) {
-		w.Gauge("yzapi_calllog_dropped_total", "Call log records dropped (queue full or write failure)", float64(logs.Dropped()))
+		ls := logs.Stats()
+		w.Gauge("yzapi_calllog_dropped_total", "Call log records lost for good (journal unwritable and overflow full)", float64(ls.Dropped))
+		w.Gauge("yzapi_metering_journal_pending_bytes", "Journal bytes not yet committed to the database", float64(ls.PendingBytes))
+		w.Gauge("yzapi_metering_replayed_total", "Journal records skipped on commit because they were already stored", float64(ls.Replayed))
+		w.Gauge("yzapi_metering_commit_failures_total", "Failed attempts to commit journal batches", float64(ls.Failures))
 		w.Gauge("yzapi_audit_dropped_total", "Audit log rows dropped", float64(auditWriter.Dropped()))
 		w.Gauge("yzapi_decision_dropped_total", "Route decision rows dropped", float64(decisionWriter.Dropped()))
 		w.Gauge("yzapi_vector_inflight", "Concurrent embedding calls", float64(mgmt.VectorInflight()))

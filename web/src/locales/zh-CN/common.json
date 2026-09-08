@@ -272,5 +272,13 @@
     "docs": "文档",
     "repo": "项目地址",
     "copyright": "© {{year}} YZ AI Gateway. All rights reserved."
+  },
+  "usageStatus": {
+    "confirmed": "已确认",
+    "partial": "部分",
+    "unknown": "未知",
+    "none": "无消耗",
+    "partialHint": "流式中断，仅拿到部分用量（例如只有输入 Token）",
+    "unknownHint": "上游未返回 usage；按请求体估算输入至少 {{n}} Token"
   }
 }

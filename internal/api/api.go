@@ -16,6 +16,7 @@ import (
 	"yzapi/internal/crypto"
 	"yzapi/internal/essink"
 	"yzapi/internal/gateway"
+	"yzapi/internal/logstore"
 	"yzapi/internal/model"
 	"yzapi/internal/settings"
 )
@@ -25,6 +26,7 @@ type Engines struct {
 	Route      RouteEngine
 	Compliance ComplianceEngine
 	ES         ESSink
+	Logs       *logstore.Store
 }
 
 type RouteEngine interface {
@@ -141,6 +143,9 @@ func (s *Server) Register(r *gin.Engine) {
 		lg.GET("/:id", s.getLog)
 
 		admin.GET("/usage", s.adminUsage)
+		admin.POST("/usage/rebuild", s.rebuildUsage)
+		admin.GET("/usage/reconcile", s.reconcileUsage)
+		admin.GET("/usage/metering", s.meteringStatus)
 
 		se := admin.Group("/settings")
 		se.GET("", s.getSettings)

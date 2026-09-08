@@ -5,7 +5,7 @@ import { EyeOutlined } from '@ant-design/icons';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { userApi } from '@/api';
-import { EmptyState, FilterBar, NeutralTag, PageHeader, RangeSelector, ResultTag, SectionTitle, TimeCell, TypeTag } from '@/components';
+import { EmptyState, FilterBar, PageHeader, RangeSelector, ResultTag, SectionTitle, TimeCell, TypeTag, UsageStatusTag } from '@/components';
 import { useIsMobile } from '@/hooks/useMediaQuery';
 import { useRange } from '@/hooks/useRange';
 import { useTableQuery } from '@/hooks/useTableQuery';
@@ -21,8 +21,10 @@ interface Filters {
   q?: string;
 }
 
-function TokenCell({ log, unknownLabel, inLabel, outLabel }: { log: CallLog; unknownLabel: string; inLabel: string; outLabel: string }) {
-  if (log.tokens_known === false) return <NeutralTag>{unknownLabel}</NeutralTag>;
+function TokenCell({ log, inLabel, outLabel }: { log: CallLog; inLabel: string; outLabel: string }) {
+  if (log.usage_status === 'none' || (log.usage_status !== 'partial' && log.tokens_known === false)) {
+    return <UsageStatusTag status={log.usage_status ?? 'unknown'} estPrompt={log.est_prompt_tokens} />;
+  }
   return (
     <div style={{ lineHeight: 1.3, fontVariantNumeric: 'tabular-nums' }}>
       <Typography.Text strong>{formatNumber(log.total_tokens)}</Typography.Text>
@@ -50,7 +52,6 @@ export default function Logs() {
     placeholderData: keepPreviousData,
   });
 
-  const unknownLabel = t('console:logs.tokensUnknown');
   const inLabel = t('console:logs.in');
   const outLabel = t('console:logs.out');
 
@@ -92,7 +93,7 @@ export default function Logs() {
       title: t('console:logs.columns.tokens'),
       key: 'tokens',
       align: 'right',
-      render: (_, row) => <TokenCell log={row} unknownLabel={unknownLabel} inLabel={inLabel} outLabel={outLabel} />,
+      render: (_, row) => <TokenCell log={row} inLabel={inLabel} outLabel={outLabel} />,
     },
     {
       title: t('console:logs.columns.result'),
@@ -247,8 +248,8 @@ export default function Logs() {
                 {selected.stream ? t('common:common.yes') : t('common:common.no')}
               </Descriptions.Item>
               <Descriptions.Item label={t('console:logs.fields.tokens')}>
-                {selected.tokens_known === false ? (
-                  <NeutralTag>{unknownLabel}</NeutralTag>
+                {selected.usage_status === 'none' || (selected.usage_status !== 'partial' && selected.tokens_known === false) ? (
+                  <UsageStatusTag status={selected.usage_status ?? 'unknown'} estPrompt={selected.est_prompt_tokens} />
                 ) : (
                   <Space split={<span style={{ color: 'var(--yz-text-tertiary)' }}>/</span>} wrap>
                     <span>
