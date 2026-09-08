@@ -8,7 +8,7 @@ interface Props {
   data?: PerformanceSettings;
 }
 
-type Unit = 'seconds' | 'kib' | 'count' | 'times';
+type Unit = 'seconds' | 'kib' | 'mib' | 'count' | 'times';
 
 interface FieldDef {
   name: keyof PerformanceSettings;
@@ -27,6 +27,9 @@ const FIELDS: FieldDef[] = [
   { name: 'cooldown_sec', min: 0, max: 86400, unit: 'seconds' },
   { name: 'max_retries', min: 0, max: 20, unit: 'times' },
   { name: 'upstream_connect_timeout_sec', min: 1, max: 300, unit: 'seconds' },
+  { name: 'max_body_memory_mb', min: 16, max: 65536, unit: 'mib' },
+  { name: 'vector_max_concurrency', min: 1, max: 1024, unit: 'count' },
+  { name: 'vector_timeout_sec', min: 1, max: 300, unit: 'seconds' },
 ];
 
 export default function PerformanceTab({ data }: Props) {
@@ -41,6 +44,8 @@ export default function PerformanceTab({ data }: Props) {
         return t('common:common.seconds');
       case 'kib':
         return 'KiB';
+      case 'mib':
+        return 'MiB';
       case 'times':
         return t('settings:unit.times');
       default:

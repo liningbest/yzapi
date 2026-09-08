@@ -11,6 +11,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"regexp"
 	"sort"
 	"strings"
@@ -126,14 +128,32 @@ func (e *Engine) Reload() error {
 		return err
 	}
 	idx := make([]Sample, 0, len(rows))
+	cur := VectorModelID(e.st)
+	skipped := 0
 	for _, r := range rows {
 		if len(r.Vector) == 0 {
 			continue
 		}
+		if r.VectorModel != "" && cur != "" && r.VectorModel != cur {
+			skipped++
+			continue
+		}
 		idx = append(idx, Sample{ID: r.ID, Label: r.Label, Text: r.Text, Threshold: r.Threshold, Vec: vector.Decode(r.Vector)})
+	}
+	if skipped > 0 {
+		slog.Warn("route samples built with a different embedding model were skipped; rebuild vectors", "skipped", skipped)
 	}
 	e.index.Store(&idx)
 	return nil
+}
+
+// VectorModelID identifies the configured embedding model ("<account>:<model>").
+func VectorModelID(st *settings.Store) string {
+	v := st.Get().Vector
+	if v.AccountID == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d:%s", v.AccountID, v.Model)
 }
 
 // Samples returns the current in-memory index (read-only snapshot).
@@ -221,14 +241,57 @@ func classifyByVector(q []float32, idx []Sample, sr settings.SmartRoute) (Result
 		s     *Sample
 		score float64
 	}
-	all := make([]scored, 0, len(idx))
+	// Partial selection: keep the k best in a min-heap (O(N log K)) instead of sorting
+	// everything. Ties are broken by lower sample ID so results are deterministic.
+	less := func(a, b scored) bool { // a ranks better than b
+		if a.score != b.score {
+			return a.score > b.score
+		}
+		return a.s.ID < b.s.ID
+	}
+	h := make([]scored, 0, k+1)
+	worse := func(i, j int) bool { return less(h[j], h[i]) } // heap root = worst kept
+	up := func(i int) {
+		for i > 0 {
+			p := (i - 1) / 2
+			if !worse(i, p) {
+				break
+			}
+			h[i], h[p] = h[p], h[i]
+			i = p
+		}
+	}
+	down := func(i int) {
+		for {
+			l, r, m := 2*i+1, 2*i+2, i
+			if l < len(h) && worse(l, m) {
+				m = l
+			}
+			if r < len(h) && worse(r, m) {
+				m = r
+			}
+			if m == i {
+				return
+			}
+			h[i], h[m] = h[m], h[i]
+			i = m
+		}
+	}
 	for i := range idx {
-		all = append(all, scored{&idx[i], vector.Dot(q, idx[i].Vec)})
+		if len(idx[i].Vec) != len(q) {
+			continue // incompatible vector; skipped until rebuilt
+		}
+		c := scored{&idx[i], vector.Dot(q, idx[i].Vec)}
+		if len(h) < k {
+			h = append(h, c)
+			up(len(h) - 1)
+		} else if less(c, h[0]) {
+			h[0] = c
+			down(0)
+		}
 	}
-	sort.SliceStable(all, func(i, j int) bool { return all[i].score > all[j].score })
-	if len(all) > k {
-		all = all[:k]
-	}
+	all := h
+	sort.SliceStable(all, func(i, j int) bool { return less(all[i], all[j]) })
 	entries := make([]TopKEntry, len(all))
 	for i, s := range all {
 		entries[i] = TopKEntry{ID: s.s.ID, Label: s.s.Label, Text: truncateRunes(s.s.Text, TopKTextRunes), Score: round4(s.score)}
@@ -396,7 +459,7 @@ func (e *Engine) BuildVectors(ctx context.Context, ids []uint) (built int, faile
 				continue
 			}
 			uerr := e.db.Model(&model.RouteSample{}).Where("id = ?", r.ID).
-				Updates(map[string]any{"vector": vector.Encode(v), "vector_dim": len(v), "updated_at": time.Now()}).Error
+				Updates(map[string]any{"vector": vector.Encode(v), "vector_dim": len(v), "vector_model": VectorModelID(e.st), "updated_at": time.Now()}).Error
 			if uerr != nil {
 				failed++
 				continue

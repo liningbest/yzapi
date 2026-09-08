@@ -7,12 +7,14 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
 	"yzapi/internal/gateway/convert"
+	"yzapi/internal/metrics"
 	"yzapi/internal/model"
 	"yzapi/internal/provider"
 )
@@ -42,6 +44,7 @@ type request struct {
 	attempts []attemptRecord
 	wrote    bool
 	capture  *capWriter
+	reserved int64 // body memory reserved from the budget
 }
 
 func (g *Gateway) newRequest(w http.ResponseWriter, r *http.Request, proto string) *request {
@@ -92,8 +95,19 @@ func (g *Gateway) fail(req *request, e *GatewayError) {
 }
 
 func (g *Gateway) finish(req *request) {
+	if req.reserved > 0 {
+		g.bodyBudget.release(req.reserved)
+		req.reserved = 0
+	}
 	l := req.log
 	l.LatencyMs = time.Since(req.start).Milliseconds()
+	g.Metrics.Requests.With(metrics.Label("result", l.Result) + "," + metrics.Label("api_type", l.APIType)).Inc()
+	g.Metrics.Latency.Observe(float64(l.LatencyMs) / 1000)
+	if l.TotalTokens > 0 {
+		g.Metrics.Tokens.With(metrics.Label("kind", "prompt")).Add(l.PromptTokens)
+		g.Metrics.Tokens.With(metrics.Label("kind", "completion")).Add(l.CompletionTokens)
+		g.Metrics.Tokens.With(metrics.Label("kind", "cached")).Add(l.CachedTokens)
+	}
 	if len(req.attempts) > 0 {
 		b, _ := json.Marshal(req.attempts)
 		l.Attempts = model.JSON(b)
@@ -202,6 +216,16 @@ func (g *Gateway) prepare(req *request) *GatewayError {
 	if limit <= 0 {
 		limit = 20 << 20
 	}
+	// Reserve memory for the body before reading it so a burst of large uploads cannot
+	// exhaust the process; unknown lengths reserve the per-request cap.
+	reserve := req.r.ContentLength
+	if reserve <= 0 || reserve > limit {
+		reserve = limit
+	}
+	if !g.bodyBudget.acquire(req.r.Context(), reserve, time.Duration(max(perf.QueueTimeoutSec, 1))*time.Second) {
+		return ErrMemoryBudget
+	}
+	req.reserved = reserve
 	body, err := io.ReadAll(http.MaxBytesReader(req.w, req.r.Body, limit))
 	if err != nil {
 		var mbe *http.MaxBytesError
@@ -415,6 +439,15 @@ func (g *Gateway) handleText(w http.ResponseWriter, r *http.Request, proto strin
 	}
 	req.text, req.msgCount = extractText(proto, req.raw)
 
+	// Concurrency slots are taken before the (potentially expensive) compliance and
+	// routing stages so pre-processing is bounded by the same limits as forwarding.
+	release, e := g.acquire(req)
+	if e != nil {
+		g.fail(req, e)
+		return
+	}
+	defer release()
+
 	// content compliance
 	if cp := g.checker.Load(); cp != nil && *cp != nil && g.settings.Get().Compliance.Enabled {
 		checkText := req.text
@@ -427,6 +460,21 @@ func (g *Gateway) handleText(w http.ResponseWriter, r *http.Request, proto strin
 			checkText = "\x00" // nothing to check; keep the branch structure simple
 		}
 		v := (*cp).Check(r.Context(), strings.TrimSpace(strings.Trim(checkText, "\x00")))
+		if v.Degraded {
+			g.Metrics.ComplianceDegraded.Inc()
+			now := time.Now().Unix()
+			g.Metrics.lastDegraded.Store(now)
+			// Record the degradation in the audit log at most once every 10s to avoid floods.
+			if last := g.Metrics.lastDegradedLog.Load(); now-last >= 10 && g.Metrics.lastDegradedLog.CompareAndSwap(last, now) && g.AuditLogger != nil {
+				g.AuditLogger(&model.AuditLog{RequestID: req.id, UserID: req.principal.UserID, Username: req.principal.Username,
+					RequestModel: req.model, Protocol: proto, Action: "audit", RiskLevel: "low", DetectMethod: "degraded",
+					Evidence: truncate(v.DegradedReason, 500), StatusCode: 200, Snippet: truncate(req.text, 200), CreatedAt: time.Now()})
+			}
+			if g.settings.Get().Compliance.OnFailure == "block" && !v.Block {
+				g.fail(req, ErrComplianceDown)
+				return
+			}
+		}
 		if v.Hit {
 			if g.AuditLogger != nil {
 				status := 200
@@ -439,6 +487,7 @@ func (g *Gateway) handleText(w http.ResponseWriter, r *http.Request, proto strin
 					StatusCode: status, Hits: v.Hits, Snippet: truncate(req.text, 500), CreatedAt: time.Now()})
 			}
 			if v.Block {
+				g.Metrics.ComplianceBlocked.Inc()
 				g.fail(req, ErrContentBlocked)
 				return
 			}
@@ -450,12 +499,6 @@ func (g *Gateway) handleText(w http.ResponseWriter, r *http.Request, proto strin
 		g.fail(req, e)
 		return
 	}
-	release, e := g.acquire(req)
-	if e != nil {
-		g.fail(req, e)
-		return
-	}
-	defer release()
 	g.forward(req, cands)
 }
 
@@ -561,12 +604,14 @@ func (g *Gateway) forward(req *request, cands []string) {
 				}
 				rec.Error = err.Error()
 				req.attempts = append(req.attempts, rec)
+				g.Metrics.UpstreamAttempts.With(metrics.Label("outcome", "network")).Inc()
 				g.health.fail(up.ID, cooldown, err.Error())
 				lastMsg, lastStatus = err.Error(), 502
 				continue
 			}
 			rec.StatusCode = resp.StatusCode
 			if resp.StatusCode >= 300 {
+				retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"))
 				msg, raw := readErrorBody(resp)
 				cancel()
 				ctr.release()
@@ -574,7 +619,19 @@ func (g *Gateway) forward(req *request, cands []string) {
 				req.attempts = append(req.attempts, rec)
 				req.log.UpstreamLatencyMs += rec.LatencyMs
 				if retryable(resp.StatusCode) {
-					g.health.fail(up.ID, cooldown, msg)
+					g.Metrics.UpstreamAttempts.With(metrics.Label("outcome", failureKind(resp.StatusCode))).Inc()
+					switch {
+					case resp.StatusCode == 404:
+						// Model missing at this upstream: try the next account but do not
+						// penalise the account, other models on it may be fine.
+					case resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 402:
+						// Credential / billing problem: retrying soon is pointless.
+						g.health.failFor(up.ID, credentialCooldown, "credentials rejected: "+msg)
+					case resp.StatusCode == 429 && retryAfter > 0:
+						g.health.failFor(up.ID, retryAfter, "rate limited (Retry-After): "+msg)
+					default:
+						g.health.fail(up.ID, cooldown, msg)
+					}
 					lastMsg, lastStatus = msg, resp.StatusCode
 					continue
 				}
@@ -596,6 +653,7 @@ func (g *Gateway) forward(req *request, cands []string) {
 			}
 
 			// Success path.
+			g.Metrics.UpstreamAttempts.With(metrics.Label("outcome", "ok")).Inc()
 			req.attempts = append(req.attempts, rec)
 			req.log.AccountID, req.log.AccountName, req.log.Provider = up.ID, up.Name, up.Provider
 			req.log.UpstreamModel, req.log.UpstreamProtocol = upstreamModel, proto
@@ -615,6 +673,44 @@ func (g *Gateway) forward(req *request, cands []string) {
 		status = 429
 	}
 	g.fail(req, newErr(status, "upstream_failed", "All upstream attempts failed: "+truncate(lastMsg, 300)))
+}
+
+// credentialCooldown is applied when an upstream rejects the account's credentials.
+const credentialCooldown = 10 * time.Minute
+
+// parseRetryAfter reads an HTTP Retry-After header (seconds or HTTP date), capped at 15 minutes.
+func parseRetryAfter(v string) time.Duration {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0
+	}
+	var d time.Duration
+	if secs, err := strconv.Atoi(v); err == nil {
+		d = time.Duration(secs) * time.Second
+	} else if t, err := http.ParseTime(v); err == nil {
+		d = time.Until(t)
+	}
+	if d <= 0 {
+		return 0
+	}
+	if d > 15*time.Minute {
+		d = 15 * time.Minute
+	}
+	return d
+}
+
+func failureKind(status int) string {
+	switch {
+	case status == 401 || status == 403 || status == 402:
+		return "credentials"
+	case status == 429:
+		return "rate_limited"
+	case status == 404:
+		return "model_missing"
+	case status >= 500:
+		return "server_error"
+	}
+	return "other"
 }
 
 // stripStreamOptions removes the injected stream_options field.

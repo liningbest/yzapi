@@ -1,4 +1,4 @@
-import { Col, Form, Row, Switch, Typography } from 'antd';
+import { Alert, Col, Form, Radio, Row, Switch, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { settingsApi } from '@/api';
 import type { ComplianceSettings } from '@/types';
@@ -44,6 +44,26 @@ export default function ComplianceTab({ data }: Props) {
           >
             <Switch />
           </Form.Item>
+        </Col>
+        <Col xs={24} lg={12}>
+          <Form.Item
+            name="on_failure"
+            label={t('settings:compliance.onFailure.label')}
+            extra={t('settings:compliance.onFailure.extra')}
+            initialValue="allow"
+          >
+            <Radio.Group
+              optionType="button"
+              buttonStyle="solid"
+              options={[
+                { label: t('settings:compliance.onFailure.allow'), value: 'allow' },
+                { label: t('settings:compliance.onFailure.block'), value: 'block' },
+              ]}
+            />
+          </Form.Item>
+        </Col>
+        <Col xs={24}>
+          <Alert type="info" showIcon message={t('settings:compliance.onFailure.hint')} style={{ marginBottom: 16 }} />
         </Col>
         <Col xs={24} lg={12}>
           <Form.Item

@@ -15,7 +15,8 @@
   "policyGroupMissing": "Policy group deleted",
   "method": {
     "keyword": "Keyword",
-    "semantic": "Semantic"
+    "semantic": "Semantic",
+    "degraded": "Degraded"
   },
   "hits": {
     "method": "Method",

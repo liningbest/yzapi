@@ -11,6 +11,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -62,6 +64,10 @@ type Verdict struct {
 	Evidence     string
 	Confidence   float64
 	Hits         model.JSON // []HitEntry
+	// Degraded is set when the semantic pass could not run (vector service failure);
+	// keyword results are still valid in that case.
+	Degraded       bool
+	DegradedReason string
 }
 
 // HitEntry is one element of Verdict.Hits.
@@ -157,11 +163,20 @@ func (e *Engine) Reload() error {
 		Order("id").Find(&samples).Error; err != nil {
 		return err
 	}
+	cur := VectorModelID(e.st)
+	skipped := 0
 	for _, s := range samples {
 		if len(s.Vector) == 0 {
 			continue
 		}
+		if s.VectorModel != "" && cur != "" && s.VectorModel != cur {
+			skipped++
+			continue
+		}
 		idx.samples = append(idx.samples, sampleEntry{ID: s.ID, Text: s.Text, Vec: vector.Decode(s.Vector), Policy: pol[s.PolicyGroupID]})
+	}
+	if skipped > 0 {
+		slog.Warn("audit samples built with a different embedding model were skipped; rebuild vectors", "skipped", skipped)
 	}
 	e.idx.Store(idx)
 	return nil
@@ -204,21 +219,43 @@ func (e *Engine) check(ctx context.Context, text string, threshold float64) Verd
 		if threshold <= 0 {
 			threshold = DefaultSemanticThreshold
 		}
-		if vecs, err := e.embed(ctx, []string{text}); err == nil && len(vecs) == 1 && len(vecs[0]) > 0 {
-			q := vecs[0]
-			for _, s := range idx.samples {
-				score := vector.Dot(q, s.Vec)
-				if score >= threshold {
-					hits = append(hits, HitEntry{
-						Method: MethodSemantic, PolicyGroup: s.Policy.Name, PolicyGroupID: s.Policy.ID,
-						Evidence: truncateRunes(s.Text, EvidenceRunes), Score: round4(score),
-						Action: s.Policy.Action, RiskLevel: s.Policy.RiskLevel,
-					})
-				}
+		vecs, err := e.embed(ctx, []string{text})
+		switch {
+		case err != nil:
+			v := aggregate(hits)
+			v.Degraded, v.DegradedReason = true, err.Error()
+			return v
+		case len(vecs) != 1 || len(vecs[0]) == 0:
+			v := aggregate(hits)
+			v.Degraded, v.DegradedReason = true, "embedding returned no vector"
+			return v
+		}
+		q := vecs[0]
+		for _, s := range idx.samples {
+			if len(s.Vec) != len(q) {
+				continue // built with a different model; skipped until rebuilt
+			}
+			score := vector.Dot(q, s.Vec)
+			if score >= threshold {
+				hits = append(hits, HitEntry{
+					Method: MethodSemantic, PolicyGroup: s.Policy.Name, PolicyGroupID: s.Policy.ID,
+					Evidence: truncateRunes(s.Text, EvidenceRunes), Score: round4(score),
+					Action: s.Policy.Action, RiskLevel: s.Policy.RiskLevel,
+				})
 			}
 		}
 	}
 	return aggregate(hits)
+}
+
+// VectorModelID identifies the configured embedding model; vectors built with another
+// identity are ignored so results from incompatible vector spaces never mix.
+func VectorModelID(st *settings.Store) string {
+	v := st.Get().Vector
+	if v.AccountID == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d:%s", v.AccountID, v.Model)
 }
 
 // aggregate folds hits into a Verdict. The primary hit is the blocking hit
@@ -309,7 +346,7 @@ func (e *Engine) BuildVectors(ctx context.Context, ids []uint) (built int, faile
 				continue
 			}
 			uerr := e.db.Model(&model.AuditSample{}).Where("id = ?", r.ID).
-				Updates(map[string]any{"vector": vector.Encode(v), "vector_dim": len(v), "updated_at": time.Now()}).Error
+				Updates(map[string]any{"vector": vector.Encode(v), "vector_dim": len(v), "vector_model": VectorModelID(e.st), "updated_at": time.Now()}).Error
 			if uerr != nil {
 				failed++
 				continue

@@ -70,6 +70,18 @@
     "upstream_connect_timeout_sec": {
       "label": "上游連線逾時",
       "extra": "與上游建立 TCP/TLS 連線的最長秒數。"
+    },
+    "max_body_memory_mb": {
+      "label": "請求體記憶體預算",
+      "extra": "閘道同時駐留記憶體的請求體總量上限，超出時新請求排隊等待，逾時回傳 503。"
+    },
+    "vector_max_concurrency": {
+      "label": "向量並行上限",
+      "extra": "同時進行的 embedding 呼叫數，智慧路由與內容合規共用。"
+    },
+    "vector_timeout_sec": {
+      "label": "向量呼叫逾時",
+      "extra": "單次 embedding 呼叫的逾時；逾時後依「稽核失敗處理」策略執行。"
     }
   },
   "vector": {
@@ -142,6 +154,13 @@
     "checkSystemPrompt": {
       "label": "偵測 system 提示詞",
       "extra": "開啟後同時偵測 system 提示詞內容。"
+    },
+    "onFailure": {
+      "label": "稽核相依失敗時",
+      "extra": "向量服務逾時或不可用、語意檢測無法執行時的處理方式；敏感詞比對始終生效。",
+      "allow": "放行（僅敏感詞）",
+      "block": "攔截請求",
+      "hint": "無論選哪種，降級都會計入指標並在稽核日誌中以「降級」方式記錄（最多每 10 秒一條），便於發現向量服務長期失效。"
     }
   },
   "es": {

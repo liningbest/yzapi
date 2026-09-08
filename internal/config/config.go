@@ -30,6 +30,9 @@ type Config struct {
 	LogLevel string
 	Dev      bool
 
+	// Optional bearer token required to scrape /metrics (empty = open).
+	MetricsToken string
+
 	ShutdownTimeout time.Duration
 }
 
@@ -63,6 +66,7 @@ func Load() *Config {
 		JWTSecret:            env("YZAPI_JWT_SECRET", ""),
 		HTTPProxy:            env("YZAPI_HTTP_PROXY", env("HTTPS_PROXY", env("HTTP_PROXY", ""))),
 		LogLevel:             env("YZAPI_LOG_LEVEL", "info"),
+		MetricsToken:         env("YZAPI_METRICS_TOKEN", ""),
 		Dev:                  env("YZAPI_DEV", "") == "1",
 		ShutdownTimeout:      time.Duration(envInt("YZAPI_SHUTDOWN_TIMEOUT", 60)) * time.Second,
 	}

@@ -145,3 +145,68 @@ func (g *gate) stats() (inflight, limit, waiting, queue int) {
 	defer g.mu.Unlock()
 	return g.inflight, g.limit, g.waiting, g.queue
 }
+
+// budget is a weighted semaphore for bytes of request bodies held in memory.
+type budget struct {
+	mu    sync.Mutex
+	cond  *sync.Cond
+	used  int64
+	limit int64
+}
+
+func newBudget(limit int64) *budget {
+	b := &budget{limit: limit}
+	b.cond = sync.NewCond(&b.mu)
+	return b
+}
+
+func (b *budget) configure(limit int64) {
+	b.mu.Lock()
+	b.limit = limit
+	b.mu.Unlock()
+	b.cond.Broadcast()
+}
+
+// acquire reserves n bytes, waiting up to timeout. Requests larger than the whole
+// budget are admitted alone (they are already capped by max_body_kb).
+func (b *budget) acquire(ctx context.Context, n int64, timeout time.Duration) bool {
+	if n <= 0 {
+		return true
+	}
+	deadline := time.Now().Add(timeout)
+	timer := time.AfterFunc(timeout, func() { b.cond.Broadcast() })
+	defer timer.Stop()
+	stop := context.AfterFunc(ctx, func() { b.cond.Broadcast() })
+	defer stop()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for {
+		if b.limit <= 0 || b.used+n <= b.limit || (b.used == 0 && n > b.limit) {
+			b.used += n
+			return true
+		}
+		if ctx.Err() != nil || time.Now().After(deadline) {
+			return false
+		}
+		b.cond.Wait()
+	}
+}
+
+func (b *budget) release(n int64) {
+	if n <= 0 {
+		return
+	}
+	b.mu.Lock()
+	b.used -= n
+	if b.used < 0 {
+		b.used = 0
+	}
+	b.mu.Unlock()
+	b.cond.Broadcast()
+}
+
+func (b *budget) stats() (used, limit int64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.used, b.limit
+}

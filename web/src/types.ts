@@ -633,6 +633,9 @@ export interface PerformanceSettings {
   cooldown_sec: number;
   max_retries: number;
   upstream_connect_timeout_sec: number;
+  max_body_memory_mb: number;
+  vector_max_concurrency: number;
+  vector_timeout_sec: number;
 }
 
 export interface VectorSettings {
@@ -657,6 +660,7 @@ export interface ComplianceSettings {
   enabled: boolean;
   semantic_threshold: number;
   check_system_prompt?: boolean;
+  on_failure?: 'allow' | 'block';
 }
 
 export interface ElasticsearchSettings {

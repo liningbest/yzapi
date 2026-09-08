@@ -15,7 +15,8 @@
   "policyGroupMissing": "策略组已删除",
   "method": {
     "keyword": "敏感词",
-    "semantic": "语义"
+    "semantic": "语义",
+    "degraded": "降级"
   },
   "hits": {
     "method": "检测方式",

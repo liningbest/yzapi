@@ -49,6 +49,8 @@ var (
 	ErrBadJSON          = newErr(400, "invalid_json", "Request body is not valid JSON")
 	ErrContentBlocked   = newErr(400, "content_blocked", "Request blocked by content compliance policy")
 	ErrConversionFailed = newErr(400, "protocol_conversion_failed", "Request could not be converted to a protocol supported by the upstream")
+	ErrMemoryBudget     = newErr(503, "gateway_overloaded", "Gateway request-body memory budget exhausted, try again later")
+	ErrComplianceDown   = newErr(503, "compliance_unavailable", "Content compliance service is unavailable and the policy requires blocking")
 )
 
 func writeError(w http.ResponseWriter, anthropic bool, e *GatewayError) {

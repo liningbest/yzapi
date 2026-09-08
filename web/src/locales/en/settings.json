@@ -70,6 +70,18 @@
     "upstream_connect_timeout_sec": {
       "label": "Upstream connect timeout",
       "extra": "Maximum seconds to establish the TCP/TLS connection with the upstream."
+    },
+    "max_body_memory_mb": {
+      "label": "Request body memory budget",
+      "extra": "Total request-body bytes the gateway keeps in memory at once; new requests wait, then get 503 on timeout."
+    },
+    "vector_max_concurrency": {
+      "label": "Vector concurrency",
+      "extra": "Concurrent embedding calls shared by smart routing and compliance."
+    },
+    "vector_timeout_sec": {
+      "label": "Vector call timeout",
+      "extra": "Timeout per embedding call; after it the compliance failure policy applies."
     }
   },
   "vector": {
@@ -142,6 +154,13 @@
     "checkSystemPrompt": {
       "label": "Check system prompt",
       "extra": "Also inspect the content of the system prompt."
+    },
+    "onFailure": {
+      "label": "When the check dependency fails",
+      "extra": "What to do when the vector service times out or is unavailable and the semantic check cannot run; keyword matching always applies.",
+      "allow": "Allow (keywords only)",
+      "block": "Block request",
+      "hint": "Either way the degradation is counted in metrics and written to the audit log as \"degraded\" (at most once per 10 s) so a long outage is visible."
     }
   },
   "es": {

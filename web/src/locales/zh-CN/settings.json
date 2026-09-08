@@ -70,6 +70,18 @@
     "upstream_connect_timeout_sec": {
       "label": "上游连接超时",
       "extra": "与上游建立 TCP/TLS 连接的最长秒数。"
+    },
+    "max_body_memory_mb": {
+      "label": "请求体内存预算",
+      "extra": "网关同时驻留内存的请求体总量上限，超出时新请求排队等待，超时返回 503。"
+    },
+    "vector_max_concurrency": {
+      "label": "向量并发上限",
+      "extra": "同时进行的 embedding 调用数，智能路由与内容合规共用。"
+    },
+    "vector_timeout_sec": {
+      "label": "向量调用超时",
+      "extra": "单次 embedding 调用的超时；超时后按「审核失败处理」策略执行。"
     }
   },
   "vector": {
@@ -142,6 +154,13 @@
     "checkSystemPrompt": {
       "label": "检测 system 提示词",
       "extra": "开启后同时检测 system 提示词内容。"
+    },
+    "onFailure": {
+      "label": "审核依赖失败时",
+      "extra": "向量服务超时或不可用、语义检测无法执行时的处理方式；敏感词匹配始终生效。",
+      "allow": "放行（仅敏感词）",
+      "block": "拦截请求",
+      "hint": "无论选哪种，降级都会计入指标并在审核日志中以「降级」方式记录（最多每 10 秒一条），便于发现向量服务长期失效。"
     }
   },
   "es": {

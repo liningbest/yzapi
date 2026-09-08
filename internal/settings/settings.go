@@ -20,15 +20,18 @@ type Basic struct {
 }
 
 type Performance struct {
-	MaxConcurrency      int `json:"max_concurrency"`
-	QueueSize           int `json:"queue_size"`
-	QueueTimeoutSec     int `json:"queue_timeout_sec"`
-	RequestTimeoutSec   int `json:"request_timeout_sec"`
-	StreamIdleTimeout   int `json:"stream_idle_timeout_sec"`
-	MaxBodyKB           int `json:"max_body_kb"`
-	CooldownSec         int `json:"cooldown_sec"`
-	MaxRetries          int `json:"max_retries"`
-	UpstreamConnTimeout int `json:"upstream_connect_timeout_sec"`
+	MaxConcurrency       int `json:"max_concurrency"`
+	QueueSize            int `json:"queue_size"`
+	QueueTimeoutSec      int `json:"queue_timeout_sec"`
+	RequestTimeoutSec    int `json:"request_timeout_sec"`
+	StreamIdleTimeout    int `json:"stream_idle_timeout_sec"`
+	MaxBodyKB            int `json:"max_body_kb"`
+	CooldownSec          int `json:"cooldown_sec"`
+	MaxRetries           int `json:"max_retries"`
+	UpstreamConnTimeout  int `json:"upstream_connect_timeout_sec"`
+	MaxBodyMemoryMB      int `json:"max_body_memory_mb"`     // total bytes of request bodies held in memory
+	VectorMaxConcurrency int `json:"vector_max_concurrency"` // concurrent embedding calls
+	VectorTimeoutSec     int `json:"vector_timeout_sec"`     // per embedding call
 }
 
 type Vector struct {
@@ -52,6 +55,10 @@ type Compliance struct {
 	Enabled           bool    `json:"enabled"`
 	SemanticThreshold float64 `json:"semantic_threshold"`
 	CheckSystemPrompt bool    `json:"check_system_prompt"`
+	// OnFailure decides what happens when the semantic check cannot run (vector service
+	// down / timeout): "allow" forwards with keyword-only screening and records a degraded
+	// audit entry; "block" rejects the request with 503.
+	OnFailure string `json:"on_failure"`
 }
 
 type Elasticsearch struct {
@@ -85,15 +92,18 @@ func Defaults() All {
 			SiteName:           "YZ AI Gateway",
 		},
 		Performance: Performance{
-			MaxConcurrency:      512,
-			QueueSize:           1024,
-			QueueTimeoutSec:     30,
-			RequestTimeoutSec:   300,
-			StreamIdleTimeout:   120,
-			MaxBodyKB:           20480,
-			CooldownSec:         60,
-			MaxRetries:          3,
-			UpstreamConnTimeout: 10,
+			MaxConcurrency:       512,
+			QueueSize:            1024,
+			QueueTimeoutSec:      30,
+			RequestTimeoutSec:    300,
+			StreamIdleTimeout:    120,
+			MaxBodyKB:            20480,
+			CooldownSec:          60,
+			MaxRetries:           3,
+			UpstreamConnTimeout:  10,
+			MaxBodyMemoryMB:      512,
+			VectorMaxConcurrency: 16,
+			VectorTimeoutSec:     10,
 		},
 		SmartRoute: SmartRoute{
 			VirtualModel:   "yz-auto",
@@ -106,6 +116,7 @@ func Defaults() All {
 		Compliance: Compliance{
 			Enabled:           false,
 			SemanticThreshold: 0.85,
+			OnFailure:         "allow",
 		},
 		Elasticsearch: Elasticsearch{
 			AuthType:      "apikey",

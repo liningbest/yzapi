@@ -1,8 +1,12 @@
 package api
 
 import (
+	"container/list"
 	"context"
+	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -74,6 +78,15 @@ func (s *Server) putPerformance(c *gin.Context) {
 	if in.MaxBodyKB == 0 {
 		in.MaxBodyKB = 20480
 	}
+	if in.MaxBodyMemoryMB == 0 {
+		in.MaxBodyMemoryMB = 512
+	}
+	if in.VectorMaxConcurrency == 0 {
+		in.VectorMaxConcurrency = 16
+	}
+	if in.VectorTimeoutSec == 0 {
+		in.VectorTimeoutSec = 10
+	}
 	if err := s.st.SetPerformance(in); err != nil {
 		serverError(c, err)
 		return
@@ -104,15 +117,161 @@ func (s *Server) vectorClient(accountID uint, mdl string) (*vector.Client, strin
 	return vector.New(a.BaseURL, key, mdl, s.gw.HTTPClient()), ""
 }
 
+// vectorRuntime caches the embedding client and recent embeddings, and bounds the number
+// of concurrent embedding calls. It is invalidated whenever vector settings or the
+// underlying account change.
+type vectorRuntime struct {
+	mu       sync.Mutex
+	key      string // "<account>:<model>"
+	client   *vector.Client
+	sem      chan struct{}
+	inflight atomic.Int64
+	cache    *embedLRU
+}
+
+func (s *Server) InvalidateVector() {
+	s.vec.mu.Lock()
+	s.vec.key, s.vec.client = "", nil
+	if s.vec.cache != nil {
+		s.vec.cache.clear()
+	}
+	s.vec.mu.Unlock()
+}
+
+// VectorInflight reports concurrent embedding calls (for /metrics).
+func (s *Server) VectorInflight() int64 { return s.vec.inflight.Load() }
+
 // VectorEmbedFunc returns an embedding function bound to the current vector settings.
 func (s *Server) VectorEmbedFunc() func(ctx context.Context, inputs []string) ([][]float32, error) {
 	return func(ctx context.Context, inputs []string) ([][]float32, error) {
 		v := s.st.Get().Vector
-		cl, msg := s.vectorClient(v.AccountID, v.Model)
-		if cl == nil {
-			return nil, errVector(msg)
+		perf := s.st.Get().Performance
+		key := fmt.Sprintf("%d:%s", v.AccountID, v.Model)
+		s.vec.mu.Lock()
+		if s.vec.cache == nil {
+			s.vec.cache = newEmbedLRU(4096, 10*time.Minute)
 		}
-		return cl.Embed(ctx, inputs)
+		if s.vec.client == nil || s.vec.key != key {
+			cl, msg := s.vectorClient(v.AccountID, v.Model)
+			if cl == nil {
+				s.vec.mu.Unlock()
+				return nil, errVector(msg)
+			}
+			s.vec.client, s.vec.key = cl, key
+			s.vec.cache.clear()
+		}
+		want := max(perf.VectorMaxConcurrency, 1)
+		if s.vec.sem == nil || cap(s.vec.sem) != want {
+			s.vec.sem = make(chan struct{}, want)
+		}
+		cl, sem, cache := s.vec.client, s.vec.sem, s.vec.cache
+		s.vec.mu.Unlock()
+
+		// Serve from cache when every input is known.
+		out := make([][]float32, len(inputs))
+		var missing []int
+		for i, in := range inputs {
+			if vec, ok := cache.get(key, in); ok {
+				out[i] = vec
+			} else {
+				missing = append(missing, i)
+			}
+		}
+		if len(missing) == 0 {
+			return out, nil
+		}
+		timeout := time.Duration(max(perf.VectorTimeoutSec, 1)) * time.Second
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			return nil, errVector("embedding concurrency limit reached (timeout waiting)")
+		}
+		s.vec.inflight.Add(1)
+		defer func() { s.vec.inflight.Add(-1); <-sem }()
+		batch := make([]string, len(missing))
+		for j, i := range missing {
+			batch[j] = inputs[i]
+		}
+		vecs, err := cl.Embed(ctx, batch)
+		if err != nil {
+			return nil, err
+		}
+		if len(vecs) != len(batch) {
+			return nil, errVector("embedding returned wrong number of vectors")
+		}
+		for j, i := range missing {
+			out[i] = vecs[j]
+			cache.put(key, inputs[i], vecs[j])
+		}
+		return out, nil
+	}
+}
+
+// embedLRU is a small TTL + capacity bounded cache of embeddings keyed by model and text.
+type embedLRU struct {
+	mu   sync.Mutex
+	cap  int
+	ttl  time.Duration
+	m    map[string]*embedEntry
+	list *list.List
+}
+
+type embedEntry struct {
+	key  string
+	vec  []float32
+	exp  time.Time
+	elem *list.Element
+}
+
+func newEmbedLRU(capacity int, ttl time.Duration) *embedLRU {
+	return &embedLRU{cap: capacity, ttl: ttl, m: map[string]*embedEntry{}, list: list.New()}
+}
+
+func (c *embedLRU) clear() {
+	c.mu.Lock()
+	c.m = map[string]*embedEntry{}
+	c.list.Init()
+	c.mu.Unlock()
+}
+
+func (c *embedLRU) get(model, text string) ([]float32, bool) {
+	k := model + "\x00" + text
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.m[k]
+	if !ok {
+		return nil, false
+	}
+	if time.Now().After(e.exp) {
+		c.list.Remove(e.elem)
+		delete(c.m, k)
+		return nil, false
+	}
+	c.list.MoveToFront(e.elem)
+	return e.vec, true
+}
+
+func (c *embedLRU) put(model, text string, vec []float32) {
+	if len(text) > 8192 {
+		return // do not cache huge prompts
+	}
+	k := model + "\x00" + text
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if e, ok := c.m[k]; ok {
+		e.vec, e.exp = vec, time.Now().Add(c.ttl)
+		c.list.MoveToFront(e.elem)
+		return
+	}
+	e := &embedEntry{key: k, vec: vec, exp: time.Now().Add(c.ttl)}
+	e.elem = c.list.PushFront(e)
+	c.m[k] = e
+	for c.list.Len() > c.cap {
+		last := c.list.Back()
+		c.list.Remove(last)
+		delete(c.m, last.Value.(*embedEntry).key)
 	}
 }
 
@@ -136,6 +295,7 @@ func (s *Server) putVector(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
+	s.InvalidateVector()
 	if s.eng.Route != nil {
 		_ = s.eng.Route.Reload()
 	}
@@ -220,6 +380,9 @@ func (s *Server) putCompliance(c *gin.Context) {
 	if in.SemanticThreshold < 0 || in.SemanticThreshold > 1 {
 		badRequest(c, "语义阈值范围 0-1")
 		return
+	}
+	if in.OnFailure != "block" {
+		in.OnFailure = "allow"
 	}
 	if err := s.st.SetCompliance(in); err != nil {
 		serverError(c, err)

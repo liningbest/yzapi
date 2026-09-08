@@ -310,6 +310,7 @@ func (s *Server) updateAccount(c *gin.Context) {
 	if keyChanged || in.BaseURL != a.BaseURL {
 		s.gw.ResetHealth(a.ID)
 	}
+	s.InvalidateVector()
 	_ = s.gw.Reload()
 	s.db.Preload("Mappings").First(&a, id)
 	c.JSON(200, s.accountView(&a))
@@ -339,6 +340,7 @@ func (s *Server) deleteAccount(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
+	s.InvalidateVector()
 	_ = s.gw.Reload()
 	c.JSON(200, gin.H{})
 }
@@ -359,6 +361,7 @@ func (s *Server) setAccountEnabled(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
+	s.InvalidateVector()
 	_ = s.gw.Reload()
 	c.JSON(200, gin.H{"enabled": in.Enabled})
 }

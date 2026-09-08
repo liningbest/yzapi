@@ -243,15 +243,16 @@ type UsageHourly struct {
 
 // RouteSample is a labelled example used by smart routing.
 type RouteSample struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	Label     string    `gorm:"size:16;index" json:"label"` // simple | complex
-	Text      string    `gorm:"type:text" json:"text"`
-	Threshold float64   `json:"threshold"` // 0 = use global
-	Note      string    `gorm:"size:255" json:"note"`
-	Vector    []byte    `gorm:"type:blob" json:"-"`
-	VectorDim int       `json:"vector_dim"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          uint      `gorm:"primaryKey" json:"id"`
+	Label       string    `gorm:"size:16;index" json:"label"` // simple | complex
+	Text        string    `gorm:"type:text" json:"text"`
+	Threshold   float64   `json:"threshold"` // 0 = use global
+	Note        string    `gorm:"size:255" json:"note"`
+	Vector      []byte    `gorm:"type:blob" json:"-"`
+	VectorDim   int       `json:"vector_dim"`
+	VectorModel string    `gorm:"size:160" json:"vector_model"` // "<account id>:<model>" the vector was built with
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type RouteDecision struct {
@@ -302,6 +303,7 @@ type AuditSample struct {
 	Enabled       bool         `gorm:"default:true" json:"enabled"`
 	Vector        []byte       `gorm:"type:blob" json:"-"`
 	VectorDim     int          `json:"vector_dim"`
+	VectorModel   string       `gorm:"size:160" json:"vector_model"`
 	CreatedAt     time.Time    `json:"created_at"`
 	UpdatedAt     time.Time    `json:"updated_at"`
 }

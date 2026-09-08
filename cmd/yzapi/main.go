@@ -22,6 +22,7 @@ import (
 	"yzapi/internal/essink"
 	"yzapi/internal/gateway"
 	"yzapi/internal/logstore"
+	"yzapi/internal/metrics"
 	"yzapi/internal/model"
 	"yzapi/internal/routing"
 	"yzapi/internal/server"
@@ -100,7 +101,15 @@ func main() {
 		_ = compEng.Reload()
 	})
 
-	srv := server.New(cfg, database, gw, mgmt)
+	srv := server.New(cfg, database, gw, mgmt, func(w *metrics.Writer) {
+		w.Gauge("yzapi_calllog_dropped_total", "Call log records dropped (queue full or write failure)", float64(logs.Dropped()))
+		w.Gauge("yzapi_audit_dropped_total", "Audit log rows dropped", float64(auditWriter.Dropped()))
+		w.Gauge("yzapi_decision_dropped_total", "Route decision rows dropped", float64(decisionWriter.Dropped()))
+		w.Gauge("yzapi_vector_inflight", "Concurrent embedding calls", float64(mgmt.VectorInflight()))
+		st := es.Status()
+		w.Gauge("yzapi_es_queue", "Elasticsearch sink queue length", float64(st.QueueCount))
+		w.Gauge("yzapi_es_dropped_total", "Elasticsearch sink records dropped", float64(st.Dropped))
+	})
 	go func() {
 		slog.Info("yzapi listening", "addr", cfg.ListenAddr, "version", version)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -163,7 +172,8 @@ type complianceAdapter struct{ e *compliance.Engine }
 
 func toVerdict(v compliance.Verdict) gateway.ComplianceVerdict {
 	return gateway.ComplianceVerdict{Hit: v.Hit, Block: v.Block, Action: v.Action, RiskLevel: v.RiskLevel, DetectMethod: v.DetectMethod,
-		PolicyGroup: v.PolicyGroup, PolicyID: v.PolicyID, Evidence: v.Evidence, Confidence: v.Confidence, Hits: v.Hits}
+		PolicyGroup: v.PolicyGroup, PolicyID: v.PolicyID, Evidence: v.Evidence, Confidence: v.Confidence, Hits: v.Hits,
+		Degraded: v.Degraded, DegradedReason: v.DegradedReason}
 }
 
 func (a complianceAdapter) Check(ctx context.Context, text string) gateway.ComplianceVerdict {

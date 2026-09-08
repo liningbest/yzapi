@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
@@ -115,3 +116,45 @@ func TestExtractText(t *testing.T) {
 }
 
 type jsonRaw = json.RawMessage
+
+func TestBudget(t *testing.T) {
+	b := newBudget(100)
+	if !b.acquire(context.Background(), 60, time.Second) || !b.acquire(context.Background(), 40, time.Second) {
+		t.Fatal("expected both reservations to fit")
+	}
+	if b.acquire(context.Background(), 1, 50*time.Millisecond) {
+		t.Fatal("budget exhausted, acquire must time out")
+	}
+	b.release(60)
+	if !b.acquire(context.Background(), 60, time.Second) {
+		t.Fatal("released bytes must be reusable")
+	}
+	b.release(100)
+	// A single oversized request is admitted when the budget is idle.
+	if !b.acquire(context.Background(), 500, time.Second) {
+		t.Fatal("oversized request must be admitted alone")
+	}
+	if b.acquire(context.Background(), 1, 20*time.Millisecond) {
+		t.Fatal("nothing else fits while the oversized request holds the budget")
+	}
+	b.release(500)
+	used, _ := b.stats()
+	if used != 0 {
+		t.Fatalf("used=%d", used)
+	}
+}
+
+func TestParseRetryAfter(t *testing.T) {
+	if d := parseRetryAfter("30"); d != 30*time.Second {
+		t.Fatalf("seconds: %v", d)
+	}
+	if d := parseRetryAfter("99999"); d != 15*time.Minute {
+		t.Fatalf("cap: %v", d)
+	}
+	if d := parseRetryAfter(time.Now().Add(20 * time.Second).UTC().Format(http.TimeFormat)); d < 15*time.Second || d > 21*time.Second {
+		t.Fatalf("http date: %v", d)
+	}
+	if d := parseRetryAfter("garbage"); d != 0 {
+		t.Fatalf("garbage: %v", d)
+	}
+}

@@ -84,6 +84,23 @@ func (h *healthTracker) fail(id uint, base time.Duration, msg string) {
 	h.persist(id, seq, map[string]any{"health": model.HealthCooling, "cooldown_until": until, "last_error": truncate(msg, 500)})
 }
 
+// failFor puts the account into cooldown for exactly d (e.g. Retry-After or credential errors).
+func (h *healthTracker) failFor(id uint, d time.Duration, msg string) {
+	h.mu.Lock()
+	s, ok := h.m[id]
+	if !ok {
+		s = &accountHealth{}
+		h.m[id] = s
+	}
+	s.failures++
+	s.cooldownUntil = time.Now().Add(d)
+	s.lastError = msg
+	s.seq++
+	seq, until := s.seq, s.cooldownUntil
+	h.mu.Unlock()
+	h.persist(id, seq, map[string]any{"health": model.HealthCooling, "cooldown_until": until, "last_error": truncate(msg, 500)})
+}
+
 func (h *healthTracker) ok(id uint) {
 	h.mu.Lock()
 	s, ok := h.m[id]

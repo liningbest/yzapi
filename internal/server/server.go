@@ -18,7 +18,10 @@ import (
 	"yzapi/web"
 )
 
-func New(cfg *config.Config, db *gorm.DB, gw *gateway.Gateway, mgmt *api.Server) *http.Server {
+// MetricsExtra adds subsystem gauges to the /metrics output.
+type MetricsExtra = gateway.ExtraMetrics
+
+func New(cfg *config.Config, db *gorm.DB, gw *gateway.Gateway, mgmt *api.Server, extra ...MetricsExtra) *http.Server {
 	if !cfg.Dev {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -35,6 +38,17 @@ func New(cfg *config.Config, db *gorm.DB, gw *gateway.Gateway, mgmt *api.Server)
 			return
 		}
 		c.JSON(200, gin.H{"status": "ok"})
+	})
+
+	// Prometheus metrics
+	r.GET("/metrics", func(c *gin.Context) {
+		if cfg.MetricsToken != "" && c.GetHeader("Authorization") != "Bearer "+cfg.MetricsToken {
+			c.JSON(401, gin.H{"error": "unauthorized"})
+			return
+		}
+		c.Header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		c.Status(200)
+		gw.WriteMetrics(c.Writer, extra...)
 	})
 
 	// Data plane (plain net/http handlers for minimal overhead)

@@ -47,6 +47,12 @@ type keyEntry struct {
 
 func newKeyCache(db *gorm.DB) *keyCache { return &keyCache{db: db, m: map[string]*keyEntry{}} }
 
+func (c *keyCache) size() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return len(c.m)
+}
+
 func (c *keyCache) invalidate() {
 	c.mu.Lock()
 	c.gen++

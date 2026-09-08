@@ -16,6 +16,7 @@
 | GET | /health/live | `{"status":"ok"}` |
 | GET | /health/ready | `{"status":"ok"}` 或 503 `{"status":"not_ready"}` |
 | GET | /api/public/info | `{site_name, version, base_url}` |
+| GET | /metrics | Prometheus 文本格式指标；设置 `YZAPI_METRICS_TOKEN` 后需 `Authorization: Bearer <token>` |
 
 ## 认证
 
@@ -111,10 +112,10 @@
 ### 设置 `/api/admin/settings`
 - `GET` → `{basic, performance, vector, smart_route, compliance, elasticsearch}`（密钥字段脱敏为 `"******"`）
 - `PUT /basic {base_url, log_retention_days, protocol_conversion, site_name}`
-- `PUT /performance {max_concurrency, queue_size, queue_timeout_sec, request_timeout_sec, stream_idle_timeout_sec, max_body_kb, cooldown_sec, max_retries, upstream_connect_timeout_sec}`
+- `PUT /performance {max_concurrency, queue_size, queue_timeout_sec, request_timeout_sec, stream_idle_timeout_sec, max_body_kb, cooldown_sec, max_retries, upstream_connect_timeout_sec, max_body_memory_mb, vector_max_concurrency, vector_timeout_sec}`
 - `PUT /vector {account_id, model}`；`POST /vector/test {account_id, model}` → `{ok, dim, latency_ms, message}`
 - `PUT /smart_route {enabled, virtual_model, simple_group_id, complex_group_id, threshold, confidence_gap, top_k}`
-- `PUT /compliance {enabled, semantic_threshold}`
+- `PUT /compliance {enabled, semantic_threshold, check_system_prompt, on_failure:"allow"|"block"}`
 - `PUT /elasticsearch {enabled,url,auth_type,api_key,username,password,index_prefix,request_kb,response_kb,retention_days}`；`POST /elasticsearch/test` → `{ok, version, message}`；`GET /elasticsearch/status` → `{configured, queue_count, queue_bytes, dropped, last_success_at, failing_since}`
 - 密钥字段传 `"******"` 表示保持不变。
 

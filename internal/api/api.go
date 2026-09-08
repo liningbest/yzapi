@@ -64,6 +64,7 @@ type Server struct {
 	auth    *authService
 	version string
 	started time.Time
+	vec     vectorRuntime
 }
 
 func New(cfg *config.Config, db *gorm.DB, gw *gateway.Gateway, st *settings.Store, cipher *crypto.Cipher, eng Engines, version string) (*Server, error) {

@@ -16,6 +16,7 @@ import (
 	"yzapi/internal/config"
 	"yzapi/internal/crypto"
 	"yzapi/internal/logstore"
+	"yzapi/internal/metrics"
 	"yzapi/internal/model"
 	"yzapi/internal/settings"
 )
@@ -48,6 +49,9 @@ type ComplianceVerdict struct {
 	Evidence     string
 	Confidence   float64
 	Hits         model.JSON
+	// Degraded: the semantic pass could not run (vector service failure).
+	Degraded       bool
+	DegradedReason string
 }
 
 // Checker inspects request text before it is forwarded.
@@ -82,6 +86,30 @@ type Gateway struct {
 	AuditLogger    func(*model.AuditLog)
 	DecisionLogger func(*model.RouteDecision)
 	BodySink       BodySink
+
+	bodyBudget *budget
+	Metrics    Metrics
+}
+
+// Metrics holds request-level counters exported at /metrics.
+type Metrics struct {
+	Requests           *metrics.LabeledCounter // result, api_type
+	Tokens             *metrics.LabeledCounter // kind
+	Latency            *metrics.Histogram
+	UpstreamAttempts   *metrics.LabeledCounter // outcome
+	ComplianceDegraded metrics.Counter
+	ComplianceBlocked  metrics.Counter
+	lastDegraded       atomic.Int64 // unix seconds
+	lastDegradedLog    atomic.Int64
+}
+
+func newMetrics() Metrics {
+	return Metrics{
+		Requests:         metrics.NewLabeledCounter(),
+		Tokens:           metrics.NewLabeledCounter(),
+		Latency:          metrics.NewHistogram([]float64{0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 120}),
+		UpstreamAttempts: metrics.NewLabeledCounter(),
+	}
 }
 
 // BodySink receives request/response bodies for external audit storage.
@@ -100,16 +128,19 @@ func New(cfg *config.Config, db *gorm.DB, cipher *crypto.Cipher, st *settings.St
 		groups:   newCounterMap(),
 		apikeys:  newCounterMap(),
 		accounts: newCounterMap(),
+		Metrics:  newMetrics(),
 	}
 	g.snap = snapshotHolder{db: db, cipher: cipher}
 	perf := st.Get().Performance
 	g.gate = newGate(perf.MaxConcurrency, perf.QueueSize)
+	g.bodyBudget = newBudget(int64(max(perf.MaxBodyMemoryMB, 1)) << 20)
 	g.buildTransport(perf)
 	if err := g.Reload(); err != nil {
 		return nil, err
 	}
 	st.OnApply(func(all settings.All) {
 		g.gate.configure(all.Performance.MaxConcurrency, all.Performance.QueueSize)
+		g.bodyBudget.configure(int64(max(all.Performance.MaxBodyMemoryMB, 1)) << 20)
 		g.buildTransport(all.Performance)
 		_ = g.Reload()
 	})
