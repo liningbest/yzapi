@@ -279,6 +279,8 @@
     "unknown": "Unknown",
     "none": "None",
     "partialHint": "Stream was interrupted; only partial usage was reported (e.g. prompt tokens only)",
-    "unknownHint": "Upstream reported no usage; rough estimate of about {{n}} prompt tokens from the request size (indicative only, inaccurate with images or metadata)"
+    "unknownHint": "Upstream reported no usage; rough estimate of about {{n}} prompt tokens from the request size (indicative only, inaccurate with images or metadata)",
+    "corrected": "Corrected",
+    "correctedHint": "An older gateway stored only the final attempt on this request; its usage was re-derived from the attempt records during upgrade"
   }
 }

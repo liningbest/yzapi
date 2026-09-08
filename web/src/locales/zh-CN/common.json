@@ -279,6 +279,8 @@
     "unknown": "未知",
     "none": "无消耗",
     "partialHint": "流式中断，仅拿到部分用量（例如只有输入 Token）",
-    "unknownHint": "上游未返回 usage；按请求体大小粗略估算输入约 {{n}} Token（仅供参考，含图片或元数据时偏差较大）"
+    "unknownHint": "上游未返回 usage；按请求体大小粗略估算输入约 {{n}} Token（仅供参考，含图片或元数据时偏差较大）",
+    "corrected": "已修正",
+    "correctedHint": "请求级用量由旧版本网关只记录最后一次尝试而少计，升级时按各次尝试记录重新汇总"
   }
 }

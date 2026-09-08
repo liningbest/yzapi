@@ -94,6 +94,9 @@ func New(db *gorm.DB, dataDir string, retentionDays func() int) (*Store, error) 
 			return nil, fmt.Errorf("initialise purge boundary: %w", err)
 		}
 	}
+	if err := s.upgradeUsageRollup(); err != nil {
+		return nil, fmt.Errorf("upgrade usage rollup: %w", err)
+	}
 	s.wg.Add(3)
 	go s.writer()
 	go s.syncer()
@@ -255,7 +258,8 @@ type Stats struct {
 	Failures        int64      `json:"write_failures"`
 	SyncFailures    int64      `json:"sync_failures"`
 	LastCommit      *time.Time `json:"last_commit_at"`
-	PurgedBefore    *time.Time `json:"purged_before"` // raw logs older than this are gone; rebuilds refuse earlier hours
+	PurgedBefore    *time.Time `json:"purged_before"`  // raw logs older than this are gone; rebuilds refuse earlier hours
+	AttemptsSince   *time.Time `json:"attempts_since"` // rollup hours from here carry attempt counts / attribution; earlier ones were never recorded
 }
 
 func (s *Store) Stats() Stats {
@@ -266,6 +270,10 @@ func (s *Store) Stats() Stats {
 		Replayed: s.replayed.Load(), Failures: s.failures.Load(), SyncFailures: s.syncFailures.Load()}
 	if pb, ok, err := PurgedBefore(s.db); err == nil && ok {
 		st.PurgedBefore = &pb
+	}
+	if u, err := readUsageUpgrade(s.db); err == nil && u != nil {
+		since := u.AttemptsSince
+		st.AttemptsSince = &since
 	}
 	if t := s.lastOK.Load(); t > 0 {
 		tt := time.Unix(t, 0)
@@ -441,6 +449,9 @@ func (s *Store) commit(batch []*model.CallLog) error {
 		if len(fresh) == 0 {
 			return nil
 		}
+		for _, l := range fresh {
+			normalizeLegacyUsage(l) // journal written by an older binary
+		}
 		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "request_id"}}, DoNothing: true}).
 			CreateInBatches(fresh, 256).Error; err != nil {
 			return err
@@ -536,7 +547,7 @@ func applyRollup(tx *gorm.DB, batch []*model.CallLog) error {
 				{Name: "provider"}, {Name: "request_model"}, {Name: "model_group"}, {Name: "api_type"}},
 			DoUpdates: clause.Assignments(map[string]any{
 				"requests":          gorm.Expr("usage_hourlies.requests + ?", u.Requests),
-				"attempts":          gorm.Expr("usage_hourlies.attempts + ?", u.Attempts),
+				"attempts":          gorm.Expr("COALESCE(usage_hourlies.attempts, 0) + ?", u.Attempts), // column added later; old rows may hold NULL
 				"success":           gorm.Expr("usage_hourlies.success + ?", u.Success),
 				"failed":            gorm.Expr("usage_hourlies.failed + ?", u.Failed),
 				"prompt_tokens":     gorm.Expr("usage_hourlies.prompt_tokens + ?", u.PromptTokens),
@@ -574,6 +585,12 @@ func Rebuild(db *gorm.DB, from, to time.Time, retentionDays int) (hours int, row
 	if !RebuildAllowed(from, retentionDays, time.Now()) {
 		return 0, 0, ErrRebuildOutsideRetention
 	}
+	corrected := 0
+	defer func() {
+		if err == nil && corrected > 0 {
+			slog.Info("rebuild corrected request-level usage of legacy call logs from their attempt records", "rows", corrected)
+		}
+	}()
 	from = from.Truncate(time.Hour)
 	to = to.Truncate(time.Hour).Add(time.Hour)
 	maintMu.Lock()
@@ -598,6 +615,21 @@ func Rebuild(db *gorm.DB, from, to time.Time, retentionDays int) (hours int, row
 				continue
 			}
 			hours++
+			for _, l := range logs {
+				if !normalizeLegacyUsage(l) {
+					continue
+				}
+				// Older gateways stored only the final attempt's usage on the request; the
+				// attempt records are the evidence, so the request row is corrected here in
+				// the same transaction and flagged, keeping logs, rollup and reconcile aligned.
+				err := tx.Model(&model.CallLog{}).Where("id = ?", l.ID).Updates(map[string]any{
+					"prompt_tokens": l.PromptTokens, "completion_tokens": l.CompletionTokens, "total_tokens": l.TotalTokens,
+					"usage_status": l.UsageStatus, "tokens_known": l.TokensKnown, "usage_corrected": true}).Error
+				if err != nil {
+					return err
+				}
+				corrected++
+			}
 			agg := Aggregate(logs)
 			rows += len(agg)
 			if err := tx.CreateInBatches(agg, 256).Error; err != nil {
@@ -616,6 +648,136 @@ type Mismatch struct {
 	RollupRequests int64     `json:"rollup_requests"`
 	LogTokens      int64     `json:"log_tokens"`
 	RollupTokens   int64     `json:"rollup_tokens"`
+}
+
+// normalizeLegacyUsage re-derives a request's usage from its attempt records when the
+// two disagree. Gateways before round 8 stored only the final attempt's usage on the
+// request (a retried request lost the failed attempt's tokens; a passed-through 400 with
+// usage was stored as 0 / none). The fold used here is the same one finish() applies to
+// live requests, so a corrected row is exactly what the current gateway would have
+// written. Rows whose attempts carry no usage evidence at all are left alone. Returns
+// true when the row was changed; calling it again is a no-op.
+func normalizeLegacyUsage(l *model.CallLog) bool {
+	if len(l.Attempts) == 0 {
+		return false
+	}
+	var attempts []logAttempt
+	if json.Unmarshal([]byte(l.Attempts), &attempts) != nil {
+		return false
+	}
+	var hasUnknown, hasPartial, hasConfirmed, evidence bool
+	var p, c int64
+	for _, a := range attempts {
+		switch a.UsageStatus {
+		case model.UsageConfirmed:
+			hasConfirmed, evidence = true, true
+			p += a.PromptTokens
+			c += a.CompletionTokens
+		case model.UsagePartial:
+			hasPartial, evidence = true, true
+			p += a.PromptTokens
+			c += a.CompletionTokens
+		case model.UsageUnknown, model.UsageNone:
+			evidence = true
+			if a.UsageStatus == model.UsageUnknown {
+				hasUnknown = true
+			}
+		}
+	}
+	if !evidence {
+		return false
+	}
+	status := model.UsageNone
+	switch {
+	case hasUnknown:
+		status = model.UsageUnknown
+	case hasPartial:
+		status = model.UsagePartial
+	case hasConfirmed:
+		status = model.UsageConfirmed
+	}
+	if p+c == l.PromptTokens+l.CompletionTokens && status == l.UsageStatus {
+		return false
+	}
+	if p+c < l.PromptTokens+l.CompletionTokens {
+		// The request knows more than its attempts (should not happen); never drop tokens.
+		return false
+	}
+	extra := max(l.TotalTokens-l.PromptTokens-l.CompletionTokens, 0) // provider-reported extras (e.g. reasoning)
+	l.PromptTokens, l.CompletionTokens = p, c
+	l.TotalTokens = p + c + extra
+	l.UsageStatus = status
+	l.TokensKnown = status == model.UsageConfirmed
+	l.UsageCorrected = true
+	return true
+}
+
+// usageUpgradeKey records the one-time rollup upgrade (attempt attribution + attempts
+// column + legacy usage correction). Hours before AttemptsSince have no recorded attempt
+// counts: their attempts value is 0 because nothing was recorded, not because nothing
+// was attempted.
+const usageUpgradeKey = "usage_rollup_upgrade_v2"
+
+type usageUpgrade struct {
+	At            time.Time `json:"at"`
+	AttemptsSince time.Time `json:"attempts_since"`
+	Hours         int       `json:"hours"`
+}
+
+func readUsageUpgrade(db *gorm.DB) (*usageUpgrade, error) {
+	var row model.Setting
+	if err := db.Where("key = ?", usageUpgradeKey).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var u usageUpgrade
+	if err := json.Unmarshal([]byte(row.Value), &u); err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+// upgradeUsageRollup runs once per database: fills NULL attempts left by a nullable
+// column, then rebuilds every hour whose raw logs are still complete so the rollup
+// carries real attempt counts and per-attempt attribution, and legacy under-reported
+// requests are corrected. Hours before the window keep their old rollup (attempts 0 =
+// not recorded). Safe to re-run: the marker is only written after success.
+func (s *Store) upgradeUsageRollup() error {
+	if done, err := readUsageUpgrade(s.db); err != nil {
+		return err
+	} else if done != nil {
+		return nil
+	}
+	if err := s.db.Exec("UPDATE usage_hourlies SET attempts = 0 WHERE attempts IS NULL").Error; err != nil {
+		return err
+	}
+	now := time.Now()
+	from := s.cutoff().Add(time.Hour).Truncate(time.Hour)
+	if pb, ok, err := PurgedBefore(s.db); err != nil {
+		return err
+	} else if ok && pb.Add(time.Hour).Truncate(time.Hour).After(from) {
+		from = pb.Add(time.Hour).Truncate(time.Hour)
+	}
+	var first model.CallLog
+	res := s.db.Order("created_at ASC").Limit(1).Find(&first)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 1 && first.CreatedAt.Truncate(time.Hour).After(from) {
+		from = first.CreatedAt.Truncate(time.Hour) // nothing older exists: shorter rebuild
+	}
+	hours, _, err := Rebuild(s.db, from, now, s.retDays())
+	if err != nil {
+		return err
+	}
+	b, _ := json.Marshal(usageUpgrade{At: now, AttemptsSince: from, Hours: hours})
+	if err := s.db.Save(&model.Setting{Key: usageUpgradeKey, Value: string(b), UpdatedAt: now}).Error; err != nil {
+		return err
+	}
+	slog.Info("usage rollup upgraded: per-attempt attribution and attempt counts rebuilt from raw logs", "from", from, "hours", hours)
+	return nil
 }
 
 // purgeBoundaryAllows reports whether hours from `from` onwards still have complete raw

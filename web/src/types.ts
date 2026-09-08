@@ -537,6 +537,8 @@ export interface CallLog {
   total_tokens: number;
   cached_tokens: number;
   tokens_known: boolean;
+  /** Request-level usage was re-derived from attempt records during an upgrade. */
+  usage_corrected?: boolean;
   usage_status?: UsageStatus;
   est_prompt_tokens?: number;
   result: LogResult;

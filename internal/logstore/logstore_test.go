@@ -2,6 +2,7 @@ package logstore
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"os"
@@ -408,4 +409,206 @@ func TestAggregateAttemptAttribution(t *testing.T) {
 	if b := byAcc[2]; b == nil || b.TotalTokens != 25+9 || b.Requests != 2 || b.Attempts != 2 {
 		t.Fatalf("account 2 = %+v", b)
 	}
+}
+
+func legacyLog(id string, at time.Time) *model.CallLog {
+	l := sample(id, 0)
+	l.CreatedAt = at
+	l.AccountID, l.Provider = 2, "openai"
+	return l
+}
+
+// C1: a request written by a pre-round-8 gateway (only the final attempt's usage on the
+// request, both attempts in the record) is corrected from its attempt evidence during
+// Rebuild, so logs, rollup and reconcile agree; rows without evidence stay untouched.
+func TestRebuildCorrectsLegacyUnderreportedLogs(t *testing.T) {
+	db := testDB(t)
+	at := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Hour).Add(time.Minute)
+	retry := legacyLog("legacy-retry", at)
+	retry.PromptTokens, retry.CompletionTokens, retry.TotalTokens, retry.UsageStatus, retry.TokensKnown = 20, 5, 25, model.UsageConfirmed, true
+	retry.Attempts = model.JSON(`[{"account_id":1,"provider":"openai","status_code":500,"usage_status":"confirmed","prompt_tokens":10,"completion_tokens":3},` +
+		`{"account_id":2,"provider":"openai","status_code":200,"usage_status":"confirmed","prompt_tokens":20,"completion_tokens":5}]`)
+	rejected := legacyLog("legacy-400", at)
+	rejected.Result, rejected.StatusCode, rejected.UsageStatus = "client_error", 400, model.UsageNone
+	rejected.Attempts = model.JSON(`[{"account_id":2,"provider":"openai","status_code":400,"usage_status":"confirmed","prompt_tokens":10,"completion_tokens":3}]`)
+	unknownFirst := legacyLog("legacy-unknown", at)
+	unknownFirst.PromptTokens, unknownFirst.CompletionTokens, unknownFirst.TotalTokens, unknownFirst.UsageStatus, unknownFirst.TokensKnown = 20, 5, 25, model.UsageConfirmed, true
+	unknownFirst.Attempts = model.JSON(`[{"account_id":1,"provider":"openai","status_code":500,"usage_status":"unknown"},` +
+		`{"account_id":2,"provider":"openai","status_code":200,"usage_status":"confirmed","prompt_tokens":20,"completion_tokens":5}]`)
+	ancient := legacyLog("legacy-noevidence", at) // attempts without usage fields at all
+	ancient.PromptTokens, ancient.TotalTokens, ancient.UsageStatus, ancient.TokensKnown = 7, 7, model.UsageConfirmed, true
+	ancient.Attempts = model.JSON(`[{"account_id":2,"provider":"openai","status_code":200}]`)
+	for _, l := range []*model.CallLog{retry, rejected, unknownFirst, ancient} {
+		if err := db.Create(l).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := Rebuild(db, at, at, 30); err != nil {
+		t.Fatal(err)
+	}
+	var got model.CallLog
+	db.Where("request_id = ?", "legacy-retry").First(&got)
+	if got.TotalTokens != 38 || got.PromptTokens != 30 || got.UsageStatus != model.UsageConfirmed || !got.TokensKnown || !got.UsageCorrected {
+		t.Fatalf("retry log not corrected: %+v", got)
+	}
+	got = model.CallLog{}
+	db.Where("request_id = ?", "legacy-400").First(&got)
+	if got.TotalTokens != 13 || got.UsageStatus != model.UsageConfirmed || got.StatusCode != 400 || !got.UsageCorrected {
+		t.Fatalf("400 log not corrected: %+v", got)
+	}
+	got = model.CallLog{}
+	db.Where("request_id = ?", "legacy-unknown").First(&got)
+	if got.TotalTokens != 25 || got.UsageStatus != model.UsageUnknown || got.TokensKnown || !got.UsageCorrected {
+		t.Fatalf("unknown-first log not corrected: %+v", got)
+	}
+	got = model.CallLog{}
+	db.Where("request_id = ?", "legacy-noevidence").First(&got)
+	if got.TotalTokens != 7 || got.UsageStatus != model.UsageConfirmed || got.UsageCorrected {
+		t.Fatalf("log without evidence must stay untouched: %+v", got)
+	}
+	var rows []model.UsageHourly
+	db.Find(&rows)
+	byAcc := map[uint]int64{}
+	var reqs, attempts, tokens int64
+	for _, r := range rows {
+		byAcc[r.AccountID] += r.TotalTokens
+		reqs += r.Requests
+		attempts += r.Attempts
+		tokens += r.TotalTokens
+	}
+	if byAcc[1] != 13 || byAcc[2] != 25+13+25+7 || reqs != 4 || attempts != 6 || tokens != 38+13+25+7 {
+		t.Fatalf("rollup after correction: byAcc=%v reqs=%d attempts=%d tokens=%d", byAcc, reqs, attempts, tokens)
+	}
+	mm, err := Reconcile(db, at, at)
+	if err != nil || len(mm) != 0 {
+		t.Fatalf("reconcile after correction: %v %+v", err, mm)
+	}
+	// A second rebuild is a no-op for the corrected rows.
+	if _, _, err := Rebuild(db, at, at, 30); err != nil {
+		t.Fatal(err)
+	}
+	got = model.CallLog{}
+	db.Where("request_id = ?", "legacy-retry").First(&got)
+	if got.TotalTokens != 38 {
+		t.Fatalf("repeat rebuild changed the corrected row: %+v", got)
+	}
+	if mm, _ := Reconcile(db, at, at); len(mm) != 0 {
+		t.Fatalf("reconcile after second rebuild: %+v", mm)
+	}
+}
+
+// A journal record left behind by an older binary is normalised when it is committed.
+func TestCommitNormalizesLegacyJournalRecord(t *testing.T) {
+	db := testDB(t)
+	l := legacyLog("journal-legacy", time.Now().UTC().Truncate(time.Hour).Add(time.Minute))
+	l.PromptTokens, l.CompletionTokens, l.TotalTokens, l.UsageStatus, l.TokensKnown = 20, 5, 25, model.UsageConfirmed, true
+	l.Attempts = model.JSON(`[{"account_id":1,"provider":"openai","status_code":500,"usage_status":"confirmed","prompt_tokens":10,"completion_tokens":3},` +
+		`{"account_id":2,"provider":"openai","status_code":200,"usage_status":"confirmed","prompt_tokens":20,"completion_tokens":5}]`)
+	s := &Store{db: db}
+	if err := s.commit([]*model.CallLog{l}); err != nil {
+		t.Fatal(err)
+	}
+	var got model.CallLog
+	db.First(&got)
+	if got.TotalTokens != 38 || !got.UsageCorrected {
+		t.Fatalf("journal record not normalised: %+v", got)
+	}
+	if mm, _ := Reconcile(db, l.CreatedAt, l.CreatedAt); len(mm) != 0 {
+		t.Fatalf("reconcile: %+v", mm)
+	}
+}
+
+// C2: rollup rows that predate the attempts column (NULL or missing) still accumulate
+// attempts once the schema is upgraded, and the one-time startup upgrade rebuilds the
+// window with real counts exactly once.
+func TestUpgradeHourlyAttemptsAfterSchemaChange(t *testing.T) {
+	db := testDB(t)
+	hour := time.Now().UTC().Truncate(time.Hour)
+	l := sample("new", 9)
+	l.CreatedAt = hour.Add(time.Minute)
+	l.AccountID, l.Provider = 2, "openai"
+	l.Attempts = model.JSON(`[{"account_id":2,"provider":"openai","usage_status":"confirmed","prompt_tokens":9}]`)
+
+	t.Run("column added by AutoMigrate", func(t *testing.T) {
+		if err := db.Exec("ALTER TABLE usage_hourlies DROP COLUMN attempts").Error; err != nil {
+			t.Fatal(err)
+		}
+		r := Aggregate([]*model.CallLog{l})[0]
+		if err := db.Omit("Attempts").Create(r).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.AutoMigrate(model.All()...); err != nil {
+			t.Fatal(err)
+		}
+		s := &Store{db: db}
+		if err := s.commit([]*model.CallLog{l}); err != nil {
+			t.Fatal(err)
+		}
+		var got sql.NullInt64
+		if err := db.Raw("SELECT attempts FROM usage_hourlies WHERE id = ?", r.ID).Row().Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if !got.Valid || got.Int64 != 1 {
+			t.Fatalf("attempts after upgrade + one commit = %+v", got)
+		}
+	})
+	t.Run("nullable column with NULL rows", func(t *testing.T) {
+		db.Exec("DELETE FROM usage_hourlies")
+		db.Exec("DELETE FROM call_logs")
+		if err := db.Exec("ALTER TABLE usage_hourlies DROP COLUMN attempts").Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Exec("ALTER TABLE usage_hourlies ADD COLUMN attempts bigint").Error; err != nil { // nullable, as the first 4526658 upgrade left it
+			t.Fatal(err)
+		}
+		r := Aggregate([]*model.CallLog{l})[0]
+		db.Omit("Attempts").Create(r)
+		db.Exec("UPDATE usage_hourlies SET attempts = NULL")
+		s := &Store{db: db}
+		l2 := *l
+		l2.RequestID = "new2"
+		if err := s.commit([]*model.CallLog{&l2}); err != nil {
+			t.Fatal(err)
+		}
+		var got sql.NullInt64
+		db.Raw("SELECT attempts FROM usage_hourlies WHERE id = ?", r.ID).Row().Scan(&got)
+		if !got.Valid || got.Int64 != 1 {
+			t.Fatalf("NULL row must still accumulate: %+v", got)
+		}
+	})
+	t.Run("startup upgrade rebuilds once", func(t *testing.T) {
+		db.Exec("DELETE FROM usage_hourlies")
+		db.Exec("DELETE FROM call_logs")
+		db.Exec("DELETE FROM settings WHERE key = ?", usageUpgradeKey)
+		db.Create(l) // raw log present; stale rollup row without attempts and wrong tokens
+		db.Exec("INSERT INTO usage_hourlies (hour, user_id, group_id, api_key_id, account_id, provider, request_model, model_group, api_type, requests, success, failed, prompt_tokens, completion_tokens, total_tokens, cached_tokens, unknown_usage, latency_ms) VALUES (?, 1, 1, 0, 2, 'openai', 'm', '', 'text', 1, 1, 0, 0, 0, 0, 0, 0, 0)", hour)
+		db.Exec("UPDATE usage_hourlies SET attempts = NULL")
+		s, err := New(db, t.TempDir(), func() int { return 30 })
+		if err != nil {
+			t.Fatal(err)
+		}
+		st := s.Stats()
+		s.Close(context.Background())
+		var row model.UsageHourly
+		db.Where("account_id = ?", 2).First(&row)
+		if row.Attempts != 1 || row.TotalTokens != 9 || row.Requests != 1 {
+			t.Fatalf("startup upgrade did not rebuild: %+v", row)
+		}
+		if st.AttemptsSince == nil || st.AttemptsSince.After(hour) {
+			t.Fatalf("attempts_since = %v", st.AttemptsSince)
+		}
+		u1, _ := readUsageUpgrade(db)
+		// Second start: marker present, nothing re-run.
+		db.Exec("UPDATE usage_hourlies SET attempts = 5")
+		s2, err := New(db, t.TempDir(), func() int { return 30 })
+		if err != nil {
+			t.Fatal(err)
+		}
+		s2.Close(context.Background())
+		u2, _ := readUsageUpgrade(db)
+		db.Where("account_id = ?", 2).First(&row)
+		if row.Attempts != 5 || !u1.At.Equal(u2.At) {
+			t.Fatalf("upgrade must run once: attempts=%d at1=%v at2=%v", row.Attempts, u1.At, u2.At)
+		}
+	})
 }

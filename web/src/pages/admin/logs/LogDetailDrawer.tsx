@@ -1,4 +1,4 @@
-import { Descriptions, Drawer, Space, Timeline, Typography } from 'antd';
+import { Descriptions, Drawer, Space, Timeline, Typography, Tooltip } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { NeutralTag, ProtocolTag, ProviderAvatar, ResultTag, SectionTitle, StatusCodeTag, TypeTag, UsageStatusTag } from '@/components';
 import { useIsMobile } from '@/hooks/useMediaQuery';
@@ -108,7 +108,16 @@ export default function LogDetailDrawer({ open, log, onClose }: Props) {
             <Descriptions.Item label={t('common:common.completionTokens')}>
               {tokensNode(log.completion_tokens)}
             </Descriptions.Item>
-            <Descriptions.Item label={t('common:common.totalTokens')}>{tokensNode(log.total_tokens)}</Descriptions.Item>
+            <Descriptions.Item label={t('common:common.totalTokens')}>
+              {tokensNode(log.total_tokens)}
+              {log.usage_corrected ? (
+                <Tooltip title={t('common:usageStatus.correctedHint')}>
+                  <span style={{ marginLeft: 6 }}>
+                    <NeutralTag>{t('common:usageStatus.corrected')}</NeutralTag>
+                  </span>
+                </Tooltip>
+              ) : null}
+            </Descriptions.Item>
             <Descriptions.Item label={t('common:common.cachedTokens')}>{tokensNode(log.cached_tokens)}</Descriptions.Item>
             <Descriptions.Item label={t('common:common.result')}>
               <ResultTag result={log.result} />

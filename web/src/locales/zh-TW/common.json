@@ -279,6 +279,8 @@
     "unknown": "未知",
     "none": "無消耗",
     "partialHint": "串流中斷，僅取得部分用量（例如只有輸入 Token）",
-    "unknownHint": "上游未回傳 usage；依請求體大小粗略估算輸入約 {{n}} Token（僅供參考，含圖片或中繼資料時偏差較大）"
+    "unknownHint": "上游未回傳 usage；依請求體大小粗略估算輸入約 {{n}} Token（僅供參考，含圖片或中繼資料時偏差較大）",
+    "corrected": "已修正",
+    "correctedHint": "請求級用量由舊版本閘道只記錄最後一次嘗試而少計，升級時按各次嘗試記錄重新彙總"
   }
 }

@@ -192,32 +192,35 @@ const (
 
 // CallLog records one data-plane request. RequestID is unique so journal replays are idempotent.
 type CallLog struct {
-	ID                uint      `gorm:"primaryKey" json:"id"`
-	RequestID         string    `gorm:"size:40;uniqueIndex:uq_call_logs_request_id" json:"request_id"`
-	UserID            uint      `gorm:"index" json:"user_id"`
-	Username          string    `gorm:"size:64" json:"username"`
-	GroupID           uint      `gorm:"index" json:"group_id"`
-	GroupName         string    `gorm:"size:64" json:"group_name"`
-	APIKeyID          uint      `gorm:"index" json:"api_key_id"`
-	APIKeyName        string    `gorm:"size:64" json:"api_key_name"`
-	AccountID         uint      `gorm:"index" json:"account_id"`
-	AccountName       string    `gorm:"size:64" json:"account_name"`
-	Provider          string    `gorm:"size:32;index" json:"provider"`
-	RequestModel      string    `gorm:"size:128;index" json:"request_model"`
-	UpstreamModel     string    `gorm:"size:128" json:"upstream_model"`
-	ModelGroup        string    `gorm:"size:64" json:"model_group"`
-	APIType           string    `gorm:"size:16;index" json:"api_type"`
-	ClientProtocol    string    `gorm:"size:32" json:"client_protocol"`
-	UpstreamProtocol  string    `gorm:"size:32" json:"upstream_protocol"`
-	Stream            bool      `json:"stream"`
-	PromptTokens      int64     `json:"prompt_tokens"`
-	CompletionTokens  int64     `json:"completion_tokens"`
-	TotalTokens       int64     `json:"total_tokens"`
-	CachedTokens      int64     `json:"cached_tokens"`
-	TokensKnown       bool      `json:"tokens_known"`
-	UsageStatus       string    `gorm:"size:12;index" json:"usage_status"` // confirmed | partial | unknown | none
-	EstPromptTokens   int64     `json:"est_prompt_tokens"`                 // rough lower bound (request bytes / 4) when usage is not confirmed
-	Result            string    `gorm:"size:16;index" json:"result"`       // success | client_error | upstream_error | blocked
+	ID               uint   `gorm:"primaryKey" json:"id"`
+	RequestID        string `gorm:"size:40;uniqueIndex:uq_call_logs_request_id" json:"request_id"`
+	UserID           uint   `gorm:"index" json:"user_id"`
+	Username         string `gorm:"size:64" json:"username"`
+	GroupID          uint   `gorm:"index" json:"group_id"`
+	GroupName        string `gorm:"size:64" json:"group_name"`
+	APIKeyID         uint   `gorm:"index" json:"api_key_id"`
+	APIKeyName       string `gorm:"size:64" json:"api_key_name"`
+	AccountID        uint   `gorm:"index" json:"account_id"`
+	AccountName      string `gorm:"size:64" json:"account_name"`
+	Provider         string `gorm:"size:32;index" json:"provider"`
+	RequestModel     string `gorm:"size:128;index" json:"request_model"`
+	UpstreamModel    string `gorm:"size:128" json:"upstream_model"`
+	ModelGroup       string `gorm:"size:64" json:"model_group"`
+	APIType          string `gorm:"size:16;index" json:"api_type"`
+	ClientProtocol   string `gorm:"size:32" json:"client_protocol"`
+	UpstreamProtocol string `gorm:"size:32" json:"upstream_protocol"`
+	Stream           bool   `json:"stream"`
+	PromptTokens     int64  `json:"prompt_tokens"`
+	CompletionTokens int64  `json:"completion_tokens"`
+	TotalTokens      int64  `json:"total_tokens"`
+	CachedTokens     int64  `json:"cached_tokens"`
+	TokensKnown      bool   `json:"tokens_known"`
+	UsageStatus      string `gorm:"size:12;index" json:"usage_status"` // confirmed | partial | unknown | none
+	EstPromptTokens  int64  `json:"est_prompt_tokens"`                 // rough estimate (request bytes / 4) when usage is not confirmed
+	// UsageCorrected marks a request whose request-level usage was re-derived from its
+	// attempt records during an upgrade (older gateways only kept the final attempt).
+	UsageCorrected    bool      `gorm:"not null;default:false" json:"usage_corrected"`
+	Result            string    `gorm:"size:16;index" json:"result"` // success | client_error | upstream_error | blocked
 	StatusCode        int       `gorm:"index" json:"status_code"`
 	LatencyMs         int64     `json:"latency_ms"`
 	UpstreamLatencyMs int64     `json:"upstream_latency_ms"`
@@ -246,7 +249,7 @@ type UsageHourly struct {
 	// the account of the attempt that consumed them, so a retried request can spread its
 	// tokens over several rows while still counting as one request.
 	Requests         int64 `json:"requests"`
-	Attempts         int64 `json:"attempts"`
+	Attempts         int64 `gorm:"not null;default:0" json:"attempts"`
 	Success          int64 `json:"success"`
 	Failed           int64 `json:"failed"`
 	PromptTokens     int64 `json:"prompt_tokens"`
