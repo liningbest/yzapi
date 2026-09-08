@@ -290,6 +290,7 @@ func ChatStreamToResponses(r io.Reader, w io.Writer, flush func(), model string)
 		tools      = map[int]*toolState{}
 		outputs    []any
 		finish     string
+		done       bool
 	)
 	closeMsg := func() error {
 		if !msgOpen {
@@ -340,6 +341,7 @@ func ChatStreamToResponses(r io.Reader, w io.Writer, flush func(), model string)
 			return usage, err
 		}
 		if ev.Data == "[DONE]" {
+			done = true
 			break
 		}
 		var chunk struct {
@@ -460,7 +462,13 @@ func ChatStreamToResponses(r io.Reader, w io.Writer, flush func(), model string)
 	if usage != nil {
 		final["usage"] = toRespUsage(usage)
 	}
-	return usage, emit("response.completed", map[string]any{"response": final})
+	if err := emit("response.completed", map[string]any{"response": final}); err != nil {
+		return usage, err
+	}
+	if !done {
+		return usage, ErrIncomplete
+	}
+	return usage, nil
 }
 
 type toolState struct {
@@ -738,5 +746,5 @@ func ResponsesStreamToChat(r io.Reader, w io.Writer, flush func(), model string,
 	}
 	_ = WriteSSE(w, "", "[DONE]")
 	flush()
-	return usage, nil
+	return usage, ErrIncomplete
 }

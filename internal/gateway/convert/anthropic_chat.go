@@ -332,6 +332,7 @@ func ChatStreamToAnthropic(r io.Reader, w io.Writer, flush func(), model string)
 		usage       *Usage
 		msgID       = anthropicID("")
 		inputTokens int
+		done        bool
 	)
 	emit := func(event string, v any) error {
 		b, _ := json.Marshal(v)
@@ -386,6 +387,7 @@ func ChatStreamToAnthropic(r io.Reader, w io.Writer, flush func(), model string)
 			return usage, err
 		}
 		if ev.Data == "[DONE]" {
+			done = true
 			break
 		}
 		var chunk struct {
@@ -507,5 +509,11 @@ func ChatStreamToAnthropic(r io.Reader, w io.Writer, flush func(), model string)
 		"delta": map[string]any{"stop_reason": stopReason, "stop_sequence": nil}, "usage": u}); err != nil {
 		return usage, err
 	}
-	return usage, emit("message_stop", map[string]any{"type": "message_stop"})
+	if err := emit("message_stop", map[string]any{"type": "message_stop"}); err != nil {
+		return usage, err
+	}
+	if !done {
+		return usage, ErrIncomplete
+	}
+	return usage, nil
 }

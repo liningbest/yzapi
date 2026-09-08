@@ -225,13 +225,23 @@ func usageFromJSON(proto string, raw []byte) (u convert.Usage, ok bool) {
 
 // passthroughStream copies SSE from upstream to client while sniffing usage.
 // dropUsageOnly removes OpenAI usage-only chunks that the client did not ask for.
+// It returns convert.ErrIncomplete when the stream ends without its terminal event and
+// an upstreamError when the upstream signalled a failure inside the stream.
 func passthroughStream(r io.Reader, w io.Writer, flush func(), proto string, dropUsageOnly bool) (convert.Usage, bool, error) {
 	var usage convert.Usage
 	known := false
+	done := false
+	var upstreamErr error
 	rd := convert.NewSSEReader(r)
 	for {
 		ev, err := rd.Next()
 		if err == io.EOF {
+			switch {
+			case upstreamErr != nil:
+				return usage, known, upstreamErr
+			case !done:
+				return usage, known, convert.ErrIncomplete
+			}
 			return usage, known, nil
 		}
 		if err != nil {
@@ -240,6 +250,18 @@ func passthroughStream(r io.Reader, w io.Writer, flush func(), proto string, dro
 		data := ev.Data
 		switch proto {
 		case model.ProtoAnthropicMessages:
+			switch ev.Event {
+			case "message_stop":
+				done = true
+			case "error":
+				var e struct {
+					Error struct {
+						Message string `json:"message"`
+					} `json:"error"`
+				}
+				_ = json.Unmarshal([]byte(data), &e)
+				upstreamErr = &upstreamError{msg: "upstream error event: " + e.Error.Message}
+			}
 			if ev.Event == "message_start" || ev.Event == "message_delta" || ev.Event == "error" {
 				var e struct {
 					Type    string `json:"type"`
@@ -268,6 +290,25 @@ func passthroughStream(r io.Reader, w io.Writer, flush func(), proto string, dro
 				}
 			}
 		case model.ProtoOpenAIResponses:
+			switch ev.Event {
+			case "response.completed", "response.incomplete":
+				done = true
+			case "response.failed", "error":
+				var e struct {
+					Message  string `json:"message"`
+					Response *struct {
+						Error *struct {
+							Message string `json:"message"`
+						} `json:"error"`
+					} `json:"response"`
+				}
+				_ = json.Unmarshal([]byte(data), &e)
+				msg := e.Message
+				if msg == "" && e.Response != nil && e.Response.Error != nil {
+					msg = e.Response.Error.Message
+				}
+				upstreamErr = &upstreamError{msg: "upstream error event: " + msg}
+			}
 			if strings.HasSuffix(ev.Event, "completed") || strings.HasSuffix(ev.Event, "incomplete") || strings.Contains(data, `"usage"`) {
 				var e struct {
 					Response *struct {
@@ -292,6 +333,18 @@ func passthroughStream(r io.Reader, w io.Writer, flush func(), proto string, dro
 				}
 			}
 		default: // openai chat
+			if data == "[DONE]" {
+				done = true
+			} else if strings.HasPrefix(data, "{") && strings.Contains(data, `"error"`) {
+				var e struct {
+					Error *struct {
+						Message string `json:"message"`
+					} `json:"error"`
+				}
+				if json.Unmarshal([]byte(data), &e) == nil && e.Error != nil {
+					upstreamErr = &upstreamError{msg: "upstream error event: " + e.Error.Message}
+				}
+			}
 			if data != "[DONE]" && strings.Contains(data, `"usage"`) {
 				var e struct {
 					Choices []json.RawMessage `json:"choices"`
@@ -315,6 +368,11 @@ func passthroughStream(r io.Reader, w io.Writer, flush func(), proto string, dro
 		flush()
 	}
 }
+
+// upstreamError marks a failure the upstream reported inside an otherwise-200 stream.
+type upstreamError struct{ msg string }
+
+func (e *upstreamError) Error() string { return e.msg }
 
 func (u *Upstream) mapModel(reqModel string) string {
 	if m, ok := u.Mappings[reqModel]; ok && m != "" {

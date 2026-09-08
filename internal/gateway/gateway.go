@@ -157,6 +157,9 @@ func (g *Gateway) Reload() error {
 		return err
 	}
 	g.keys.invalidate()
+	snap := g.snap.get()
+	g.groups.prune(func(id uint) bool { _, ok := snap.Groups[id]; return ok })
+	g.accounts.prune(func(id uint) bool { _, ok := snap.Accounts[id]; return ok })
 	return nil
 }
 
@@ -220,9 +223,8 @@ func (g *Gateway) Live() LiveStats {
 	snap := g.snap.get()
 	accSnap := g.accounts.snapshot()
 	for _, u := range snap.Accounts {
-		cur := accSnap[u.ID]
 		st, until, lastErr := g.health.state(u.ID)
-		al := AccountLoad{ID: u.ID, Name: u.Name, Provider: u.Provider, Priority: u.Priority, Current: cur[0], Limit: int64(u.MaxConcurrency), Health: st, LastErr: lastErr}
+		al := AccountLoad{ID: u.ID, Name: u.Name, Provider: u.Provider, Priority: u.Priority, Current: accSnap[u.ID], Limit: int64(u.MaxConcurrency), Health: st, LastErr: lastErr}
 		if !until.IsZero() {
 			al.Until = &until
 		}
@@ -233,8 +235,7 @@ func (g *Gateway) Live() LiveStats {
 	}
 	grpSnap := g.groups.snapshot()
 	for _, gv := range snap.Groups {
-		cur := grpSnap[gv.ID]
-		gl := GroupLoad{ID: gv.ID, Name: gv.Name, Current: cur[0], Limit: int64(gv.MaxConcurrency), Used: g.quota.usage(gv.ID), Quota: gv.TokenQuota}
+		gl := GroupLoad{ID: gv.ID, Name: gv.Name, Current: grpSnap[gv.ID], Limit: int64(gv.MaxConcurrency), Used: g.quota.usage(gv.ID), Quota: gv.TokenQuota}
 		if gl.Limit > 0 {
 			gl.Util = float64(gl.Current) / float64(gl.Limit)
 		}

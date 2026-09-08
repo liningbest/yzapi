@@ -77,8 +77,10 @@ func main() {
 		slog.Error("gateway", "err", err)
 		os.Exit(1)
 	}
-	gw.AuditLogger = func(l *model.AuditLog) { go database.Create(l) }
-	gw.DecisionLogger = func(d *model.RouteDecision) { go database.Create(d) }
+	auditWriter := logstore.NewBatchWriter[model.AuditLog](database, "audit", 4096)
+	decisionWriter := logstore.NewBatchWriter[model.RouteDecision](database, "decisions", 4096)
+	gw.AuditLogger = auditWriter.Record
+	gw.DecisionLogger = decisionWriter.Record
 
 	es := essink.New(st)
 	mgmt, err := api.New(cfg, database, gw, st, cipher, api.Engines{ES: es}, version)
@@ -115,6 +117,8 @@ func main() {
 	defer cancel()
 	_ = srv.Shutdown(ctx)
 	logs.Close(ctx)
+	auditWriter.Close(ctx)
+	decisionWriter.Close(ctx)
 	es.Close(ctx)
 	slog.Info("bye")
 }

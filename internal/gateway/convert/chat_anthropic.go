@@ -417,5 +417,5 @@ func AnthropicStreamToChat(r io.Reader, w io.Writer, flush func(), model string,
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 	_ = WriteSSE(w, "", "[DONE]")
 	flush()
-	return usage, nil
+	return usage, ErrIncomplete
 }

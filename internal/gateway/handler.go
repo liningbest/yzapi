@@ -264,8 +264,8 @@ func (g *Gateway) acquire(req *request) (func(), *GatewayError) {
 		}
 		return nil, ErrQueueTimeout
 	}
-	grpCtr := g.groups.get(req.group.ID, req.group.MaxConcurrency)
-	if !grpCtr.tryAcquire() {
+	grpCtr := g.groups.get(req.group.ID)
+	if !grpCtr.tryAcquire(int64(req.group.MaxConcurrency)) {
 		g.gate.release()
 		return nil, ErrGroupBusy
 	}
@@ -273,8 +273,8 @@ func (g *Gateway) acquire(req *request) (func(), *GatewayError) {
 	if req.group.MaxConcurrency > 0 && (keyLimit <= 0 || keyLimit > req.group.MaxConcurrency) {
 		keyLimit = req.group.MaxConcurrency
 	}
-	keyCtr := g.apikeys.get(req.principal.KeyID, keyLimit)
-	if !keyCtr.tryAcquire() {
+	keyCtr := g.apikeys.get(req.principal.KeyID)
+	if !keyCtr.tryAcquire(int64(keyLimit)) {
 		grpCtr.release()
 		g.gate.release()
 		return nil, ErrKeyBusy
@@ -416,8 +416,17 @@ func (g *Gateway) handleText(w http.ResponseWriter, r *http.Request, proto strin
 	req.text, req.msgCount = extractText(proto, req.raw)
 
 	// content compliance
-	if cp := g.checker.Load(); cp != nil && *cp != nil && g.settings.Get().Compliance.Enabled && req.text != "" {
-		v := (*cp).Check(r.Context(), req.text)
+	if cp := g.checker.Load(); cp != nil && *cp != nil && g.settings.Get().Compliance.Enabled {
+		checkText := req.text
+		if g.settings.Get().Compliance.CheckSystemPrompt {
+			if sys := extractSystem(proto, req.raw); sys != "" {
+				checkText = sys + "\n" + checkText
+			}
+		}
+		if checkText == "" {
+			checkText = "\x00" // nothing to check; keep the branch structure simple
+		}
+		v := (*cp).Check(r.Context(), strings.TrimSpace(strings.Trim(checkText, "\x00")))
 		if v.Hit {
 			if g.AuditLogger != nil {
 				status := 200
@@ -501,8 +510,8 @@ func (g *Gateway) forward(req *request, cands []string) {
 			if proto == "" {
 				continue
 			}
-			ctr := g.accounts.get(up.ID, up.MaxConcurrency)
-			if !ctr.tryAcquire() {
+			ctr := g.accounts.get(up.ID)
+			if !ctr.tryAcquire(int64(up.MaxConcurrency)) {
 				continue
 			}
 			tries++
@@ -759,12 +768,17 @@ func (g *Gateway) relay(req *request, resp *http.Response, upProto string, dropU
 		}
 		req.log.UpstreamLatencyMs += time.Since(t0).Milliseconds()
 		setUsage(req.log, usage, known)
-		if err != nil && req.r.Context().Err() == nil {
-			req.log.Result, req.log.StatusCode, req.log.Error = "upstream_error", 200, truncate(err.Error(), 500)
-		} else if req.r.Context().Err() != nil && err != nil {
-			req.log.Result, req.log.StatusCode, req.log.Error = "client_error", 499, "client disconnected"
-		} else {
+		switch {
+		case err == nil:
 			req.log.Result, req.log.StatusCode = "success", 200
+		case req.r.Context().Err() != nil:
+			req.log.Result, req.log.StatusCode, req.log.Error = "client_error", 499, "client disconnected"
+		case errors.Is(err, convert.ErrIncomplete):
+			// Bytes already reached the client; record the truncation instead of pretending success.
+			req.log.Result, req.log.StatusCode, req.log.Error = "upstream_error", 200, err.Error()
+			g.health.fail(req.log.AccountID, time.Duration(perf.CooldownSec)*time.Second, err.Error())
+		default:
+			req.log.Result, req.log.StatusCode, req.log.Error = "upstream_error", 200, truncate(err.Error(), 500)
 		}
 		g.finish(req)
 		return
@@ -865,6 +879,56 @@ func setUsage(l *model.CallLog, u convert.Usage, known bool) {
 		l.CachedTokens = int64(u.PromptTokensDetails.CachedTokens)
 	}
 	l.TokensKnown = known && l.TotalTokens > 0
+}
+
+// extractSystem returns system / developer / instructions text for compliance checks.
+func extractSystem(proto string, raw map[string]json.RawMessage) string {
+	switch proto {
+	case model.ProtoAnthropicMessages:
+		var s string
+		if json.Unmarshal(raw["system"], &s) == nil {
+			return s
+		}
+		var blocks []convert.AnthropicContentBlock
+		_ = json.Unmarshal(raw["system"], &blocks)
+		var sb strings.Builder
+		for _, b := range blocks {
+			if b.Type == "text" {
+				sb.WriteString(b.Text)
+				sb.WriteByte('\n')
+			}
+		}
+		return strings.TrimSpace(sb.String())
+	case model.ProtoOpenAIResponses:
+		var s string
+		_ = json.Unmarshal(raw["instructions"], &s)
+		return s
+	default:
+		var msgs []convert.ChatMessage
+		_ = json.Unmarshal(raw["messages"], &msgs)
+		var sb strings.Builder
+		for _, m := range msgs {
+			if m.Role == "system" || m.Role == "developer" {
+				var s string
+				if json.Unmarshal(m.Content, &s) == nil {
+					sb.WriteString(s)
+				} else {
+					var parts []struct {
+						Type string `json:"type"`
+						Text string `json:"text"`
+					}
+					_ = json.Unmarshal(m.Content, &parts)
+					for _, p := range parts {
+						if p.Type == "text" {
+							sb.WriteString(p.Text)
+						}
+					}
+				}
+				sb.WriteByte('\n')
+			}
+		}
+		return strings.TrimSpace(sb.String())
+	}
 }
 
 // extractText pulls the latest user text and the message count for routing/compliance.

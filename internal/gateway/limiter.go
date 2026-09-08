@@ -7,14 +7,14 @@ import (
 	"time"
 )
 
-// counter is a bounded in-flight counter. limit<=0 means unlimited.
+// counter is an in-flight counter. The limit is passed by the caller on every
+// acquire so a request holding an older configuration snapshot can never write a
+// stale limit back; limit<=0 means unlimited.
 type counter struct {
-	cur   atomic.Int64
-	limit atomic.Int64
+	cur atomic.Int64
 }
 
-func (c *counter) tryAcquire() bool {
-	lim := c.limit.Load()
+func (c *counter) tryAcquire(lim int64) bool {
 	for {
 		cur := c.cur.Load()
 		if lim > 0 && cur >= lim {
@@ -28,7 +28,6 @@ func (c *counter) tryAcquire() bool {
 
 func (c *counter) release()       { c.cur.Add(-1) }
 func (c *counter) Current() int64 { return c.cur.Load() }
-func (c *counter) Limit() int64   { return c.limit.Load() }
 
 // counterMap keeps per-id counters (groups, keys, accounts).
 type counterMap struct {
@@ -38,7 +37,7 @@ type counterMap struct {
 
 func newCounterMap() *counterMap { return &counterMap{m: map[uint]*counter{}} }
 
-func (cm *counterMap) get(id uint, limit int) *counter {
+func (cm *counterMap) get(id uint) *counter {
 	cm.mu.RLock()
 	c, ok := cm.m[id]
 	cm.mu.RUnlock()
@@ -50,21 +49,33 @@ func (cm *counterMap) get(id uint, limit int) *counter {
 		}
 		cm.mu.Unlock()
 	}
-	c.limit.Store(int64(limit))
 	return c
 }
 
-func (cm *counterMap) snapshot() map[uint][2]int64 {
+// snapshot returns current in-flight counts per id.
+func (cm *counterMap) snapshot() map[uint]int64 {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
-	out := make(map[uint][2]int64, len(cm.m))
+	out := make(map[uint]int64, len(cm.m))
 	for id, c := range cm.m {
-		out[id] = [2]int64{c.cur.Load(), c.limit.Load()}
+		out[id] = c.cur.Load()
 	}
 	return out
 }
 
-// gate implements the global concurrency limit with a bounded FIFO queue.
+// prune drops idle counters whose ids are no longer configured.
+func (cm *counterMap) prune(keep func(uint) bool) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	for id, c := range cm.m {
+		if !keep(id) && c.cur.Load() == 0 {
+			delete(cm.m, id)
+		}
+	}
+}
+
+// gate implements the global concurrency limit with a bounded wait queue. Waiters
+// are woken in an unspecified order (sync.Cond does not guarantee FIFO).
 type gate struct {
 	mu       sync.Mutex
 	cond     *sync.Cond

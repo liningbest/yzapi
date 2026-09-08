@@ -4,9 +4,14 @@ package convert
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"io"
 	"strings"
 )
+
+// ErrIncomplete is returned when an upstream stream ends without its protocol's
+// terminal event ([DONE], message_stop, response.completed ...).
+var ErrIncomplete = errors.New("upstream stream ended without a terminal event")
 
 // Event is a parsed server-sent event.
 type Event struct {

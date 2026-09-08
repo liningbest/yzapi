@@ -10,20 +10,24 @@ import (
 
 func TestCounterLimit(t *testing.T) {
 	cm := newCounterMap()
-	c := cm.get(1, 2)
-	if !c.tryAcquire() || !c.tryAcquire() {
+	c := cm.get(1)
+	if !c.tryAcquire(2) || !c.tryAcquire(2) {
 		t.Fatal("expected two acquires")
 	}
-	if c.tryAcquire() {
+	if c.tryAcquire(2) {
 		t.Fatal("third acquire should fail")
 	}
 	c.release()
-	if !c.tryAcquire() {
+	if !c.tryAcquire(2) {
 		t.Fatal("acquire after release should succeed")
 	}
-	u := cm.get(2, 0)
+	// A lowered limit takes effect immediately for new acquires while existing holders drain.
+	if c.tryAcquire(1) {
+		t.Fatal("lowered limit must reject while over capacity")
+	}
+	u := cm.get(2)
 	for i := 0; i < 1000; i++ {
-		if !u.tryAcquire() {
+		if !u.tryAcquire(0) {
 			t.Fatal("unlimited counter refused")
 		}
 	}

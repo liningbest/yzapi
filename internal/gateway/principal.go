@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gorm.io/gorm"
@@ -22,11 +23,21 @@ type Principal struct {
 	GroupID     uint
 }
 
+const (
+	keyCacheMax      = 20000
+	keyCacheTTL      = 30 * time.Second
+	keyCacheNegTTL   = 5 * time.Second
+	keyTouchInterval = time.Minute
+)
+
+// keyCache caches API key lookups. Every invalidate() bumps a generation; a lookup that
+// started before the bump must not write its (possibly stale) result back.
 type keyCache struct {
 	db   *gorm.DB
 	mu   sync.RWMutex
 	m    map[string]*keyEntry
-	last sync.Map // keyID -> time.Time of last persisted LastUsedAt
+	gen  uint64
+	last sync.Map // keyID -> *atomic.Int64 (unix seconds of last persisted LastUsedAt)
 }
 
 type keyEntry struct {
@@ -38,6 +49,7 @@ func newKeyCache(db *gorm.DB) *keyCache { return &keyCache{db: db, m: map[string
 
 func (c *keyCache) invalidate() {
 	c.mu.Lock()
+	c.gen++
 	c.m = map[string]*keyEntry{}
 	c.mu.Unlock()
 }
@@ -46,38 +58,59 @@ func (c *keyCache) lookup(raw string) *Principal {
 	h := crypto.HashAPIKey(raw)
 	c.mu.RLock()
 	e, ok := c.m[h]
+	gen := c.gen
 	c.mu.RUnlock()
 	if ok && time.Now().Before(e.expires) {
 		return e.p
 	}
 	var k model.APIKey
-	if err := c.db.Preload("User").Where("key_hash = ?", h).First(&k).Error; err != nil {
-		// Negative-cache misses briefly to blunt brute force scans.
-		c.mu.Lock()
-		c.m[h] = &keyEntry{p: nil, expires: time.Now().Add(5 * time.Second)}
-		c.mu.Unlock()
-		return nil
-	}
-	p := &Principal{KeyID: k.ID, KeyName: k.Name, KeyEnabled: k.Enabled}
-	if k.User != nil {
-		p.UserID = k.User.ID
-		p.Username = k.User.Username
-		p.UserRole = k.User.Role
-		p.UserEnabled = k.User.Enabled && !k.User.Locked
-		p.GroupID = k.User.GroupID
+	var p *Principal
+	ttl := keyCacheNegTTL
+	if err := c.db.Preload("User").Where("key_hash = ?", h).First(&k).Error; err == nil {
+		p = &Principal{KeyID: k.ID, KeyName: k.Name, KeyEnabled: k.Enabled}
+		if k.User != nil {
+			p.UserID = k.User.ID
+			p.Username = k.User.Username
+			p.UserRole = k.User.Role
+			p.UserEnabled = k.User.Enabled && !k.User.Locked
+			p.GroupID = k.User.GroupID
+		}
+		ttl = keyCacheTTL
 	}
 	c.mu.Lock()
-	c.m[h] = &keyEntry{p: p, expires: time.Now().Add(30 * time.Second)}
+	if c.gen == gen { // nobody invalidated while we were querying
+		c.store(h, &keyEntry{p: p, expires: time.Now().Add(ttl)})
+	}
 	c.mu.Unlock()
 	return p
 }
 
-// touch updates LastUsedAt at most once per minute per key.
+// store inserts under the write lock, sweeping expired entries when the cache is full.
+func (c *keyCache) store(h string, e *keyEntry) {
+	if len(c.m) >= keyCacheMax {
+		now := time.Now()
+		for k, v := range c.m {
+			if now.After(v.expires) {
+				delete(c.m, k)
+			}
+		}
+		if len(c.m) >= keyCacheMax {
+			// Still full of live entries (an abusive scan): drop everything rather than grow.
+			c.m = map[string]*keyEntry{}
+		}
+	}
+	c.m[h] = e
+}
+
+// touch updates LastUsedAt at most once per interval per key; the claim is atomic so
+// concurrent first-time callers do not all write.
 func (c *keyCache) touch(keyID uint) {
-	now := time.Now()
-	if v, ok := c.last.Load(keyID); ok && now.Sub(v.(time.Time)) < time.Minute {
+	now := time.Now().Unix()
+	v, _ := c.last.LoadOrStore(keyID, new(atomic.Int64))
+	slot := v.(*atomic.Int64)
+	prev := slot.Load()
+	if now-prev < int64(keyTouchInterval/time.Second) || !slot.CompareAndSwap(prev, now) {
 		return
 	}
-	c.last.Store(keyID, now)
-	go c.db.Model(&model.APIKey{}).Where("id = ?", keyID).Update("last_used_at", now)
+	go c.db.Model(&model.APIKey{}).Where("id = ?", keyID).Update("last_used_at", time.Unix(now, 0))
 }
