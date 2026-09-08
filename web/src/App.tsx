@@ -7,6 +7,7 @@ import enUS from 'antd/locale/en_US';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useThemeStore } from '@/stores/theme';
 import { useLocaleStore } from '@/stores/locale';
+import '@/stores/site';
 import { router } from '@/router';
 
 const queryClient = new QueryClient({

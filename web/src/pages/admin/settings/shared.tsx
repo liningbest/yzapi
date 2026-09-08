@@ -3,6 +3,7 @@ import { App, Button, Col, InputNumber, Row, Slider, Space } from 'antd';
 import type { FormInstance } from 'antd';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { useSiteStore } from '@/stores/site';
 import type { ReactNode } from 'react';
 
 export const SETTINGS_KEY = ['settings'] as const;
@@ -17,6 +18,7 @@ export function useSaveSettings<T>(fn: (body: T) => Promise<unknown>, onSuccess?
     onSuccess: () => {
       message.success(t('common.saveSuccess'));
       void qc.invalidateQueries({ queryKey: SETTINGS_KEY });
+      void useSiteStore.getState().refresh();
       onSuccess?.();
     },
   });

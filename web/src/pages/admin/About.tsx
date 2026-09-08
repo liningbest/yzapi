@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { settingsApi, systemApi } from '@/api';
 import { BrandMark, NeutralTag, PageHeader, SectionTitle, TimeCell } from '@/components';
 import { useThemeStore } from '@/stores/theme';
+import { useSiteStore } from '@/stores/site';
 import { formatDuration } from '@/utils/format';
 
 const REPO_URL = 'https://github.com/yzapi';
@@ -33,7 +34,7 @@ export default function About() {
   const settings = useQuery({ queryKey: ['settings'], queryFn: settingsApi.all });
 
   const baseUrl = settings.data?.basic.base_url ?? '';
-  const siteName = settings.data?.basic.site_name || t('common:app.name');
+  const siteName = settings.data?.basic.site_name || useSiteStore.getState().name;
   const origin = baseUrl.replace(/\/v1\/?$/, '');
 
   const columns: ColumnsType<EndpointRow> = [

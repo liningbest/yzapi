@@ -1,6 +1,7 @@
 import { Descriptions, Modal, Space, Typography } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { useSiteName } from '@/stores/site';
 import { authApi, systemApi } from '@/api';
 import { useAuthStore, isAdmin } from '@/stores/auth';
 import { useThemeStore } from '@/stores/theme';
@@ -14,6 +15,7 @@ interface Props {
 
 export default function AboutModal({ open, onClose }: Props) {
   const { t } = useTranslation();
+  const siteName = useSiteName();
   const user = useAuthStore((s) => s.user);
   const admin = isAdmin(user);
   const dark = useThemeStore((s) => s.mode) === 'dark';
@@ -27,7 +29,7 @@ export default function AboutModal({ open, onClose }: Props) {
           <BrandMark size={40} color={dark ? '#fafafa' : '#18181b'} stroke={dark ? '#18181b' : '#ffffff'} />
         </div>
         <Typography.Title level={5} style={{ margin: '12px 0 4px' }}>
-          {pub.data?.site_name || t('app.name')}
+          {pub.data?.site_name || siteName}
         </Typography.Title>
         <Typography.Text type="secondary">{t('app.tagline')}</Typography.Text>
       </div>

@@ -16,6 +16,7 @@ import {
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { useSiteName } from '@/stores/site';
 import { authApi } from '@/api';
 import { useAuthStore, isAdmin } from '@/stores/auth';
 import { useThemeStore } from '@/stores/theme';
@@ -33,6 +34,7 @@ interface Props {
 
 export default function AppLayout({ area }: Props) {
   const { t } = useTranslation();
+  const siteName = useSiteName();
   const navigate = useNavigate();
   const location = useLocation();
   const user = useAuthStore((s) => s.user);
@@ -127,7 +129,7 @@ export default function AppLayout({ area }: Props) {
         <BrandMark size={24} color={themeMode === 'dark' ? '#fafafa' : '#18181b'} stroke={themeMode === 'dark' ? '#18181b' : '#ffffff'} />
         {!isCollapsed ? (
           <div style={{ minWidth: 0 }}>
-            <div className="brand-name">{t('app.name')}</div>
+            <div className="brand-name">{siteName}</div>
             <div className="brand-sub">{area === 'admin' ? t('app.adminConsole') : t('app.userConsole')}</div>
           </div>
         ) : null}
@@ -185,7 +187,7 @@ export default function AppLayout({ area }: Props) {
               />
             </Tooltip>
             {mobile ? (
-              <div className="yz-header-title">{current ? t(`nav.${current.navKey}`) : t('app.name')}</div>
+              <div className="yz-header-title">{current ? t(`nav.${current.navKey}`) : siteName}</div>
             ) : (
               <Breadcrumb
                 className="yz-header-crumb"

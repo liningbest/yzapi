@@ -8,6 +8,7 @@ import type { NormalizedError } from '@/api';
 import { useAuthStore } from '@/stores/auth';
 import { LOCALES, useLocaleStore } from '@/stores/locale';
 import { useThemeStore } from '@/stores/theme';
+import { useSiteStore } from '@/stores/site';
 import BrandMark from '@/components/BrandMark';
 import { homeFor } from '@/layouts/guards';
 
@@ -20,14 +21,10 @@ export default function Login() {
   const dark = useThemeStore((s) => s.mode) === 'dark';
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [baseUrl, setBaseUrl] = useState(`${window.location.origin}/v1`);
+  const siteName = useSiteStore((s) => s.name);
+  const baseUrl = useSiteStore((s) => s.baseUrl);
   useEffect(() => {
-    authApi
-      .publicInfo()
-      .then((info) => {
-        if (info?.base_url) setBaseUrl(info.base_url);
-      })
-      .catch(() => undefined);
+    void useSiteStore.getState().refresh();
   }, []);
 
   const onFinish = async (values: { username: string; password: string }) => {
@@ -58,7 +55,7 @@ export default function Login() {
         <div className="yz-login-hero-inner">
           <div className="yz-login-logo">
             <BrandMark size={24} color="#fafafa" stroke="#18181b" />
-            <span className="yz-login-logo-name">{t('common:app.name')}</span>
+            <span className="yz-login-logo-name">{siteName}</span>
           </div>
 
           <div className="yz-login-hero-body">
@@ -142,7 +139,7 @@ export default function Login() {
         <div className="yz-login-form">
           <div className="yz-login-form-mobile-brand">
             <BrandMark size={22} color={dark ? '#fafafa' : '#18181b'} stroke={dark ? '#18181b' : '#ffffff'} />
-            <span>{t('common:app.name')}</span>
+            <span>{siteName}</span>
           </div>
           <h2 className="yz-login-title">{t('auth:login.title')}</h2>
           <p className="yz-login-subtitle">{t('auth:login.subtitle')}</p>
