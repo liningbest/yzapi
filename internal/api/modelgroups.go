@@ -1,6 +1,7 @@
 package api
 
 import (
+	"gorm.io/gorm"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -42,7 +43,7 @@ func (s *Server) listModelGroups(c *gin.Context) {
 		q = q.Where("type = ?", v)
 	}
 	if v := strings.TrimSpace(c.Query("q")); v != "" {
-		q = q.Where("name LIKE ? OR models LIKE ?", likeEscape(v), likeEscape(v))
+		q = q.Where("name LIKE ? ESCAPE '\\' OR models LIKE ? ESCAPE '\\'", likeEscape(v), likeEscape(v))
 	}
 	var total int64
 	q.Count(&total)
@@ -111,7 +112,7 @@ func (s *Server) createModelGroup(c *gin.Context) {
 	}
 	mg := model.ModelGroup{Name: in.Name, Type: in.Type, Models: in.Models, Note: in.Note}
 	if err := s.db.Create(&mg).Error; err != nil {
-		fail(c, 409, "duplicate", "分组名称已存在")
+		conflictOrServerError(c, err, "分组名称已存在")
 		return
 	}
 	_ = s.gw.Reload()
@@ -139,7 +140,7 @@ func (s *Server) updateModelGroup(c *gin.Context) {
 		return
 	}
 	if err := s.db.Model(&mg).Updates(map[string]any{"name": in.Name, "models": model.StringList(in.Models), "note": in.Note}).Error; err != nil {
-		fail(c, 409, "duplicate", "分组名称已存在")
+		conflictOrServerError(c, err, "分组名称已存在")
 		return
 	}
 	_ = s.gw.Reload()
@@ -158,8 +159,28 @@ func (s *Server) deleteModelGroup(c *gin.Context) {
 		fail(c, 409, "in_use", "该分组正被智能路由引用，请先在设置中更换")
 		return
 	}
+	// Row + join rows go in one transaction; a missing id is a 404, not a silent 200.
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		res := tx.Delete(&model.ModelGroup{}, id)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.Exec("DELETE FROM user_group_model_groups WHERE model_group_id = ?", id).Error
+	})
+	if isNotFound(err) {
+		notFound(c)
+		return
+	}
+	if err != nil {
+		serverError(c, err)
+		return
+	}
 	if referenced {
-		// Smart routing is off: drop the stale reference so settings stay consistent.
+		// Smart routing is off: drop the stale reference so settings stay consistent
+		// (after the delete committed, so a failed delete leaves settings untouched).
 		if sr.SimpleGroupID == id {
 			sr.SimpleGroupID = 0
 		}
@@ -170,14 +191,6 @@ func (s *Server) deleteModelGroup(c *gin.Context) {
 			serverError(c, err)
 			return
 		}
-	}
-	if err := s.db.Exec("DELETE FROM user_group_model_groups WHERE model_group_id = ?", id).Error; err != nil {
-		serverError(c, err)
-		return
-	}
-	if err := s.db.Delete(&model.ModelGroup{}, id).Error; err != nil {
-		serverError(c, err)
-		return
 	}
 	_ = s.gw.Reload()
 	c.JSON(200, gin.H{})

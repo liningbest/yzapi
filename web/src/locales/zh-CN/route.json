@@ -58,7 +58,8 @@
   "source": {
     "rule": "本地规则",
     "context": "上下文路由",
-    "vector": "向量相似度"
+    "vector": "向量相似度",
+    "fallback": "兜底"
   },
   "requestType": {
     "chat": "Chat Completions",

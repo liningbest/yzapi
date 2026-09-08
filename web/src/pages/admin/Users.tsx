@@ -30,7 +30,6 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { userGroupsApi, usersApi } from '@/api';
-import type { NormalizedError } from '@/api';
 import { EmptyState, FilterBar, FormDrawer, NeutralTag, PageHeader, RoleTag, StatusDot, TimeCell } from '@/components';
 import { useTableQuery } from '@/hooks/useTableQuery';
 import { useAuthStore } from '@/stores/auth';
@@ -89,20 +88,14 @@ export default function Users() {
     [groups.data],
   );
   const defaultGroupId = useMemo(() => groups.data?.items.find((g) => g.is_default)?.id, [groups.data]);
-  const adminCount = useMemo(
-    () => (list.data?.items ?? []).filter((u) => u.role === 'admin').length,
-    [list.data],
-  );
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ['users'] });
     void qc.invalidateQueries({ queryKey: ['user-groups'] });
   };
 
-  const handleError = (e: unknown) => {
-    const err = e as NormalizedError;
-    if (err.code === 'last_admin') message.error(t('common:error.last_admin'));
-  };
+  // The global request interceptor already toasts the backend's message (incl. last_admin).
+  const handleError = (_e: unknown) => {};
 
   const createMut = useMutation({
     mutationFn: (body: UserCreateInput) => usersApi.create(body),
@@ -179,7 +172,7 @@ export default function Users() {
     resetMut.mutate({ id: resetTarget.id, password: values.password });
   };
 
-  const isLastAdmin = (u: AdminUser) => u.role === 'admin' && adminCount <= 1;
+  const isLastAdmin = (u: AdminUser) => Boolean(u.is_last_admin);
   const isSelf = (u: AdminUser) => me?.id === u.id;
 
   const columns: ColumnsType<AdminUser> = [

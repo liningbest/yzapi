@@ -70,7 +70,7 @@ func (s *Server) listAccounts(c *gin.Context) {
 		q = q.Where("type = ?", v)
 	}
 	if v := c.Query("protocol"); v != "" {
-		q = q.Where("protocols LIKE ?", likeEscape(`"`+v+`"`))
+		q = q.Where("protocols LIKE ? ESCAPE '\\'", likeEscape(`"`+v+`"`))
 	}
 	if v, ok := queryBool(c, "enabled"); ok {
 		q = q.Where("enabled = ?", v)
@@ -79,7 +79,7 @@ func (s *Server) listAccounts(c *gin.Context) {
 		q = q.Where("health = ?", v)
 	}
 	if v := strings.TrimSpace(c.Query("q")); v != "" {
-		q = q.Where("name LIKE ? OR base_url LIKE ? OR note LIKE ?", likeEscape(v), likeEscape(v), likeEscape(v))
+		q = q.Where("name LIKE ? ESCAPE '\\' OR base_url LIKE ? ESCAPE '\\' OR note LIKE ? ESCAPE '\\'", likeEscape(v), likeEscape(v), likeEscape(v))
 	}
 	var total int64
 	q.Count(&total)
@@ -362,8 +362,13 @@ func (s *Server) setAccountEnabled(c *gin.Context) {
 		badRequest(c, "invalid body")
 		return
 	}
-	if err := s.db.Model(&model.Account{}).Where("id = ?", id).Update("enabled", in.Enabled).Error; err != nil {
-		serverError(c, err)
+	res := s.db.Model(&model.Account{}).Where("id = ?", id).Update("enabled", in.Enabled)
+	if res.Error != nil {
+		serverError(c, res.Error)
+		return
+	}
+	if res.RowsAffected == 0 {
+		notFound(c)
 		return
 	}
 	s.vectorChanged()
@@ -376,8 +381,16 @@ func (s *Server) resetAccountHealth(c *gin.Context) {
 	if !ok {
 		return
 	}
+	res := s.db.Model(&model.Account{}).Where("id = ?", id).Updates(map[string]any{"health": model.HealthAvailable, "cooldown_until": nil, "last_error": ""})
+	if res.Error != nil {
+		serverError(c, res.Error)
+		return
+	}
+	if res.RowsAffected == 0 {
+		notFound(c)
+		return
+	}
 	s.gw.ResetHealth(id)
-	s.db.Model(&model.Account{}).Where("id = ?", id).Updates(map[string]any{"health": model.HealthAvailable, "cooldown_until": nil, "last_error": ""})
 	c.JSON(200, gin.H{})
 }
 

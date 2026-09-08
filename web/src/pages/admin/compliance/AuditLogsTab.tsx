@@ -15,7 +15,7 @@ import PolicyGroupSelect from './PolicyGroupSelect';
 import { AUDIT_LOGS_KEY } from './keys';
 
 type Filters = Omit<AuditLogListParams, 'page' | 'page_size' | 'range' | 'from' | 'to'>;
-const METHODS = ['keyword', 'semantic'];
+const METHODS = ['keyword', 'semantic', 'degraded'];
 
 interface Props {
   groups: PolicyGroup[];

@@ -32,7 +32,7 @@ func (s *Server) listUsers(c *gin.Context) {
 		q = q.Where("enabled = ?", v)
 	}
 	if v := strings.TrimSpace(c.Query("q")); v != "" {
-		q = q.Where("username LIKE ? OR note LIKE ?", likeEscape(v), likeEscape(v))
+		q = q.Where("username LIKE ? ESCAPE '\\' OR note LIKE ? ESCAPE '\\'", likeEscape(v), likeEscape(v))
 	}
 	var total int64
 	q.Count(&total)
@@ -140,7 +140,7 @@ func (s *Server) createUser(c *gin.Context) {
 	}
 	u := model.User{Username: in.Username, PasswordHash: h, Role: in.Role, GroupID: gid, Enabled: true, MustChangePassword: true, Note: in.Note}
 	if err := s.db.Create(&u).Error; err != nil {
-		fail(c, 409, "duplicate", "用户名已存在")
+		conflictOrServerError(c, err, "用户名已存在")
 		return
 	}
 	s.db.Preload("Group").First(&u, u.ID)
@@ -315,8 +315,13 @@ func (s *Server) unlockUser(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := s.db.Model(&model.User{}).Where("id = ?", id).Updates(map[string]any{"locked": false, "failed_logins": 0}).Error; err != nil {
-		serverError(c, err)
+	res := s.db.Model(&model.User{}).Where("id = ?", id).Updates(map[string]any{"locked": false, "failed_logins": 0})
+	if res.Error != nil {
+		serverError(c, res.Error)
+		return
+	}
+	if res.RowsAffected == 0 {
+		notFound(c)
 		return
 	}
 	s.auth.invalidate(id)

@@ -132,7 +132,8 @@ Apple Silicon 单机，mock 上游零延迟，128 并发 5000 请求：
 
 ```bash
 go test ./...          # 单元测试
-./scripts/smoke.sh     # 端到端：启动 mock 上游 + 网关，跑 46 项检查
+./scripts/smoke.sh     # 端到端：启动 mock 上游 + 网关，跑 47 项检查
+python3 scripts/api-crud.py   # 管理 / 用户 API 全量往返检查：每个资源的创建、编辑、开关、删除与约束（83 项）
 ```
 
 ## 高可用

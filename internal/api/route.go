@@ -43,7 +43,7 @@ func (s *Server) listRouteSamples(c *gin.Context) {
 		}
 	}
 	if v := strings.TrimSpace(c.Query("q")); v != "" {
-		q = q.Where("text LIKE ? OR note LIKE ?", likeEscape(v), likeEscape(v))
+		q = q.Where("text LIKE ? ESCAPE '\\' OR note LIKE ? ESCAPE '\\'", likeEscape(v), likeEscape(v))
 	}
 	var total int64
 	q.Count(&total)
@@ -298,7 +298,7 @@ func (s *Server) listDecisions(c *gin.Context) {
 	}
 	if v := strings.TrimSpace(c.Query("q")); v != "" {
 		l := likeEscape(v)
-		q = q.Where("request_id LIKE ? OR selected_model LIKE ? OR normalized_text LIKE ?", l, l, l)
+		q = q.Where("request_id LIKE ? ESCAPE '\\' OR selected_model LIKE ? ESCAPE '\\' OR normalized_text LIKE ? ESCAPE '\\'", l, l, l)
 	}
 	var total int64
 	q.Count(&total)

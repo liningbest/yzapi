@@ -49,7 +49,7 @@ func (s *Server) memberCounts() map[uint]int64 {
 func (s *Server) listUserGroups(c *gin.Context) {
 	q := s.db.Model(&model.UserGroup{}).Preload("ModelGroups")
 	if v := strings.TrimSpace(c.Query("q")); v != "" {
-		q = q.Where("name LIKE ?", likeEscape(v))
+		q = q.Where("name LIKE ? ESCAPE '\\'", likeEscape(v))
 	}
 	var rows []model.UserGroup
 	if err := q.Order("is_default DESC, id ASC").Find(&rows).Error; err != nil {
@@ -141,7 +141,7 @@ func (s *Server) createUserGroup(c *gin.Context) {
 	g := model.UserGroup{Name: in.Name, MaxConcurrency: in.MaxConcurrency, KeyMaxConcurrency: in.KeyMaxConcurrency,
 		TokenQuota: in.TokenQuota, Enabled: in.Enabled == nil || *in.Enabled, Note: in.Note, ModelGroups: mgs}
 	if err := s.db.Create(&g).Error; err != nil {
-		fail(c, 409, "duplicate", "用户组名称已存在")
+		conflictOrServerError(c, err, "用户组名称已存在")
 		return
 	}
 	if !g.Enabled {

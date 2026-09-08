@@ -413,7 +413,6 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
               name="account_type"
               label={t('accounts:form.accountType')}
               extra={t('accounts:form.accountTypeExtra')}
-              rules={[requiredRule]}
             >
               <Radio.Group
                 optionType="button"

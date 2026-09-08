@@ -49,7 +49,9 @@ export default function ElasticsearchTab({ data }: Props) {
         form={form}
         layout="vertical"
         initialValues={data}
-        onFinish={(values) => save.mutate(values)}
+        // Fields of the inactive auth type are not mounted and therefore missing from
+        // values; merging over the loaded (masked "******") settings keeps them unchanged.
+        onFinish={(values) => save.mutate({ ...data, ...values })}
         onValuesChange={() => setTestResult(null)}
       >
         <Alert type="info" showIcon message={t('settings:es.notice')} style={{ marginBottom: 20 }} />
@@ -69,7 +71,8 @@ export default function ElasticsearchTab({ data }: Props) {
               name="url"
               label={t('settings:es.url.label')}
               extra={t('settings:es.url.extra')}
-              rules={[{ required: true, message: t('common:common.required') }]}
+              dependencies={['enabled']}
+              rules={[({ getFieldValue }) => ({ required: !!getFieldValue('enabled'), message: t('common:common.required') })]}
             >
               <Input placeholder="https://es.example.com:9200" className="yz-mono" />
             </Form.Item>

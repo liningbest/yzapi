@@ -266,6 +266,21 @@ func queryBool(c *gin.Context, key string) (val bool, set bool) {
 
 func isNotFound(err error) bool { return errors.Is(err, gorm.ErrRecordNotFound) }
 
+// conflictOrServerError answers a write error: a unique-constraint violation becomes a
+// friendly 409 with msg, anything else (locked database, disk full, ...) stays a 500 so
+// the operator sees the real cause instead of a misleading "already exists".
+func conflictOrServerError(c *gin.Context, err error, msg string) {
+	if strings.Contains(strings.ToLower(err.Error()), "unique") {
+		fail(c, 409, "duplicate", msg)
+		return
+	}
+	serverError(c, err)
+}
+
+// likeEscape builds a contains-pattern for `col LIKE ? ESCAPE '\\'`. The ESCAPE clause is
+// mandatory: SQLite has no default escape character, so without it a search for "gpt_4"
+// silently matches nothing (backslash taken literally). PostgreSQL defaults to backslash,
+// where the clause is a no-op.
 func likeEscape(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)
 	s = strings.ReplaceAll(s, "%", `\%`)

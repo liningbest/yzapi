@@ -15,7 +15,7 @@ import SourceTag, { useRequestTypeText } from './SourceTag';
 
 type Filters = Omit<RouteDecisionListParams, 'page' | 'page_size' | 'range' | 'from' | 'to'>;
 
-const SOURCES = ['rule', 'context', 'vector'];
+const SOURCES = ['rule', 'context', 'vector', 'fallback'];
 const REQUEST_TYPES = ['chat', 'responses', 'messages'];
 
 export default function DecisionsTab() {

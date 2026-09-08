@@ -58,7 +58,8 @@ export default function VectorTab({ data }: Props) {
       form={form}
       layout="vertical"
       initialValues={data}
-      onFinish={(values) => save.mutate(values)}
+      // Clearing the select sends account_id 0, which the backend accepts as "no vector service".
+      onFinish={(values) => save.mutate({ ...values, account_id: values.account_id ?? 0, model: values.account_id ? values.model : '' })}
       onValuesChange={() => setTestResult(null)}
     >
       <Alert type="info" showIcon message={t('settings:vector.notice')} style={{ marginBottom: 20 }} />
@@ -68,9 +69,9 @@ export default function VectorTab({ data }: Props) {
             name="account_id"
             label={t('settings:vector.account.label')}
             extra={t('settings:vector.account.extra')}
-            rules={[{ required: true, message: t('common:common.required') }]}
           >
             <Select
+              allowClear
               showSearch
               loading={accounts.isLoading}
               options={options}

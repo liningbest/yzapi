@@ -195,7 +195,7 @@ export default function MappingsPopover({ account }: Props) {
               ) : (
                 <tr key={r.key}>
                   <td style={cell}>
-                    <Typography.Text className="yz-mono" copyable={{ tooltips: [t('accounts:mappings.copyName'), t('common:common.copied')] }}>
+                    <Typography.Text className="yz-mono" copyable={{ tooltips: [t('accounts:mappings.copyName'), t('common:action.copied')] }}>
                       {r.request_model}
                     </Typography.Text>
                   </td>

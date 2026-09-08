@@ -105,7 +105,7 @@ func (s *Server) createPolicyGroup(c *gin.Context) {
 	}
 	p := model.PolicyGroup{Name: in.Name, Action: in.Action, RiskLevel: in.RiskLevel, Enabled: in.Enabled == nil || *in.Enabled, Description: in.Description}
 	if err := s.db.Create(&p).Error; err != nil {
-		fail(c, 409, "duplicate", "策略组名称已存在")
+		conflictOrServerError(c, err, "策略组名称已存在")
 		return
 	}
 	if !p.Enabled {
@@ -146,7 +146,7 @@ func (s *Server) updatePolicyGroup(c *gin.Context) {
 		upd["enabled"] = *in.Enabled
 	}
 	if err := s.db.Model(&p).Updates(upd).Error; err != nil {
-		fail(c, 409, "duplicate", "策略组名称已存在")
+		conflictOrServerError(c, err, "策略组名称已存在")
 		return
 	}
 	s.reloadCompliance()
@@ -187,8 +187,13 @@ func (s *Server) setEnabledGeneric(c *gin.Context, tbl any) {
 		badRequest(c, "invalid body")
 		return
 	}
-	if err := s.db.Model(tbl).Where("id = ?", id).Update("enabled", in.Enabled).Error; err != nil {
-		serverError(c, err)
+	res := s.db.Model(tbl).Where("id = ?", id).Update("enabled", in.Enabled)
+	if res.Error != nil {
+		serverError(c, res.Error)
+		return
+	}
+	if res.RowsAffected == 0 {
+		notFound(c)
 		return
 	}
 	s.reloadCompliance()
@@ -215,7 +220,7 @@ func (s *Server) listWords(c *gin.Context) {
 		q = q.Where("enabled = ?", v)
 	}
 	if v := strings.TrimSpace(c.Query("q")); v != "" {
-		q = q.Where("word LIKE ? OR note LIKE ?", likeEscape(v), likeEscape(v))
+		q = q.Where("word LIKE ? ESCAPE '\\' OR note LIKE ? ESCAPE '\\'", likeEscape(v), likeEscape(v))
 	}
 	var total int64
 	q.Count(&total)
@@ -376,7 +381,7 @@ func (s *Server) listAuditSamples(c *gin.Context) {
 		}
 	}
 	if v := strings.TrimSpace(c.Query("q")); v != "" {
-		q = q.Where("text LIKE ? OR note LIKE ?", likeEscape(v), likeEscape(v))
+		q = q.Where("text LIKE ? ESCAPE '\\' OR note LIKE ? ESCAPE '\\'", likeEscape(v), likeEscape(v))
 	}
 	var total int64
 	q.Count(&total)
@@ -556,7 +561,7 @@ func (s *Server) listAuditLogs(c *gin.Context) {
 	}
 	if v := strings.TrimSpace(c.Query("q")); v != "" {
 		l := likeEscape(v)
-		q = q.Where("request_id LIKE ? OR request_model LIKE ? OR evidence LIKE ? OR username LIKE ?", l, l, l, l)
+		q = q.Where("request_id LIKE ? ESCAPE '\\' OR request_model LIKE ? ESCAPE '\\' OR evidence LIKE ? ESCAPE '\\' OR username LIKE ? ESCAPE '\\'", l, l, l, l)
 	}
 	var total int64
 	q.Count(&total)

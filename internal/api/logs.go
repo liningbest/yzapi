@@ -46,7 +46,7 @@ func applyLogFilters(c *gin.Context, q *gorm.DB, scopedUser uint) *gorm.DB {
 	}
 	if v := strings.TrimSpace(c.Query("q")); v != "" {
 		l := likeEscape(v)
-		q = q.Where("request_id LIKE ? OR request_model LIKE ? OR upstream_model LIKE ? OR error LIKE ?", l, l, l, l)
+		q = q.Where("request_id LIKE ? ESCAPE '\\' OR request_model LIKE ? ESCAPE '\\' OR upstream_model LIKE ? ESCAPE '\\' OR error LIKE ? ESCAPE '\\'", l, l, l, l)
 	}
 	return q
 }
@@ -141,6 +141,7 @@ func (s *Server) userLogs(c *gin.Context) {
 			"prompt_tokens": l.PromptTokens, "completion_tokens": l.CompletionTokens, "total_tokens": l.TotalTokens,
 			"cached_tokens": l.CachedTokens, "tokens_known": l.TokensKnown, "result": l.Result, "status_code": l.StatusCode,
 			"latency_ms": l.LatencyMs, "first_byte_ms": l.FirstByteMs, "error": l.Error, "route_label": l.RouteLabel, "created_at": l.CreatedAt,
+			"usage_status": l.UsageStatus, "est_prompt_tokens": l.EstPromptTokens, "usage_corrected": l.UsageCorrected,
 		})
 	}
 	listResp(c, out, total)

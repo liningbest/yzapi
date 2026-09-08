@@ -83,7 +83,8 @@ export default function SmartRouteTab({ data }: Props) {
             name="virtual_model"
             label={t('settings:smartRoute.virtualModel.label')}
             extra={t('settings:smartRoute.virtualModel.extra')}
-            rules={[{ required: true, message: t('common:common.required') }]}
+            dependencies={['enabled']}
+            rules={[({ getFieldValue }) => ({ required: !!getFieldValue('enabled'), message: t('common:common.required') })]}
           >
             <Input placeholder="yz-auto" className="yz-mono" />
           </Form.Item>
@@ -93,7 +94,8 @@ export default function SmartRouteTab({ data }: Props) {
             name="simple_group_id"
             label={t('settings:smartRoute.simpleGroup.label')}
             extra={t('settings:smartRoute.simpleGroup.extra')}
-            rules={[{ required: true, message: t('common:common.required') }]}
+            dependencies={['enabled']}
+            rules={[({ getFieldValue }) => ({ required: !!getFieldValue('enabled'), message: t('common:common.required') })]}
           >
             <Select
               showSearch
@@ -109,7 +111,8 @@ export default function SmartRouteTab({ data }: Props) {
             name="complex_group_id"
             label={t('settings:smartRoute.complexGroup.label')}
             extra={t('settings:smartRoute.complexGroup.extra')}
-            rules={[{ required: true, message: t('common:common.required') }]}
+            dependencies={['enabled']}
+            rules={[({ getFieldValue }) => ({ required: !!getFieldValue('enabled'), message: t('common:common.required') })]}
           >
             <Select
               showSearch
@@ -157,6 +160,9 @@ export default function SmartRouteTab({ data }: Props) {
         items={[
           {
             key: 'advanced',
+            // Keep the advanced fields mounted while collapsed: unmounted Form.Items are
+            // dropped from onFinish values and the backend would persist 0 (feature off).
+            forceRender: true,
             label: t('settings:smartRoute.advanced'),
             children: (
               <Row gutter={[24, 0]}>

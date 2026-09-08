@@ -235,6 +235,8 @@ export interface ModelGroupInput {
 // ---------- Users ----------
 export interface AdminUser extends User {
   api_keys_count: number;
+  /** Computed server-side over all enabled admins (not just the current page). */
+  is_last_admin: boolean;
 }
 
 export interface UserListParams extends PageParams {

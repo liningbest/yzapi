@@ -199,7 +199,15 @@ func (s *Server) login(c *gin.Context) {
 	c.JSON(200, gin.H{"token": tok, "user": userView(&u)})
 }
 
+// logout invalidates every token of the user (session_version bump) so a leaked or
+// cached token cannot be used after the user has logged out.
 func (s *Server) logout(c *gin.Context) {
+	u := cur(c)
+	if err := s.db.Model(&model.User{}).Where("id = ?", u.ID).Update("session_version", gorm.Expr("session_version + 1")).Error; err != nil {
+		serverError(c, err)
+		return
+	}
+	s.auth.invalidate(u.ID)
 	c.JSON(200, gin.H{})
 }
 

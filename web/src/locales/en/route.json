@@ -58,7 +58,8 @@
   "source": {
     "rule": "Local rule",
     "context": "Context routing",
-    "vector": "Vector similarity"
+    "vector": "Vector similarity",
+    "fallback": "Fallback"
   },
   "requestType": {
     "chat": "Chat Completions",

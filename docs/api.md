@@ -63,7 +63,7 @@
 - `GET`（支持 `type=`、`q=`）、`POST`、`GET /:id`、`PUT /:id`、`DELETE /:id`（被智能路由引用返回 409）
 
 ### 用户 `/api/admin/users`
-- `GET ?role=&group_id=&enabled=&q=&page=`；每项为 `user` 对象 + `api_keys_count`
+- `GET ?role=&group_id=&enabled=&q=&page=`；每项为 `user` 对象 + `api_keys_count` + `is_last_admin`（服务端按全部已启用管理员计算，前端据此禁用最后一个管理员的停用 / 降级 / 删除）
 - `POST {username, password, group_id, role:"user"|"admin", note}`
 - `PUT /:id {group_id, role, note}`
 - `DELETE /:id`

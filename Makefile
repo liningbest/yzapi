@@ -22,6 +22,9 @@ dev:
 test:
 	go test ./...
 
+crud:
+	python3 scripts/api-crud.py
+
 smoke:
 	./scripts/smoke.sh
 
