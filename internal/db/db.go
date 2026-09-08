@@ -68,11 +68,33 @@ func Open(cfg *config.Config) (*gorm.DB, error) {
 	if err := migrateCallLogRequestID(db); err != nil {
 		return nil, fmt.Errorf("migrate call_logs.request_id: %w", err)
 	}
+	if err := migrateUsageHourlyAttempts(db); err != nil {
+		return nil, fmt.Errorf("migrate usage_hourlies.attempts: %w", err)
+	}
 	if err := db.AutoMigrate(model.All()...); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	slog.Info("database ready", "driver", cfg.DBDriver)
 	return db, nil
+}
+
+// migrateUsageHourlyAttempts prepares databases where usage_hourlies.attempts was added
+// as a nullable column (first 4526658 upgrade) for the NOT NULL definition: AutoMigrate
+// rebuilds the table on SQLite and would fail on NULL values, so they are zeroed first.
+// A zero here means "not recorded", never "zero attempts" (see logstore attempts_since).
+func migrateUsageHourlyAttempts(db *gorm.DB) error {
+	m := db.Migrator()
+	if !m.HasTable(&model.UsageHourly{}) || !m.HasColumn(&model.UsageHourly{}, "attempts") {
+		return nil
+	}
+	res := db.Exec("UPDATE usage_hourlies SET attempts = 0 WHERE attempts IS NULL")
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected > 0 {
+		slog.Info("filled NULL attempts on existing usage rollup rows before tightening the column", "rows", res.RowsAffected)
+	}
+	return nil
 }
 
 // migrateCallLogRequestID upgrades databases created before request_id became unique.
