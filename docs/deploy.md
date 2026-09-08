@@ -48,7 +48,17 @@ docker build --build-arg VERSION=$(git describe --always) -t yzapi/gateway:1.0.0
 
 在 1Panel「容器 → 镜像 → 导入」上传该文件。
 
-**C. 推送到镜像仓库**
+**C. GitHub 自动构建（推荐，升级最省事）**
+
+仓库自带 [.github/workflows/docker.yml](../.github/workflows/docker.yml)：推送到 `main` 或打 `v*` 标签后，GitHub Actions 自动构建 amd64 / arm64 镜像并推送到 `ghcr.io/<用户名>/<仓库名>`，标签有 `latest`、版本号（如 `1.0.0`）和提交哈希。服务器上不需要源码，也不需要编译：
+
+```bash
+docker pull ghcr.io/<用户名>/<仓库名>:1.0.0
+```
+
+私有仓库的镜像需要先登录：GitHub「Settings → Developer settings → Personal access tokens」创建一个只有 `read:packages` 权限的 token，在 1Panel「容器 → 仓库」添加 `ghcr.io`，用户名为 GitHub 用户名、密码为该 token；或在服务器执行 `docker login ghcr.io`。编排里把 `image` 改为 ghcr 地址即可，其余步骤不变。
+
+**D. 推送到其他镜像仓库**
 
 ```bash
 IMAGE=registry.example.com/team/yzapi ./scripts/build-image.sh --push
