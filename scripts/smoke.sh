@@ -53,6 +53,13 @@ ACC3=$(curl -fsS -X POST "$BASE/api/admin/accounts" -H "$A" -H 'Content-Type: ap
   \"mappings\":[{\"request_model\":\"embed\",\"upstream_model\":\"mock-embed\"}]}")
 EMB_ID=$(echo "$ACC3" | j "['id']")
 pass "create embedding account"
+ACC1_ID=$(echo "$ACC1" | j "['id']")
+UPD=$(curl -sS -X PUT "$BASE/api/admin/accounts/$ACC1_ID" -H "$A" -H 'Content-Type: application/json' -d "{
+  \"name\":\"mock-openai-renamed\",\"provider\":\"custom\",\"type\":\"text\",\"base_url\":\"http://$MOCK/v1\",\"api_key\":\"******\",
+  \"protocols\":[\"openai-completions\",\"openai-responses\"],
+  \"mappings\":[{\"request_model\":\"mini\",\"upstream_model\":\"mock-mini\"},{\"request_model\":\"pro\",\"upstream_model\":\"mock-pro\"}],
+  \"priority\":10,\"max_concurrency\":50,\"note\":\"edited\",\"skip_test\":true}")
+if [ "$(echo "$UPD" | j "['name']" 2>/dev/null)" = "mock-openai-renamed" ] && [ "$(echo "$UPD" | j "['protocols'][1]" 2>/dev/null)" = "openai-responses" ]; then pass "update account basic info keeps protocols and mappings"; else echo "$UPD"; failx "update account basic info"; fi
 DISC=$(curl -fsS -X POST "$BASE/api/admin/accounts/discover" -H "$A" -H 'Content-Type: application/json' -d "{\"provider\":\"custom\",\"base_url\":\"http://$MOCK/v1\",\"api_key\":\"sk-mock\"}")
 if echo "$DISC" | grep -q mock-pro; then pass "discover models"; else failx "discover models"; fi
 
@@ -159,6 +166,6 @@ if curl -fsS "$BASE/api/admin/settings" -H "$A" | grep -q '"performance"'; then 
 if curl -fsS "$BASE/api/admin/system/info" -H "$A" | grep -q '"go_version"'; then pass "system info"; else failx "system info"; fi
 
 echo
-EXPECTED=46
+EXPECTED=47
 if [ "$PASSED" -ne "$EXPECTED" ]; then echo "only $PASSED/$EXPECTED checks ran"; exit 1; fi
 echo "ALL $PASSED SMOKE TESTS PASSED"

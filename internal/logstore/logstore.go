@@ -725,8 +725,9 @@ const usageUpgradeKey = "usage_rollup_upgrade_v2"
 
 // usageUpgradeVersion bumps whenever the rollup derivation changes in a way that makes
 // already-upgraded databases rebuild their complete window once more:
-//   2: per-attempt attribution + attempts column
-//   3: total-only remainder (provider extras kept by normalizeLegacyUsage) enters the rollup
+//
+//	2: per-attempt attribution + attempts column
+//	3: total-only remainder (provider extras kept by normalizeLegacyUsage) enters the rollup
 const usageUpgradeVersion = 3
 
 type usageUpgrade struct {

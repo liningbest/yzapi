@@ -286,7 +286,9 @@ func (s *Server) updateAccount(c *gin.Context) {
 	}
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		upd := map[string]any{"name": in.Name, "provider": in.Provider, "account_type": in.AccountType, "base_url": in.BaseURL,
-			"api_key_enc": enc, "protocols": in.Protocols, "test_model": in.TestModel, "priority": in.Priority,
+			// A plain []string in an Updates map is rendered by gorm as a SQL row value "(?, ?)"
+			// ("row value misused" on SQLite); StringList serialises to its JSON column form.
+			"api_key_enc": enc, "protocols": model.StringList(in.Protocols), "test_model": in.TestModel, "priority": in.Priority,
 			"max_concurrency": in.MaxConcurrency, "note": in.Note}
 		if in.Enabled != nil {
 			upd["enabled"] = *in.Enabled
@@ -300,6 +302,9 @@ func (s *Server) updateAccount(c *gin.Context) {
 		var maps []model.ModelMapping
 		for _, m := range in.Mappings {
 			maps = append(maps, model.ModelMapping{AccountID: a.ID, RequestModel: m.RequestModel, UpstreamModel: m.UpstreamModel})
+		}
+		if len(maps) == 0 {
+			return nil // gorm rejects Create on an empty slice
 		}
 		return tx.Create(&maps).Error
 	})
