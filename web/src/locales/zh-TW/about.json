@@ -1,0 +1,21 @@
+{
+  "title": "關於",
+  "subtitle": "系統資訊與用戶端接入說明",
+  "access": {
+    "title": "接入資訊",
+    "hint": "在任意 OpenAI / Anthropic 相容用戶端中，將 Base URL 設定為以下位址，並使用使用者中心建立的 API Key 進行認證。"
+  },
+  "endpoints": {
+    "title": "資料面介面",
+    "method": "方法",
+    "path": "路徑",
+    "purpose": "用途",
+    "models": "列出目前 API Key 可存取的文字模型",
+    "chat": "OpenAI Chat Completions 相容",
+    "responses": "OpenAI Responses 相容",
+    "messages": "Anthropic Messages 相容",
+    "embeddings": "OpenAI Embeddings 相容",
+    "images": "OpenAI Images 相容",
+    "authHint": "認證：Authorization: Bearer <key>；/v1/messages 另可使用 x-api-key: <key>，二者不可同時傳送。"
+  }
+}

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Card, Skeleton, Tabs } from 'antd';
 import {
   ApiOutlined,
@@ -22,7 +23,19 @@ import VectorTab from './settings/VectorTab';
 
 export default function Settings() {
   const { t } = useTranslation(['settings', 'common']);
-  const [tab, setTab] = useState('basic');
+  const [params, setParams] = useSearchParams();
+  const VALID = ['basic', 'performance', 'vector', 'smart_route', 'compliance', 'elasticsearch'];
+  const initial = params.get('tab');
+  const [tab, setTabState] = useState(initial && VALID.includes(initial) ? initial : 'basic');
+  const setTab = (k: string) => {
+    setTabState(k);
+    setParams({ tab: k }, { replace: true });
+  };
+  useEffect(() => {
+    const q = params.get('tab');
+    if (q && VALID.includes(q) && q !== tab) setTabState(q);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
   const settings = useQuery({ queryKey: SETTINGS_KEY, queryFn: settingsApi.all });
   const data = settings.data;
 
@@ -72,7 +85,7 @@ export default function Settings() {
         {settings.isLoading ? (
           <Skeleton active paragraph={{ rows: 8 }} style={{ paddingTop: 16 }} />
         ) : (
-          <Tabs activeKey={tab} onChange={setTab} items={items} size="large" destroyInactiveTabPane={false} />
+          <Tabs activeKey={tab} onChange={setTab} items={items} size="large" />
         )}
       </Card>
     </div>

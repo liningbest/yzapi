@@ -1,0 +1,98 @@
+{
+  "title": "智慧路由",
+  "subtitle": "基於樣本向量相似度，將虛擬模型請求自動分類到簡單 / 複雜模型組",
+  "disabledAlert": "智慧路由未啟用，虛擬模型請求將不會被分類路由",
+  "goSettings": "前往設定",
+  "info": {
+    "virtualModel": "虛擬模型名稱",
+    "simpleGroup": "簡單模型組",
+    "complexGroup": "複雜模型組",
+    "unset": "未設定"
+  },
+  "tabs": {
+    "samples": "樣本管理",
+    "decisions": "決策日誌",
+    "stats": "統計"
+  },
+  "samples": {
+    "add": "新增樣本",
+    "edit": "編輯樣本",
+    "preview": "決策預覽",
+    "filterVectorized": "向量狀態",
+    "searchPlaceholder": "搜尋樣本文字 / 備註",
+    "text": "樣本文字",
+    "textPlaceholder": "輸入一條具有代表性的請求文字",
+    "textExtra": "最多 65536 字元；文字越貼近真實請求，分類越準確",
+    "threshold": "閾值",
+    "thresholdExtra": "覆蓋全域分類閾值，0 表示使用全域設定",
+    "globalThreshold": "全域",
+    "vector": "向量",
+    "buildVector": "儲存後產生向量",
+    "buildVectorExtra": "需先在設定中配置向量服務；未建立向量的樣本不參與比對，更換向量模型後需重新建立",
+    "confirmDelete": "確定刪除此樣本嗎？",
+    "confirmBuildAll": "將為全部樣本重新建立向量，可能耗時較長，確定繼續？",
+    "buildResult": "已建立 {{built}}，失敗 {{failed}}",
+    "empty": "尚無樣本",
+    "emptyHint": "新增簡單 / 複雜樣本並建立向量後，智慧路由才能進行分類。",
+    "batch": {
+      "title": "批次新增樣本",
+      "lines": "樣本文字",
+      "linesPlaceholder": "每行一條樣本",
+      "linesExtra": "每行視為一條樣本，空行會被忽略",
+      "created": "已建立 {{created}} 條樣本",
+      "submit": "新增"
+    }
+  },
+  "preview": {
+    "title": "決策預覽",
+    "placeholder": "輸入一段請求文字，檢視智慧路由的預判結果",
+    "run": "預覽",
+    "result": "預判結果",
+    "group": "模型組",
+    "models": "候選模型",
+    "normalized": "正規化文字",
+    "topK": "Top K 命中樣本",
+    "noTopK": "沒有命中的樣本",
+    "empty": "輸入文字後點擊預覽"
+  },
+  "source": {
+    "rule": "本地規則",
+    "context": "上下文路由",
+    "vector": "向量相似度"
+  },
+  "requestType": {
+    "chat": "Chat Completions",
+    "responses": "Responses",
+    "messages": "Messages"
+  },
+  "decisions": {
+    "filterSource": "決策來源",
+    "filterRequestType": "請求類型",
+    "modelPlaceholder": "選中模型",
+    "searchPlaceholder": "Request ID / 模型 / 文字",
+    "classification": "分類",
+    "selectedModel": "選中模型",
+    "requestType": "請求類型",
+    "failed": "失敗",
+    "failedTag": "失敗",
+    "succeeded": "成功",
+    "detail": "決策詳情",
+    "normalized": "正規化文字",
+    "topK": "Top K 命中樣本",
+    "empty": "尚無決策日誌",
+    "emptyHint": "虛擬模型收到請求並完成分類後，這裡會記錄每次決策。"
+  },
+  "stats": {
+    "decisions": "決策數",
+    "requests": "真實請求數",
+    "failed": "失敗數",
+    "totalTokens": "總 Token",
+    "avgTokens": "平均 Token",
+    "latency": "累計耗時",
+    "byLabel": "依標籤",
+    "bySource": "依來源",
+    "byModel": "依模型",
+    "byTokenBucket": "依 Token 區間",
+    "empty": "此時間段尚無資料"
+  }
+}

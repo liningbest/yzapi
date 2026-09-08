@@ -1,0 +1,32 @@
+{
+  "title": "使用者群組",
+  "subtitle": "依群組管理並行上限、Token 配額與可存取的模型群組",
+  "add": "新增使用者群組",
+  "addTitle": "新增使用者群組",
+  "editTitle": "編輯使用者群組 · {{name}}",
+  "maxConcurrency": "群組最大並行",
+  "keyMaxConcurrency": "單 Key 最大並行",
+  "inheritGroup": "繼承群組上限",
+  "tokenQuota": "Token 配額",
+  "modelGroups": "授權模型群組",
+  "allModels": "全部模型",
+  "members": "成員數",
+  "monthUsage": "本月用量",
+  "searchPlaceholder": "搜尋名稱 / 備註",
+  "empty": "尚無使用者群組",
+  "emptyHint": "建立使用者群組後，可為其設定並行上限、Token 配額與授權模型群組。",
+  "form": {
+    "nameExtra": "閘道內唯一，用於識別該群組",
+    "nameMax": "名稱最多 64 個字元",
+    "namePlaceholder": "請輸入使用者群組名稱",
+    "maxConcurrencyExtra": "0–100000，0 表示不限制，繼承閘道全域上限",
+    "keyMaxConcurrencyExtra": "0–100000，有效值須 ≤ 群組上限，0 表示繼承群組上限",
+    "keyExceedsGroup": "單 Key 最大並行不能超過群組最大並行",
+    "tokenQuotaExtra": "0 表示不限制；依自然月統計，超出後該群組請求將被限流",
+    "modelGroupsExtra": "可多選 1–100 個；未選擇時可存取全部模型",
+    "modelGroupsMax": "最多選擇 100 個模型群組",
+    "modelGroupsPlaceholder": "不選擇則可存取全部模型",
+    "enabledExtra": "停用後成員將回落到預設群組；設定變更即時生效",
+    "noteMax": "備註最多 255 個字元"
+  }
+}

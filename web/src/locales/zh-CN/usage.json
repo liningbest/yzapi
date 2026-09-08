@@ -1,0 +1,18 @@
+{
+  "title": "用量统计",
+  "subtitle": "按时间、用户、供应商与模型维度查看 Token 消耗与请求量",
+  "apiKeyId": "API Key ID",
+  "stats": {
+    "requestsHint": "成功 {{success}} · 失败 {{failed}}",
+    "cacheRate": "缓存命中率 {{rate}}%"
+  },
+  "trend": {
+    "title": "用量趋势",
+    "empty": "暂无趋势数据",
+    "emptyHint": "所选时间范围内没有请求，可尝试调整筛选条件或时间范围。"
+  },
+  "dim": {
+    "account": "上游账号",
+    "count": "{{count}} 项"
+  }
+}

@@ -1,0 +1,98 @@
+{
+  "title": "Smart Routing",
+  "subtitle": "Classify virtual-model requests into simple / complex model groups by sample vector similarity",
+  "disabledAlert": "Smart routing is disabled; virtual-model requests will not be classified or routed",
+  "goSettings": "Open settings",
+  "info": {
+    "virtualModel": "Virtual model",
+    "simpleGroup": "Simple group",
+    "complexGroup": "Complex group",
+    "unset": "Not configured"
+  },
+  "tabs": {
+    "samples": "Samples",
+    "decisions": "Decision Log",
+    "stats": "Statistics"
+  },
+  "samples": {
+    "add": "Add Sample",
+    "edit": "Edit Sample",
+    "preview": "Preview Decision",
+    "filterVectorized": "Vector status",
+    "searchPlaceholder": "Search sample text / note",
+    "text": "Sample text",
+    "textPlaceholder": "Enter a representative request text",
+    "textExtra": "Up to 65,536 characters; the closer the text is to real requests, the more accurate the classification",
+    "threshold": "Threshold",
+    "thresholdExtra": "Overrides the global classification threshold; 0 means use the global setting",
+    "globalThreshold": "Global",
+    "vector": "Vector",
+    "buildVector": "Build vector after saving",
+    "buildVectorExtra": "Requires a vector service configured in Settings; samples without vectors are not matched, and vectors must be rebuilt after changing the embedding model",
+    "confirmDelete": "Delete this sample?",
+    "confirmBuildAll": "Vectors for all samples will be rebuilt, which may take a while. Continue?",
+    "buildResult": "Built {{built}}, failed {{failed}}",
+    "empty": "No samples yet",
+    "emptyHint": "Add simple / complex samples and build their vectors so smart routing can classify requests.",
+    "batch": {
+      "title": "Batch Add Samples",
+      "lines": "Sample text",
+      "linesPlaceholder": "One sample per line",
+      "linesExtra": "Each line is treated as one sample; blank lines are ignored",
+      "created": "Created {{created}} samples",
+      "submit": "Add"
+    }
+  },
+  "preview": {
+    "title": "Preview Decision",
+    "placeholder": "Enter a request text to see how smart routing would classify it",
+    "run": "Preview",
+    "result": "Result",
+    "group": "Model group",
+    "models": "Candidate models",
+    "normalized": "Normalized text",
+    "topK": "Top K matched samples",
+    "noTopK": "No matched samples",
+    "empty": "Enter text and click Preview"
+  },
+  "source": {
+    "rule": "Local rule",
+    "context": "Context routing",
+    "vector": "Vector similarity"
+  },
+  "requestType": {
+    "chat": "Chat Completions",
+    "responses": "Responses",
+    "messages": "Messages"
+  },
+  "decisions": {
+    "filterSource": "Source",
+    "filterRequestType": "Request type",
+    "modelPlaceholder": "Selected model",
+    "searchPlaceholder": "Request ID / model / text",
+    "classification": "Class",
+    "selectedModel": "Selected model",
+    "requestType": "Request type",
+    "failed": "Failed",
+    "failedTag": "Failed",
+    "succeeded": "Succeeded",
+    "detail": "Decision Detail",
+    "normalized": "Normalized text",
+    "topK": "Top K matched samples",
+    "empty": "No decisions yet",
+    "emptyHint": "Each classification made for a virtual-model request will be recorded here."
+  },
+  "stats": {
+    "decisions": "Decisions",
+    "requests": "Real requests",
+    "failed": "Failed",
+    "totalTokens": "Total tokens",
+    "avgTokens": "Avg tokens",
+    "latency": "Total latency",
+    "byLabel": "By label",
+    "bySource": "By source",
+    "byModel": "By model",
+    "byTokenBucket": "By token bucket",
+    "empty": "No data for this period"
+  }
+}

@@ -16,6 +16,7 @@ interface Props {
   footerExtra?: ReactNode;
   destroyOnClose?: boolean;
   submitDisabled?: boolean;
+  cancelText?: ReactNode;
 }
 
 /** Right-side drawer with a sticky footer for forms (width 560 by default). */
@@ -31,6 +32,7 @@ export default function FormDrawer({
   footerExtra,
   destroyOnClose = true,
   submitDisabled,
+  cancelText,
 }: Props) {
   const { t } = useTranslation();
   const mobile = useIsMobile();
@@ -47,7 +49,7 @@ export default function FormDrawer({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
           <div>{footerExtra}</div>
           <Space>
-            <Button onClick={onClose}>{t('action.cancel')}</Button>
+            <Button onClick={onClose}>{cancelText ?? t('action.cancel')}</Button>
             {onSubmit ? (
               <Button type="primary" onClick={onSubmit} loading={submitting} disabled={submitDisabled}>
                 {submitText ?? t('action.save')}

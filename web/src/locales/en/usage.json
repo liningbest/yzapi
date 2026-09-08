@@ -1,0 +1,18 @@
+{
+  "title": "Usage",
+  "subtitle": "Token consumption and request volume by time, user, provider and model",
+  "apiKeyId": "API Key ID",
+  "stats": {
+    "requestsHint": "{{success}} succeeded · {{failed}} failed",
+    "cacheRate": "Cache hit rate {{rate}}%"
+  },
+  "trend": {
+    "title": "Usage trend",
+    "empty": "No trend data",
+    "emptyHint": "No requests in the selected time range. Try adjusting the filters or the range."
+  },
+  "dim": {
+    "account": "Upstream account",
+    "count": "{{count}} items"
+  }
+}

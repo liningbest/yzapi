@@ -1,0 +1,22 @@
+{
+  "title": "调用日志",
+  "subtitle": "查看每次数据面请求的路由结果、Token 消耗与耗时",
+  "searchPlaceholder": "Request ID / 模型 / 错误信息",
+  "cachedShort": "缓存",
+  "empty": "暂无调用日志",
+  "emptyHint": "所选时间范围内没有匹配的请求，可尝试调整筛选条件。",
+  "detail": {
+    "title": "日志详情",
+    "basic": "基本信息",
+    "routing": "路由信息",
+    "performance": "Token 与耗时",
+    "clientIp": "客户端 IP",
+    "clientProtocol": "客户端协议",
+    "upstreamProtocol": "上游协议",
+    "routeLabel": "路由标签",
+    "firstByte": "首字节耗时",
+    "attempts": "账号尝试链路",
+    "attemptsCount": "共 {{count}} 次尝试",
+    "noAttempts": "没有上游尝试记录（请求可能在网关层被拦截或限流）"
+  }
+}

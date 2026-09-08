@@ -1,0 +1,110 @@
+{
+  "title": "Content Compliance",
+  "subtitle": "Exact keyword matching plus semantic sample matching; hits are blocked or audited per policy group",
+  "disabledAlert": "Content compliance is disabled; requests will not be checked",
+  "goSettings": "Open settings",
+  "test": "Test Detection",
+  "tabs": {
+    "words": "Keywords",
+    "samples": "Review Samples",
+    "groups": "Policy Groups",
+    "logs": "Audit Log"
+  },
+  "policyGroup": "Policy group",
+  "policyGroupPlaceholder": "Select a policy group",
+  "policyGroupMissing": "Policy group deleted",
+  "method": {
+    "keyword": "Keyword",
+    "semantic": "Semantic"
+  },
+  "hits": {
+    "method": "Method",
+    "evidence": "Evidence",
+    "action": "Action",
+    "risk": "Risk"
+  },
+  "testModal": {
+    "title": "Test Detection",
+    "placeholder": "Enter text to check against keywords and semantic samples",
+    "run": "Detect",
+    "result": "Verdict",
+    "pass": "No hit",
+    "audit": "Hit · Audit only",
+    "block": "Hit · Blocked",
+    "hitCount": "{{count}} hit(s)",
+    "hitsTitle": "Hit Details",
+    "noHits": "No policy was hit",
+    "empty": "Enter text and click Detect"
+  },
+  "words": {
+    "add": "Add Keyword",
+    "edit": "Edit Keyword",
+    "word": "Keyword",
+    "wordPlaceholder": "Enter a word or phrase",
+    "wordExtra": "Exact keyword match; case sensitivity is decided by the backend",
+    "groupExtra": "Hits are handled by the selected policy group's action and risk level",
+    "searchPlaceholder": "Search keyword / note",
+    "empty": "No keywords yet",
+    "emptyHint": "Add keywords or import them in bulk; requests containing them are handled per the policy group action.",
+    "batch": {
+      "title": "Import Keywords",
+      "lines": "Keywords",
+      "linesPlaceholder": "One keyword per line",
+      "linesExtra": "Each line is treated as one keyword; blank lines are ignored",
+      "imported": "Imported {{created}} keywords",
+      "submit": "Import"
+    }
+  },
+  "samples": {
+    "add": "Add Sample",
+    "edit": "Edit Sample",
+    "text": "Sample text",
+    "textPlaceholder": "Enter an example of content that should be flagged",
+    "textExtra": "Used as a reference for semantic matching; the closer it is to real violating text, the better",
+    "vector": "Vector",
+    "filterVectorized": "Vector status",
+    "searchPlaceholder": "Search sample text / note",
+    "buildVector": "Build vector after saving",
+    "buildVectorExtra": "Semantic matching requires built vectors; a request hits when its similarity reaches the semantic threshold in Settings",
+    "confirmDelete": "Delete this sample?",
+    "confirmBuildAll": "Vectors for all review samples will be rebuilt, which may take a while. Continue?",
+    "buildResult": "Built {{built}}, failed {{failed}}",
+    "empty": "No review samples yet",
+    "emptyHint": "Add examples of violating content and build their vectors so semantically similar requests are detected."
+  },
+  "groups": {
+    "add": "Add Policy Group",
+    "edit": "Edit Policy Group",
+    "name": "Name",
+    "namePlaceholder": "e.g. Political, Advertising",
+    "action": "Action",
+    "actionExtra": "What happens when a keyword or sample in this group is hit",
+    "risk": "Risk level",
+    "riskExtra": "Only used to label and filter audit logs; it does not change handling",
+    "enabledExtra": "When disabled, keywords and samples in this group no longer take part in detection",
+    "descriptionPlaceholder": "Optional; describe what this group is for",
+    "blockWarning": "Block rejects the matching request with an error and never forwards it upstream; Audit only records a log and lets the request through",
+    "wordsCount": "Keywords",
+    "samplesCount": "Samples",
+    "deleteDisabled": "This policy group is still referenced by keywords or samples and cannot be deleted",
+    "searchPlaceholder": "Search name / description",
+    "empty": "No policy groups yet",
+    "emptyHint": "Create a policy group first, then add keywords or review samples to it."
+  },
+  "logs": {
+    "filterAction": "Action",
+    "filterRisk": "Risk level",
+    "filterMethod": "Method",
+    "searchPlaceholder": "Request ID / user / model / evidence",
+    "method": "Method",
+    "evidence": "Evidence",
+    "clientProtocol": "Client protocol",
+    "detail": "Audit Detail",
+    "info": "Audit Info",
+    "hits": "Hit Details",
+    "policy": "Policy Details",
+    "snippet": "Request Snippet",
+    "empty": "No audit logs yet",
+    "emptyHint": "Each time a request hits a keyword or review sample, the result is recorded here."
+  }
+}

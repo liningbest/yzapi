@@ -1,0 +1,205 @@
+{
+  "title": "Settings",
+  "subtitle": "Gateway basics, performance, vector service, smart routing, content compliance and log shipping",
+  "tabs": {
+    "basic": "General",
+    "performance": "Performance",
+    "vector": "Vector service",
+    "smartRoute": "Smart routing",
+    "compliance": "Compliance",
+    "elasticsearch": "Elasticsearch"
+  },
+  "unit": {
+    "days": "days",
+    "times": "times"
+  },
+  "basic": {
+    "siteName": {
+      "label": "Site name",
+      "extra": "Shown on the login page, the sidebar and the browser title."
+    },
+    "baseUrl": {
+      "label": "Base URL",
+      "extra": "The public endpoint handed to clients. It must end with /v1, e.g. https://gateway.example.com/v1.",
+      "invalid": "Must start with http:// or https:// and end with /v1"
+    },
+    "logRetentionDays": {
+      "label": "Log retention",
+      "extra": "Days to keep call logs and audit logs in the local database (1–365). Older records are purged automatically."
+    },
+    "protocolConversion": {
+      "label": "Protocol conversion",
+      "extra": "When enabled, requests are converted automatically if the client protocol differs from the upstream protocol (e.g. OpenAI Chat ↔ Anthropic Messages).",
+      "warning": "Protocol conversion is not lossless: special fields, tool calls, reasoning content and multimodal content may fail to convert."
+    }
+  },
+  "performance": {
+    "intro": "These values take effect immediately after saving. Tune them according to your upstream account limits and server resources.",
+    "max_concurrency": {
+      "label": "Max concurrency",
+      "extra": "Global cap on requests processed at the same time; excess requests wait in the queue. 0 means unlimited."
+    },
+    "queue_size": {
+      "label": "Queue size",
+      "extra": "Capacity of the waiting queue. New requests get 429 once the queue is full."
+    },
+    "queue_timeout_sec": {
+      "label": "Queue wait timeout",
+      "extra": "Maximum seconds a request may wait in the queue before receiving 429."
+    },
+    "request_timeout_sec": {
+      "label": "Non-streaming request timeout",
+      "extra": "Maximum seconds from forwarding a non-streaming request until the full response arrives."
+    },
+    "stream_idle_timeout_sec": {
+      "label": "Stream idle timeout",
+      "extra": "Maximum idle seconds allowed between two chunks of a streaming response; the connection is closed on timeout."
+    },
+    "max_body_kb": {
+      "label": "Max request body",
+      "extra": "Upper limit of the accepted request body in KiB. Larger bodies get 413."
+    },
+    "cooldown_sec": {
+      "label": "Cooldown",
+      "extra": "Seconds an account stays in cooldown after a failure; no requests are assigned to it meanwhile."
+    },
+    "max_retries": {
+      "label": "Max retries",
+      "extra": "How many other accounts to try after an upstream failure."
+    },
+    "upstream_connect_timeout_sec": {
+      "label": "Upstream connect timeout",
+      "extra": "Maximum seconds to establish the TCP/TLS connection with the upstream."
+    }
+  },
+  "vector": {
+    "notice": "Smart routing and content compliance share this vector service. After changing the embedding model, rebuild all sample vectors.",
+    "account": {
+      "label": "Embedding account",
+      "extra": "Only enabled embedding-type accounts can be selected.",
+      "placeholder": "Select an embedding account",
+      "empty": "No embedding accounts available. Add and enable an embedding-type account in the account pool first."
+    },
+    "model": {
+      "label": "Embedding model",
+      "extra": "Upstream embedding model name, e.g. text-embedding-3-small."
+    },
+    "testOk": "Connected: dimension {{dim}} · latency {{latency}}",
+    "testFailed": "Connection failed: {{message}}"
+  },
+  "smartRoute": {
+    "applied": "Saved. The change is live at runtime.",
+    "modelsCount": "{{count}} models",
+    "groupPlaceholder": "Select a text model group",
+    "enabled": {
+      "label": "Enable smart routing",
+      "extra": "When enabled, clients trigger automatic routing by requesting the virtual model name."
+    },
+    "virtualModel": {
+      "label": "Virtual model name",
+      "extra": "Requests for this model name trigger smart routing, e.g. yz-auto."
+    },
+    "simpleGroup": {
+      "label": "Model group for simple requests",
+      "extra": "Requests classified as simple are routed to this model group."
+    },
+    "complexGroup": {
+      "label": "Model group for complex requests",
+      "extra": "Requests classified as complex are routed to this model group."
+    },
+    "threshold": {
+      "label": "Classification threshold",
+      "extra": "Requests whose similarity is below this threshold are treated as simple. Default 0.72."
+    },
+    "confidenceGap": {
+      "label": "Confidence gap",
+      "extra": "When the gap between the top two confidences is below this value, the request is treated as simple. Default 0."
+    },
+    "topK": {
+      "label": "Top K",
+      "extra": "Number of most similar samples that take part in the vote. Default 5."
+    },
+    "advanced": "Advanced",
+    "ruleMaxChars": {
+      "label": "Rule max characters",
+      "extra": "When no sample matches, texts up to this many characters are treated as simple. Leave empty for the default."
+    },
+    "contextComplex": {
+      "label": "Context complexity threshold",
+      "extra": "Conversations with more messages than this are treated as complex directly. Leave empty for the default."
+    }
+  },
+  "compliance": {
+    "intro": "Content compliance checks sensitive words and semantic samples before forwarding; a hit on a blocking policy group returns 403.",
+    "enabled": {
+      "label": "Enable content compliance",
+      "extra": "When disabled, no sensitive-word or semantic checks are performed."
+    },
+    "semanticThreshold": {
+      "label": "Semantic threshold",
+      "extra": "An audit sample counts as a hit once its semantic similarity reaches this value. Default 0.85."
+    },
+    "checkSystemPrompt": {
+      "label": "Check system prompt",
+      "extra": "Also inspect the content of the system prompt."
+    }
+  },
+  "es": {
+    "notice": "Only Elasticsearch 9.x is supported. When enabled, call logs are shipped asynchronously; the local queue drops entries by capacity when writes fail.",
+    "secretExtra": "Leave empty or keep ****** to leave it unchanged.",
+    "enabled": {
+      "label": "Enable shipping",
+      "extra": "When enabled, call logs are written to Elasticsearch asynchronously."
+    },
+    "url": {
+      "label": "URL",
+      "extra": "Elasticsearch endpoint, e.g. https://es.example.com:9200."
+    },
+    "authType": {
+      "label": "Authentication",
+      "extra": "Choose API Key or Basic Auth according to your Elasticsearch security setup.",
+      "apikey": "API Key",
+      "basic": "Basic Auth"
+    },
+    "apiKey": {
+      "label": "API Key"
+    },
+    "username": {
+      "label": "Username",
+      "extra": "Basic Auth username."
+    },
+    "password": {
+      "label": "Password"
+    },
+    "indexPrefix": {
+      "label": "Index prefix",
+      "extra": "Prefix of the target index name; indices roll over daily, e.g. yzapi-2026.09.08."
+    },
+    "requestKb": {
+      "label": "Request body limit",
+      "extra": "Maximum KiB of request body to store; longer bodies are truncated. 0 stores no body."
+    },
+    "responseKb": {
+      "label": "Response body limit",
+      "extra": "Maximum KiB of response body to store; longer bodies are truncated. 0 stores no body."
+    },
+    "retentionDays": {
+      "label": "External retention",
+      "extra": "Days to keep log indices in Elasticsearch; expired indices are deleted automatically. 0 disables cleanup."
+    },
+    "testOk": "Connected. Elasticsearch version {{version}}",
+    "testFailed": "Connection failed: {{message}}",
+    "status": {
+      "title": "Runtime status",
+      "configured": "Configuration",
+      "configuredYes": "Configured",
+      "notConfigured": "Not configured",
+      "queueCount": "Queued entries",
+      "queueBytes": "Queued bytes",
+      "dropped": "Dropped in total",
+      "lastSuccessAt": "Last successful write",
+      "failingSince": "Failing since",
+      "healthy": "Healthy"
+    }
+  }
+}

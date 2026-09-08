@@ -1,0 +1,21 @@
+{
+  "title": "关于",
+  "subtitle": "系统信息与客户端接入说明",
+  "access": {
+    "title": "接入信息",
+    "hint": "在任意 OpenAI / Anthropic 兼容客户端中，将 Base URL 设置为以下地址，并使用用户中心创建的 API Key 进行认证。"
+  },
+  "endpoints": {
+    "title": "数据面接口",
+    "method": "方法",
+    "path": "路径",
+    "purpose": "用途",
+    "models": "列出当前 API Key 可访问的文本模型",
+    "chat": "OpenAI Chat Completions 兼容",
+    "responses": "OpenAI Responses 兼容",
+    "messages": "Anthropic Messages 兼容",
+    "embeddings": "OpenAI Embeddings 兼容",
+    "images": "OpenAI Images 兼容",
+    "authHint": "认证：Authorization: Bearer <key>；/v1/messages 另可使用 x-api-key: <key>，二者不可同时发送。"
+  }
+}

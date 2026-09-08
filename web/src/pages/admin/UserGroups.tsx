@@ -60,6 +60,20 @@ const DEFAULT_VALUES: FormValues = {
   note: '',
 };
 
+function toFormValues(g: UserGroup): FormValues {
+  const q = splitQuota(g.token_quota);
+  return {
+    name: g.name,
+    max_concurrency: g.max_concurrency,
+    key_max_concurrency: g.key_max_concurrency,
+    quota_amount: q.amount,
+    quota_unit: q.unit,
+    model_group_ids: g.model_group_ids ?? [],
+    enabled: g.enabled,
+    note: g.note,
+  };
+}
+
 function quotaColor(used: number, quota: number): string {
   if (!quota) return CHART_PALETTE[0];
   const r = used / quota;
@@ -129,25 +143,8 @@ export default function UserGroups() {
     },
   });
 
-  const openCreate = () => {
-    form.resetFields();
-    form.setFieldsValue(DEFAULT_VALUES);
-    setDrawer({ open: true });
-  };
-  const openEdit = (record: UserGroup) => {
-    const q = splitQuota(record.token_quota);
-    form.setFieldsValue({
-      name: record.name,
-      max_concurrency: record.max_concurrency,
-      key_max_concurrency: record.key_max_concurrency,
-      quota_amount: q.amount,
-      quota_unit: q.unit,
-      model_group_ids: record.model_group_ids ?? [],
-      enabled: record.enabled,
-      note: record.note,
-    });
-    setDrawer({ open: true, record });
-  };
+  const openCreate = () => setDrawer({ open: true });
+  const openEdit = (record: UserGroup) => setDrawer({ open: true, record });
 
   const submit = async () => {
     const v = await form.validateFields();
@@ -358,7 +355,13 @@ export default function UserGroups() {
         submitting={createMut.isPending || updateMut.isPending}
         width={560}
       >
-        <Form form={form} layout="vertical" autoComplete="off" initialValues={DEFAULT_VALUES}>
+        <Form
+          key={editing?.id ?? 'create'}
+          form={form}
+          layout="vertical"
+          autoComplete="off"
+          initialValues={editing ? toFormValues(editing) : DEFAULT_VALUES}
+        >
           <Form.Item
             name="name"
             label={t('common:common.name')}

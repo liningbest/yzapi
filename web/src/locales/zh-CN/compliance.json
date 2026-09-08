@@ -1,0 +1,110 @@
+{
+  "title": "内容合规",
+  "subtitle": "敏感词精确匹配与审核样本语义匹配，按策略组动作拦截或审计请求",
+  "disabledAlert": "内容合规未启用，请求不会被检测",
+  "goSettings": "前往设置",
+  "test": "测试检测",
+  "tabs": {
+    "words": "敏感词",
+    "samples": "审核样本",
+    "groups": "策略组",
+    "logs": "审核日志"
+  },
+  "policyGroup": "策略组",
+  "policyGroupPlaceholder": "选择策略组",
+  "policyGroupMissing": "策略组已删除",
+  "method": {
+    "keyword": "敏感词",
+    "semantic": "语义"
+  },
+  "hits": {
+    "method": "检测方式",
+    "evidence": "证据",
+    "action": "动作",
+    "risk": "风险"
+  },
+  "testModal": {
+    "title": "测试检测",
+    "placeholder": "输入要检测的文本，查看敏感词与语义匹配结果",
+    "run": "检测",
+    "result": "判定结果",
+    "pass": "未命中",
+    "audit": "命中 · 仅审计",
+    "block": "命中 · 拦截",
+    "hitCount": "命中 {{count}} 条",
+    "hitsTitle": "命中详情",
+    "noHits": "未命中任何策略",
+    "empty": "输入文本后点击检测"
+  },
+  "words": {
+    "add": "添加敏感词",
+    "edit": "编辑敏感词",
+    "word": "敏感词",
+    "wordPlaceholder": "输入词或短语",
+    "wordExtra": "精确关键词匹配，是否区分大小写由后端决定",
+    "groupExtra": "命中后按所选策略组的动作与风险等级处理",
+    "searchPlaceholder": "搜索敏感词 / 备注",
+    "empty": "暂无敏感词",
+    "emptyHint": "添加敏感词或批量导入后，请求文本中出现这些词会按策略组动作处理。",
+    "batch": {
+      "title": "批量导入敏感词",
+      "lines": "敏感词",
+      "linesPlaceholder": "每行一个敏感词",
+      "linesExtra": "每行视为一个敏感词，空行会被忽略",
+      "imported": "已导入 {{created}} 个敏感词",
+      "submit": "导入"
+    }
+  },
+  "samples": {
+    "add": "添加样本",
+    "edit": "编辑样本",
+    "text": "样本文本",
+    "textPlaceholder": "输入一段需要被识别的违规内容示例",
+    "textExtra": "作为语义匹配的参考样本，越贴近真实违规表达越准确",
+    "vector": "向量",
+    "filterVectorized": "向量状态",
+    "searchPlaceholder": "搜索样本文本 / 备注",
+    "buildVector": "保存后生成向量",
+    "buildVectorExtra": "语义向量匹配需先构建向量；相似度达到设置中的语义阈值即命中",
+    "confirmDelete": "确定删除该样本吗？",
+    "confirmBuildAll": "将为全部审核样本重新构建向量，可能耗时较长，确定继续？",
+    "buildResult": "已构建 {{built}}，失败 {{failed}}",
+    "empty": "暂无审核样本",
+    "emptyHint": "添加违规内容示例并构建向量后，语义相近的请求将被识别。"
+  },
+  "groups": {
+    "add": "添加策略组",
+    "edit": "编辑策略组",
+    "name": "名称",
+    "namePlaceholder": "例如：政治敏感、广告推广",
+    "action": "动作",
+    "actionExtra": "命中该策略组的敏感词或样本时执行的动作",
+    "risk": "风险等级",
+    "riskExtra": "仅用于标记与筛选审核日志，不影响处理逻辑",
+    "enabledExtra": "禁用后该策略组下的敏感词与样本都不再参与检测",
+    "descriptionPlaceholder": "可选，说明该策略组的用途",
+    "blockWarning": "拦截动作会直接拒绝命中的请求并返回错误，不会转发到上游；仅审计只记录日志并放行",
+    "wordsCount": "敏感词数",
+    "samplesCount": "样本数",
+    "deleteDisabled": "策略组仍被敏感词或样本引用，无法删除",
+    "searchPlaceholder": "搜索名称 / 描述",
+    "empty": "暂无策略组",
+    "emptyHint": "先创建策略组，再为其添加敏感词或审核样本。"
+  },
+  "logs": {
+    "filterAction": "动作",
+    "filterRisk": "风险等级",
+    "filterMethod": "检测方式",
+    "searchPlaceholder": "Request ID / 用户 / 模型 / 证据",
+    "method": "检测方式",
+    "evidence": "证据",
+    "clientProtocol": "客户端协议",
+    "detail": "审核详情",
+    "info": "审核信息",
+    "hits": "命中详情",
+    "policy": "策略详情",
+    "snippet": "请求片段",
+    "empty": "暂无审核日志",
+    "emptyHint": "请求命中敏感词或审核样本后，这里会记录每次审核结果。"
+  }
+}

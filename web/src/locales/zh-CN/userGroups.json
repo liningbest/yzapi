@@ -1,0 +1,32 @@
+{
+  "title": "用户组",
+  "subtitle": "按组管理并发上限、Token 配额与可访问的模型组",
+  "add": "添加用户组",
+  "addTitle": "添加用户组",
+  "editTitle": "编辑用户组 · {{name}}",
+  "maxConcurrency": "组最大并发",
+  "keyMaxConcurrency": "单 Key 最大并发",
+  "inheritGroup": "继承组上限",
+  "tokenQuota": "Token 配额",
+  "modelGroups": "授权模型组",
+  "allModels": "全部模型",
+  "members": "成员数",
+  "monthUsage": "本月用量",
+  "searchPlaceholder": "搜索名称 / 备注",
+  "empty": "暂无用户组",
+  "emptyHint": "创建用户组后，可为其设置并发上限、Token 配额与授权模型组。",
+  "form": {
+    "nameExtra": "网关内唯一，用于标识该组",
+    "nameMax": "名称最多 64 个字符",
+    "namePlaceholder": "请输入用户组名称",
+    "maxConcurrencyExtra": "0–100000，0 表示不限制，继承网关全局上限",
+    "keyMaxConcurrencyExtra": "0–100000，有效值须 ≤ 组上限，0 表示继承组上限",
+    "keyExceedsGroup": "单 Key 最大并发不能超过组最大并发",
+    "tokenQuotaExtra": "0 表示不限制；按自然月统计，超出后该组请求将被限流",
+    "modelGroupsExtra": "可多选 1–100 个；未选择时可访问全部模型",
+    "modelGroupsMax": "最多选择 100 个模型组",
+    "modelGroupsPlaceholder": "不选择则可访问全部模型",
+    "enabledExtra": "禁用后成员将回落到默认组；配置改动即时生效",
+    "noteMax": "备注最多 255 个字符"
+  }
+}

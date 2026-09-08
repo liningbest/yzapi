@@ -150,21 +150,13 @@ export default function Users() {
     onSuccess: () => {
       message.success(t('users:resetSuccess'));
       setResetTarget(null);
-      resetForm.resetFields();
       invalidate();
     },
     onError: handleError,
   });
 
-  const openCreate = () => {
-    createForm.resetFields();
-    createForm.setFieldsValue({ role: 'user', group_id: defaultGroupId });
-    setDrawer({ open: true });
-  };
-  const openEdit = (record: AdminUser) => {
-    editForm.setFieldsValue({ group_id: record.group_id, role: record.role, note: record.note });
-    setDrawer({ open: true, record });
-  };
+  const openCreate = () => setDrawer({ open: true });
+  const openEdit = (record: AdminUser) => setDrawer({ open: true, record });
 
   const submitDrawer = async () => {
     if (drawer.record) {
@@ -309,10 +301,7 @@ export default function Users() {
                 type="text"
                 size="small"
                 icon={<ReloadOutlined />}
-                onClick={() => {
-                  resetForm.resetFields();
-                  setResetTarget(r);
-                }}
+                onClick={() => setResetTarget(r)}
               />
             </Tooltip>
             <Tooltip title={deleteTip}>
@@ -416,7 +405,13 @@ export default function Users() {
         width={560}
       >
         {editing ? (
-          <Form form={editForm} layout="vertical" autoComplete="off">
+          <Form
+            key={editing.id}
+            form={editForm}
+            layout="vertical"
+            autoComplete="off"
+            initialValues={{ group_id: editing.group_id, role: editing.role, note: editing.note }}
+          >
             <Form.Item label={t('common:common.username')}>
               <Input value={editing.username} readOnly disabled />
             </Form.Item>
@@ -448,7 +443,13 @@ export default function Users() {
             </Form.Item>
           </Form>
         ) : (
-          <Form form={createForm} layout="vertical" autoComplete="off" initialValues={{ role: 'user' }}>
+          <Form
+            key="create"
+            form={createForm}
+            layout="vertical"
+            autoComplete="off"
+            initialValues={{ role: 'user', group_id: defaultGroupId }}
+          >
             <Form.Item
               name="username"
               label={t('common:common.username')}
@@ -531,7 +532,7 @@ export default function Users() {
         onOk={() => void submitReset()}
         okText={t('common:action.resetPassword')}
         confirmLoading={resetMut.isPending}
-        destroyOnClose
+        destroyOnHidden
       >
         <Alert type="info" showIcon message={t('users:resetNotice')} style={{ marginBottom: 16 }} />
         <Form form={resetForm} layout="vertical" autoComplete="off">

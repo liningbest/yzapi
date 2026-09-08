@@ -1,0 +1,205 @@
+{
+  "title": "設定",
+  "subtitle": "閘道基礎、效能、向量服務、智慧路由、內容合規與日誌外送設定",
+  "tabs": {
+    "basic": "基礎設定",
+    "performance": "效能設定",
+    "vector": "向量服務",
+    "smartRoute": "智慧路由",
+    "compliance": "內容合規",
+    "elasticsearch": "Elasticsearch"
+  },
+  "unit": {
+    "days": "天",
+    "times": "次"
+  },
+  "basic": {
+    "siteName": {
+      "label": "站點名稱",
+      "extra": "顯示在登入頁、側邊欄與瀏覽器標題中的名稱。"
+    },
+    "baseUrl": {
+      "label": "接入位址（Base URL）",
+      "extra": "對外提供給用戶端的接入位址，需以 /v1 結尾，例如 https://gateway.example.com/v1。",
+      "invalid": "必須以 http:// 或 https:// 開頭，並以 /v1 結尾"
+    },
+    "logRetentionDays": {
+      "label": "日誌保留天數",
+      "extra": "呼叫日誌與稽核日誌在本機資料庫中的保留天數（1–365），逾期自動清理。"
+    },
+    "protocolConversion": {
+      "label": "協定轉換",
+      "extra": "開啟後允許用戶端協定與上游協定不一致時自動轉換（如 OpenAI Chat ↔ Anthropic Messages）。",
+      "warning": "協定轉換並非無損，特殊欄位、工具呼叫、思考內容、多模態內容可能轉換失敗。"
+    }
+  },
+  "performance": {
+    "intro": "以下參數在儲存後立即生效，請依上游帳號能力與伺服器資源謹慎調整。",
+    "max_concurrency": {
+      "label": "最大並行",
+      "extra": "閘道全域同時處理的請求數上限，超出的請求進入等待佇列；0 表示不限制。"
+    },
+    "queue_size": {
+      "label": "佇列大小",
+      "extra": "等待佇列容量，佇列已滿時新請求直接回傳 429。"
+    },
+    "queue_timeout_sec": {
+      "label": "佇列等待逾時",
+      "extra": "請求在等待佇列中的最長停留秒數，逾時回傳 429。"
+    },
+    "request_timeout_sec": {
+      "label": "非串流請求逾時",
+      "extra": "非串流請求從轉送到收到完整回應的最長秒數。"
+    },
+    "stream_idle_timeout_sec": {
+      "label": "串流閒置逾時",
+      "extra": "串流回應兩次資料之間允許的最大閒置秒數，逾時將中斷連線。"
+    },
+    "max_body_kb": {
+      "label": "最大請求本文",
+      "extra": "允許接收的請求本文大小上限（KiB），超出回傳 413。"
+    },
+    "cooldown_sec": {
+      "label": "冷卻時間",
+      "extra": "帳號請求失敗後進入冷卻狀態的秒數，冷卻期間不再分配請求。"
+    },
+    "max_retries": {
+      "label": "最大重試次數",
+      "extra": "上游失敗後嘗試切換到其它帳號的次數。"
+    },
+    "upstream_connect_timeout_sec": {
+      "label": "上游連線逾時",
+      "extra": "與上游建立 TCP/TLS 連線的最長秒數。"
+    }
+  },
+  "vector": {
+    "notice": "智慧路由與內容合規共用此向量服務；更換向量模型後需重新建構全部樣本向量。",
+    "account": {
+      "label": "向量帳號",
+      "extra": "僅可選擇已啟用的向量類型帳號。",
+      "placeholder": "選擇向量帳號",
+      "empty": "沒有可用的向量帳號，請先在帳號池中新增並啟用向量類型帳號。"
+    },
+    "model": {
+      "label": "向量模型",
+      "extra": "上游向量模型名稱，如 text-embedding-3-small。"
+    },
+    "testOk": "連線成功：維度 {{dim}} · 耗時 {{latency}}",
+    "testFailed": "連線失敗：{{message}}"
+  },
+  "smartRoute": {
+    "applied": "儲存成功，執行階段已生效。",
+    "modelsCount": "{{count}} 個模型",
+    "groupPlaceholder": "選擇文字模型組",
+    "enabled": {
+      "label": "啟用智慧路由",
+      "extra": "開啟後用戶端可透過虛擬模型名稱觸發自動分流。"
+    },
+    "virtualModel": {
+      "label": "虛擬模型名稱",
+      "extra": "用戶端請求此模型名稱時觸發智慧路由，如 yz-auto。"
+    },
+    "simpleGroup": {
+      "label": "簡單請求模型組",
+      "extra": "被判定為簡單的請求將路由到此模型組。"
+    },
+    "complexGroup": {
+      "label": "複雜請求模型組",
+      "extra": "被判定為複雜的請求將路由到此模型組。"
+    },
+    "threshold": {
+      "label": "分類閾值",
+      "extra": "相似度低於閾值時按簡單請求處理，預設 0.72。"
+    },
+    "confidenceGap": {
+      "label": "信賴度差距值",
+      "extra": "最高與次高信賴度之差低於該值時按簡單請求處理，預設 0。"
+    },
+    "topK": {
+      "label": "Top K",
+      "extra": "參與投票的最相似樣本數量，預設 5。"
+    },
+    "advanced": "進階",
+    "ruleMaxChars": {
+      "label": "規則判定字元數",
+      "extra": "未命中任何樣本時，文字長度不超過此字元數的請求按簡單處理；留空使用預設值。"
+    },
+    "contextComplex": {
+      "label": "上下文複雜閾值",
+      "extra": "對話訊息數超過此值時直接按複雜請求處理；留空使用預設值。"
+    }
+  },
+  "compliance": {
+    "intro": "內容合規會在請求轉送前偵測敏感詞與語義樣本，命中攔截策略組時回傳 403。",
+    "enabled": {
+      "label": "啟用內容合規",
+      "extra": "關閉後不再執行敏感詞與語義偵測。"
+    },
+    "semanticThreshold": {
+      "label": "語義閾值",
+      "extra": "稽核樣本語義相似度達到該值即命中，預設 0.85。"
+    },
+    "checkSystemPrompt": {
+      "label": "偵測 system 提示詞",
+      "extra": "開啟後同時偵測 system 提示詞內容。"
+    }
+  },
+  "es": {
+    "notice": "僅支援 Elasticsearch 9.x。開啟後呼叫日誌將非同步寫入 Elasticsearch，本機佇列寫入失敗時會依容量丟棄。",
+    "secretExtra": "留空或保持 ****** 表示不修改。",
+    "enabled": {
+      "label": "啟用外送",
+      "extra": "開啟後呼叫日誌將非同步寫入 Elasticsearch。"
+    },
+    "url": {
+      "label": "位址",
+      "extra": "Elasticsearch 服務位址，例如 https://es.example.com:9200。"
+    },
+    "authType": {
+      "label": "認證方式",
+      "extra": "依 Elasticsearch 的安全設定選擇 API Key 或 Basic Auth。",
+      "apikey": "API Key",
+      "basic": "Basic Auth"
+    },
+    "apiKey": {
+      "label": "API Key"
+    },
+    "username": {
+      "label": "使用者名稱",
+      "extra": "Basic Auth 使用者名稱。"
+    },
+    "password": {
+      "label": "密碼"
+    },
+    "indexPrefix": {
+      "label": "索引前綴",
+      "extra": "寫入的索引名稱前綴，實際索引依日期滾動，例如 yzapi-2026.09.08。"
+    },
+    "requestKb": {
+      "label": "請求本文上限",
+      "extra": "寫入的請求本文最大 KiB，超出部分截斷；0 表示不寫入本文。"
+    },
+    "responseKb": {
+      "label": "回應本文上限",
+      "extra": "寫入的回應本文最大 KiB，超出部分截斷；0 表示不寫入本文。"
+    },
+    "retentionDays": {
+      "label": "外部保留天數",
+      "extra": "Elasticsearch 中日誌索引的保留天數，逾期索引自動刪除；0 表示不清理。"
+    },
+    "testOk": "連線成功，Elasticsearch 版本 {{version}}",
+    "testFailed": "連線失敗：{{message}}",
+    "status": {
+      "title": "執行狀態",
+      "configured": "設定狀態",
+      "configuredYes": "已設定",
+      "notConfigured": "未設定",
+      "queueCount": "目前佇列筆數",
+      "queueBytes": "目前佇列位元組",
+      "dropped": "累計丟棄",
+      "lastSuccessAt": "最近寫入成功",
+      "failingSince": "連續失敗開始",
+      "healthy": "正常"
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "title": "呼叫日誌",
+  "subtitle": "檢視每次資料面請求的路由結果、Token 消耗與耗時",
+  "searchPlaceholder": "Request ID / 模型 / 錯誤訊息",
+  "cachedShort": "快取",
+  "empty": "尚無呼叫日誌",
+  "emptyHint": "所選時間範圍內沒有符合的請求，可嘗試調整篩選條件。",
+  "detail": {
+    "title": "日誌詳情",
+    "basic": "基本資訊",
+    "routing": "路由資訊",
+    "performance": "Token 與耗時",
+    "clientIp": "用戶端 IP",
+    "clientProtocol": "用戶端協定",
+    "upstreamProtocol": "上游協定",
+    "routeLabel": "路由標籤",
+    "firstByte": "首位元組耗時",
+    "attempts": "帳號嘗試鏈路",
+    "attemptsCount": "共 {{count}} 次嘗試",
+    "noAttempts": "沒有上游嘗試記錄（請求可能在閘道層被攔截或限流）"
+  }
+}

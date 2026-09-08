@@ -311,7 +311,7 @@ func (g *Gateway) candidates(req *request) ([]string, *GatewayError) {
 			}
 			g.DecisionLogger(&model.RouteDecision{RequestID: req.id, Label: res.Label, Source: res.Source, Confidence: res.Confidence,
 				SelectedModel: sel, ModelGroup: mg.Name, NormalizedText: truncate(res.Normalized, 2000), TopK: res.TopK,
-				RequestType: req.proto, LatencyMs: res.LatencyMs, CreatedAt: time.Now()})
+				RequestType: shortProto(req.proto), LatencyMs: res.LatencyMs, CreatedAt: time.Now()})
 		}
 		return mg.Models, nil
 	}
@@ -321,6 +321,18 @@ func (g *Gateway) candidates(req *request) ([]string, *GatewayError) {
 	}
 	req.log.ModelGroup = snap.ModelGroupNameFor(req.group, req.model)
 	return []string{req.model}, nil
+}
+
+// shortProto maps a wire protocol to the short request type shown in the UI.
+func shortProto(p string) string {
+	switch p {
+	case model.ProtoOpenAIResponses:
+		return "responses"
+	case model.ProtoAnthropicMessages:
+		return "messages"
+	default:
+		return "chat"
+	}
 }
 
 // pickProto chooses the wire protocol to use against an upstream.

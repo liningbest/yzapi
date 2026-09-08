@@ -1,0 +1,21 @@
+{
+  "title": "About",
+  "subtitle": "System information and client integration guide",
+  "access": {
+    "title": "Integration",
+    "hint": "In any OpenAI- or Anthropic-compatible client, set the Base URL to the address below and authenticate with an API key created in the user console."
+  },
+  "endpoints": {
+    "title": "Data-plane endpoints",
+    "method": "Method",
+    "path": "Path",
+    "purpose": "Purpose",
+    "models": "List text models available to the current API key",
+    "chat": "OpenAI Chat Completions compatible",
+    "responses": "OpenAI Responses compatible",
+    "messages": "Anthropic Messages compatible",
+    "embeddings": "OpenAI Embeddings compatible",
+    "images": "OpenAI Images compatible",
+    "authHint": "Authentication: Authorization: Bearer <key>. /v1/messages also accepts x-api-key: <key>; do not send both."
+  }
+}

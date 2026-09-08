@@ -1,0 +1,110 @@
+{
+  "title": "內容合規",
+  "subtitle": "敏感詞精確比對與審核樣本語意比對，依策略組動作攔截或稽核請求",
+  "disabledAlert": "內容合規未啟用，請求不會被檢測",
+  "goSettings": "前往設定",
+  "test": "測試檢測",
+  "tabs": {
+    "words": "敏感詞",
+    "samples": "審核樣本",
+    "groups": "策略組",
+    "logs": "審核日誌"
+  },
+  "policyGroup": "策略組",
+  "policyGroupPlaceholder": "選擇策略組",
+  "policyGroupMissing": "策略組已刪除",
+  "method": {
+    "keyword": "敏感詞",
+    "semantic": "語意"
+  },
+  "hits": {
+    "method": "檢測方式",
+    "evidence": "證據",
+    "action": "動作",
+    "risk": "風險"
+  },
+  "testModal": {
+    "title": "測試檢測",
+    "placeholder": "輸入要檢測的文字，檢視敏感詞與語意比對結果",
+    "run": "檢測",
+    "result": "判定結果",
+    "pass": "未命中",
+    "audit": "命中 · 僅稽核",
+    "block": "命中 · 攔截",
+    "hitCount": "命中 {{count}} 條",
+    "hitsTitle": "命中詳情",
+    "noHits": "未命中任何策略",
+    "empty": "輸入文字後點擊檢測"
+  },
+  "words": {
+    "add": "新增敏感詞",
+    "edit": "編輯敏感詞",
+    "word": "敏感詞",
+    "wordPlaceholder": "輸入詞或短語",
+    "wordExtra": "精確關鍵字比對，是否區分大小寫由後端決定",
+    "groupExtra": "命中後依所選策略組的動作與風險等級處理",
+    "searchPlaceholder": "搜尋敏感詞 / 備註",
+    "empty": "尚無敏感詞",
+    "emptyHint": "新增敏感詞或批次匯入後，請求文字中出現這些詞會依策略組動作處理。",
+    "batch": {
+      "title": "批次匯入敏感詞",
+      "lines": "敏感詞",
+      "linesPlaceholder": "每行一個敏感詞",
+      "linesExtra": "每行視為一個敏感詞，空行會被忽略",
+      "imported": "已匯入 {{created}} 個敏感詞",
+      "submit": "匯入"
+    }
+  },
+  "samples": {
+    "add": "新增樣本",
+    "edit": "編輯樣本",
+    "text": "樣本文字",
+    "textPlaceholder": "輸入一段需要被識別的違規內容範例",
+    "textExtra": "作為語意比對的參考樣本，越貼近真實違規表達越準確",
+    "vector": "向量",
+    "filterVectorized": "向量狀態",
+    "searchPlaceholder": "搜尋樣本文字 / 備註",
+    "buildVector": "儲存後產生向量",
+    "buildVectorExtra": "語意向量比對需先建立向量；相似度達到設定中的語意閾值即命中",
+    "confirmDelete": "確定刪除此樣本嗎？",
+    "confirmBuildAll": "將為全部審核樣本重新建立向量，可能耗時較長，確定繼續？",
+    "buildResult": "已建立 {{built}}，失敗 {{failed}}",
+    "empty": "尚無審核樣本",
+    "emptyHint": "新增違規內容範例並建立向量後，語意相近的請求將被識別。"
+  },
+  "groups": {
+    "add": "新增策略組",
+    "edit": "編輯策略組",
+    "name": "名稱",
+    "namePlaceholder": "例如：政治敏感、廣告推廣",
+    "action": "動作",
+    "actionExtra": "命中此策略組的敏感詞或樣本時執行的動作",
+    "risk": "風險等級",
+    "riskExtra": "僅用於標記與篩選審核日誌，不影響處理邏輯",
+    "enabledExtra": "停用後此策略組下的敏感詞與樣本都不再參與檢測",
+    "descriptionPlaceholder": "可選，說明此策略組的用途",
+    "blockWarning": "攔截動作會直接拒絕命中的請求並回傳錯誤，不會轉送到上游；僅稽核只記錄日誌並放行",
+    "wordsCount": "敏感詞數",
+    "samplesCount": "樣本數",
+    "deleteDisabled": "策略組仍被敏感詞或樣本引用，無法刪除",
+    "searchPlaceholder": "搜尋名稱 / 描述",
+    "empty": "尚無策略組",
+    "emptyHint": "先建立策略組，再為其新增敏感詞或審核樣本。"
+  },
+  "logs": {
+    "filterAction": "動作",
+    "filterRisk": "風險等級",
+    "filterMethod": "檢測方式",
+    "searchPlaceholder": "Request ID / 使用者 / 模型 / 證據",
+    "method": "檢測方式",
+    "evidence": "證據",
+    "clientProtocol": "用戶端協定",
+    "detail": "審核詳情",
+    "info": "審核資訊",
+    "hits": "命中詳情",
+    "policy": "策略詳情",
+    "snippet": "請求片段",
+    "empty": "尚無審核日誌",
+    "emptyHint": "請求命中敏感詞或審核樣本後，這裡會記錄每次審核結果。"
+  }
+}

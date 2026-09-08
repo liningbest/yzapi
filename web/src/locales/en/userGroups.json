@@ -1,0 +1,32 @@
+{
+  "title": "User groups",
+  "subtitle": "Manage concurrency limits, token quotas and model access per group",
+  "add": "Add group",
+  "addTitle": "Add user group",
+  "editTitle": "Edit user group · {{name}}",
+  "maxConcurrency": "Group concurrency",
+  "keyMaxConcurrency": "Per-key concurrency",
+  "inheritGroup": "Inherits group",
+  "tokenQuota": "Token quota",
+  "modelGroups": "Model groups",
+  "allModels": "All models",
+  "members": "Members",
+  "monthUsage": "This month",
+  "searchPlaceholder": "Search name / note",
+  "empty": "No user groups yet",
+  "emptyHint": "Create a group to set concurrency limits, token quota and allowed model groups.",
+  "form": {
+    "nameExtra": "Must be unique across the gateway",
+    "nameMax": "Name must be at most 64 characters",
+    "namePlaceholder": "Enter a group name",
+    "maxConcurrencyExtra": "0–100000; 0 means unlimited and inherits the gateway-wide limit",
+    "keyMaxConcurrencyExtra": "0–100000; must be ≤ the group limit when set; 0 inherits the group limit",
+    "keyExceedsGroup": "Per-key concurrency cannot exceed the group concurrency",
+    "tokenQuotaExtra": "0 means unlimited; counted per calendar month, requests are rate-limited once exceeded",
+    "modelGroupsExtra": "Select 1–100 groups; leave empty to allow every model",
+    "modelGroupsMax": "Select at most 100 model groups",
+    "modelGroupsPlaceholder": "Leave empty to allow all models",
+    "enabledExtra": "When disabled, members fall back to the default group; changes take effect immediately",
+    "noteMax": "Note must be at most 255 characters"
+  }
+}

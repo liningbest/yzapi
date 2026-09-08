@@ -1,0 +1,98 @@
+{
+  "title": "智能路由",
+  "subtitle": "基于样本向量相似度，将虚拟模型请求自动分类到简单 / 复杂模型组",
+  "disabledAlert": "智能路由未启用，虚拟模型请求将不会被分类路由",
+  "goSettings": "前往设置",
+  "info": {
+    "virtualModel": "虚拟模型名",
+    "simpleGroup": "简单模型组",
+    "complexGroup": "复杂模型组",
+    "unset": "未配置"
+  },
+  "tabs": {
+    "samples": "样本管理",
+    "decisions": "决策日志",
+    "stats": "统计"
+  },
+  "samples": {
+    "add": "添加样本",
+    "edit": "编辑样本",
+    "preview": "决策预览",
+    "filterVectorized": "向量状态",
+    "searchPlaceholder": "搜索样本文本 / 备注",
+    "text": "样本文本",
+    "textPlaceholder": "输入一条有代表性的请求文本",
+    "textExtra": "最多 65536 字符；文本越贴近真实请求，分类越准确",
+    "threshold": "阈值",
+    "thresholdExtra": "覆盖全局分类阈值，0 表示使用全局设置",
+    "globalThreshold": "全局",
+    "vector": "向量",
+    "buildVector": "保存后生成向量",
+    "buildVectorExtra": "需先在设置中配置向量服务；未构建向量的样本不参与匹配，更换向量模型后需重新构建",
+    "confirmDelete": "确定删除该样本吗？",
+    "confirmBuildAll": "将为全部样本重新构建向量，可能耗时较长，确定继续？",
+    "buildResult": "已构建 {{built}}，失败 {{failed}}",
+    "empty": "暂无样本",
+    "emptyHint": "添加简单 / 复杂样本并构建向量后，智能路由才能进行分类。",
+    "batch": {
+      "title": "批量添加样本",
+      "lines": "样本文本",
+      "linesPlaceholder": "每行一条样本",
+      "linesExtra": "每行视为一条样本，空行会被忽略",
+      "created": "已创建 {{created}} 条样本",
+      "submit": "添加"
+    }
+  },
+  "preview": {
+    "title": "决策预览",
+    "placeholder": "输入一段请求文本，查看智能路由的预判结果",
+    "run": "预览",
+    "result": "预判结果",
+    "group": "模型组",
+    "models": "候选模型",
+    "normalized": "规范化文本",
+    "topK": "Top K 命中样本",
+    "noTopK": "没有命中的样本",
+    "empty": "输入文本后点击预览"
+  },
+  "source": {
+    "rule": "本地规则",
+    "context": "上下文路由",
+    "vector": "向量相似度"
+  },
+  "requestType": {
+    "chat": "Chat Completions",
+    "responses": "Responses",
+    "messages": "Messages"
+  },
+  "decisions": {
+    "filterSource": "决策来源",
+    "filterRequestType": "请求类型",
+    "modelPlaceholder": "选中模型",
+    "searchPlaceholder": "Request ID / 模型 / 文本",
+    "classification": "分类",
+    "selectedModel": "选中模型",
+    "requestType": "请求类型",
+    "failed": "失败",
+    "failedTag": "失败",
+    "succeeded": "成功",
+    "detail": "决策详情",
+    "normalized": "规范化文本",
+    "topK": "Top K 命中样本",
+    "empty": "暂无决策日志",
+    "emptyHint": "虚拟模型收到请求并完成分类后，这里会记录每次决策。"
+  },
+  "stats": {
+    "decisions": "决策数",
+    "requests": "真实请求数",
+    "failed": "失败数",
+    "totalTokens": "总 Token",
+    "avgTokens": "平均 Token",
+    "latency": "累计耗时",
+    "byLabel": "按标签",
+    "bySource": "按来源",
+    "byModel": "按模型",
+    "byTokenBucket": "按 Token 区间",
+    "empty": "该时间段暂无数据"
+  }
+}

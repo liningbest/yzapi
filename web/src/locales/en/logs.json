@@ -1,0 +1,22 @@
+{
+  "title": "Call logs",
+  "subtitle": "Inspect routing, token usage and latency of every data-plane request",
+  "searchPlaceholder": "Request ID / model / error message",
+  "cachedShort": "cached",
+  "empty": "No call logs",
+  "emptyHint": "No requests match the selected time range. Try adjusting the filters.",
+  "detail": {
+    "title": "Log details",
+    "basic": "Basics",
+    "routing": "Routing",
+    "performance": "Tokens & latency",
+    "clientIp": "Client IP",
+    "clientProtocol": "Client protocol",
+    "upstreamProtocol": "Upstream protocol",
+    "routeLabel": "Route label",
+    "firstByte": "Time to first byte",
+    "attempts": "Account attempts",
+    "attemptsCount": "{{count}} attempts",
+    "noAttempts": "No upstream attempts recorded (the request may have been blocked or rate-limited at the gateway)"
+  }
+}
