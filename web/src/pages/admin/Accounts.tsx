@@ -16,7 +16,6 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
-  ArrowRightOutlined,
   DeleteOutlined,
   EditOutlined,
   PlusOutlined,
@@ -26,11 +25,12 @@ import {
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { accountsApi, providersApi } from '@/api';
-import { EmptyState, FilterBar, HealthTag, NeutralTag, PageHeader, ProtocolTag, ProviderAvatar, TimeCell, TypeTag } from '@/components';
+import { EmptyState, FilterBar, HealthTag, PageHeader, ProtocolTag, ProviderAvatar, TimeCell, TypeTag } from '@/components';
 import { useTableQuery } from '@/hooks/useTableQuery';
 import type { Account, AccountListParams, Health, ModelType, Protocol } from '@/types';
 import { MODEL_TYPES, PROTOCOLS, PROTOCOL_LABELS } from '@/utils/constants';
 import AccountDrawer from './accounts/AccountDrawer';
+import MappingsPopover from './accounts/MappingsPopover';
 
 const COLS_KEY = 'yz_accounts_cols';
 type OptionalCol = 'mappings' | 'priority' | 'max_concurrency';
@@ -168,30 +168,7 @@ export default function Accounts() {
                   </Typography.Text>
                 );
               }
-              return (
-                <Popover
-                  title={t('accounts:mappingsPopoverTitle')}
-                  placement="bottom"
-                  content={
-                    <div style={{ maxHeight: 280, overflow: 'auto', minWidth: 260 }}>
-                      {a.mappings.map((m, i) => (
-                        <div
-                          key={m.id ?? `${m.request_model}-${i}`}
-                          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}
-                        >
-                          <span className="yz-mono">{m.request_model}</span>
-                          <ArrowRightOutlined style={{ color: 'var(--yz-text-tertiary)', fontSize: 11 }} />
-                          <span className="yz-mono" style={{ color: 'var(--yz-text-secondary)' }}>
-                            {m.upstream_model}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  }
-                >
-                  <NeutralTag style={{ cursor: 'pointer' }}>{t('accounts:modelsCount', { count: n })}</NeutralTag>
-                </Popover>
-              );
+              return <MappingsPopover account={a} />;
             },
           },
         ] as ColumnsType<Account>)

@@ -574,3 +574,110 @@ func truncateStr(s string, n int) string {
 	}
 	return s
 }
+
+// testAccountModel probes one upstream model through a stored account.
+func (s *Server) testAccountModel(c *gin.Context) {
+	id, ok := idParam(c)
+	if !ok {
+		return
+	}
+	var in struct {
+		Model string `json:"model"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil || strings.TrimSpace(in.Model) == "" {
+		badRequest(c, "model 不能为空")
+		return
+	}
+	var a model.Account
+	if err := s.db.Preload("Mappings").First(&a, id).Error; err != nil {
+		notFound(c)
+		return
+	}
+	key, _ := s.cipher.Decrypt(a.APIKeyEnc)
+	probe := &accountIn{Provider: a.Provider, Type: a.Type, BaseURL: a.BaseURL, Protocols: a.Protocols, TestModel: strings.TrimSpace(in.Model)}
+	if a.Type == model.TypeImage {
+		c.JSON(200, gin.H{"ok": true, "latency_ms": 0, "message": "文生图模型不做真实调用", "model": in.Model})
+		return
+	}
+	ok2, lat, msg := s.probeAccount(c.Request.Context(), probe, key)
+	c.JSON(200, gin.H{"ok": ok2, "latency_ms": lat, "message": msg, "model": in.Model})
+}
+
+// updateAccountMappings replaces the model mappings of an account.
+func (s *Server) updateAccountMappings(c *gin.Context) {
+	id, ok := idParam(c)
+	if !ok {
+		return
+	}
+	var a model.Account
+	if err := s.db.Preload("Mappings").First(&a, id).Error; err != nil {
+		notFound(c)
+		return
+	}
+	var in struct {
+		Mappings []struct {
+			RequestModel  string `json:"request_model"`
+			UpstreamModel string `json:"upstream_model"`
+		} `json:"mappings"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil {
+		badRequest(c, "invalid body")
+		return
+	}
+	seen := map[string]bool{}
+	var maps []model.ModelMapping
+	for _, m := range in.Mappings {
+		rq, up := strings.TrimSpace(m.RequestModel), strings.TrimSpace(m.UpstreamModel)
+		if rq == "" {
+			continue
+		}
+		if up == "" {
+			up = rq
+		}
+		if seen[rq] {
+			badRequest(c, "请求模型名称重复: "+rq)
+			return
+		}
+		seen[rq] = true
+		maps = append(maps, model.ModelMapping{AccountID: a.ID, RequestModel: rq, UpstreamModel: up})
+	}
+	if len(maps) == 0 {
+		badRequest(c, "至少保留一条模型映射")
+		return
+	}
+	if len(maps) > 100 {
+		badRequest(c, "模型映射最多 100 条")
+		return
+	}
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("account_id = ?", a.ID).Delete(&model.ModelMapping{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&maps).Error; err != nil {
+			return err
+		}
+		upd := map[string]any{}
+		if a.TestModel != "" {
+			keep := false
+			for _, m := range maps {
+				if m.UpstreamModel == a.TestModel {
+					keep = true
+				}
+			}
+			if !keep {
+				upd["test_model"] = maps[0].UpstreamModel
+			}
+		}
+		if len(upd) > 0 {
+			return tx.Model(&a).Updates(upd).Error
+		}
+		return nil
+	})
+	if err != nil {
+		serverError(c, err)
+		return
+	}
+	_ = s.gw.Reload()
+	s.db.Preload("Mappings").First(&a, id)
+	c.JSON(200, s.accountView(&a))
+}

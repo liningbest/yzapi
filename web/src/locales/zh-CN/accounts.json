@@ -119,5 +119,23 @@
     "needBaseUrl": "请先填写服务地址",
     "needKey": "请先填写 API Key",
     "hint": "已映射的模型会被自动勾选且不可取消；新勾选的模型将以相同名称加入映射。"
+  },
+  "mappings": {
+    "title": "模型映射",
+    "latency": "延迟",
+    "test": "测试",
+    "testAll": "测试全部",
+    "add": "添加映射",
+    "edit": "编辑",
+    "save": "保存",
+    "cancel": "取消",
+    "delete": "删除",
+    "deleteConfirm": "删除映射 {{name}}？该模型将立即不可用。",
+    "lastOne": "至少保留一条映射",
+    "saved": "映射已更新",
+    "ok": "{{ms}} ms",
+    "copyName": "复制请求模型名",
+    "empty": "暂无映射",
+    "failed": "失败"
   }
 }

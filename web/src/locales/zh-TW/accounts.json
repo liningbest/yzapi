@@ -119,5 +119,23 @@
     "needBaseUrl": "請先填寫服務位址",
     "needKey": "請先填寫 API Key",
     "hint": "已對應的模型會自動勾選且無法取消；新勾選的模型將以相同名稱加入對應。"
+  },
+  "mappings": {
+    "title": "模型映射",
+    "latency": "延遲",
+    "test": "測試",
+    "testAll": "測試全部",
+    "add": "新增映射",
+    "edit": "編輯",
+    "save": "儲存",
+    "cancel": "取消",
+    "delete": "刪除",
+    "deleteConfirm": "刪除映射 {{name}}？該模型將立即不可用。",
+    "lastOne": "至少保留一條映射",
+    "saved": "映射已更新",
+    "ok": "{{ms}} ms",
+    "copyName": "複製請求模型名",
+    "empty": "暫無映射",
+    "failed": "失敗"
   }
 }

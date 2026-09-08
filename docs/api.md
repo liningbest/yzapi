@@ -52,6 +52,8 @@
 - `DELETE /api/admin/accounts/:id`；被向量服务引用时返回 409。
 - `PATCH /api/admin/accounts/:id/enabled` `{enabled}`
 - `POST /api/admin/accounts/:id/reset-health` → 清除冷却
+- `POST /api/admin/accounts/:id/test-model` `{model}` → `{ok, latency_ms, message, model}`，用已存凭据探测指定上游模型
+- `PUT /api/admin/accounts/:id/mappings` `{mappings:[{request_model,upstream_model}]}` → 账号对象；整体替换映射（1–100 条，请求模型名唯一）
 - `POST /api/admin/accounts/discover` `{provider, base_url, api_key, account_id}` → `{models:["..."]}`（account_id 提供且 api_key 为空时用已存 key）
 - `POST /api/admin/accounts/test` 同 POST 账号 body（可带 `account_id`）→ `{ok, latency_ms, message, model}`
 

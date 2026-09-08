@@ -119,5 +119,23 @@
     "needBaseUrl": "Fill in the base URL first",
     "needKey": "Fill in the API key first",
     "hint": "Already-mapped models are pre-checked and locked; newly checked models are added as mappings with the same name."
+  },
+  "mappings": {
+    "title": "Model mappings",
+    "latency": "Latency",
+    "test": "Test",
+    "testAll": "Test all",
+    "add": "Add mapping",
+    "edit": "Edit",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "deleteConfirm": "Delete mapping {{name}}? The model becomes unavailable immediately.",
+    "lastOne": "Keep at least one mapping",
+    "saved": "Mappings updated",
+    "ok": "{{ms}} ms",
+    "copyName": "Copy request model name",
+    "empty": "No mappings",
+    "failed": "Failed"
   }
 }

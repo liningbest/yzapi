@@ -106,6 +106,8 @@ func (s *Server) Register(r *gin.Engine) {
 		acc.DELETE("/:id", s.deleteAccount)
 		acc.PATCH("/:id/enabled", s.setAccountEnabled)
 		acc.POST("/:id/reset-health", s.resetAccountHealth)
+		acc.POST("/:id/test-model", s.testAccountModel)
+		acc.PUT("/:id/mappings", s.updateAccountMappings)
 
 		mg := admin.Group("/model-groups")
 		mg.GET("", s.listModelGroups)

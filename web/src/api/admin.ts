@@ -1,5 +1,6 @@
 import { del, get, patch, post, put } from './client';
 import type {
+  ModelMapping,
   Account,
   AccountInput,
   AccountListParams,
@@ -78,6 +79,9 @@ export const accountsApi = {
   resetHealth: (id: number) => post<Account>(`${A}/accounts/${id}/reset-health`),
   discover: (body: DiscoverInput) => post<{ models: string[] }>(`${A}/accounts/discover`, body),
   test: (body: AccountInput) => post<AccountTestResult>(`${A}/accounts/test`, body, { skipErrorToast: true }),
+  testModel: (id: number, model: string) =>
+    post<AccountTestResult>(`${A}/accounts/${id}/test-model`, { model }, { skipErrorToast: true }),
+  updateMappings: (id: number, mappings: ModelMapping[]) => put<Account>(`${A}/accounts/${id}/mappings`, { mappings }),
 };
 
 export const modelGroupsApi = {
