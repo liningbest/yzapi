@@ -53,14 +53,15 @@ type Store struct {
 	syncEach bool  // fsync on every Record (YZAPI_JOURNAL_FSYNC=always)
 	overflow []*model.CallLog
 
-	ckpt     atomic.Int64 // committed offset
-	notify   chan struct{}
-	stop     chan struct{}
-	wg       sync.WaitGroup
-	dropped  atomic.Int64
-	replayed atomic.Int64
-	failures atomic.Int64
-	lastOK   atomic.Int64 // unix seconds of last successful commit
+	ckpt         atomic.Int64 // committed offset
+	notify       chan struct{}
+	stop         chan struct{}
+	wg           sync.WaitGroup
+	dropped      atomic.Int64
+	replayed     atomic.Int64
+	failures     atomic.Int64
+	syncFailures atomic.Int64
+	lastOK       atomic.Int64 // unix seconds of last successful commit
 }
 
 // New opens (or creates) the journal under dataDir/data/journal and starts the writer.
@@ -82,10 +83,49 @@ func New(db *gorm.DB, dataDir string, retentionDays func() int) (*Store, error) 
 	} else if n > 0 {
 		slog.Info("replayed journal records into the database", "records", n)
 	}
-	s.wg.Add(2)
+	// Databases from before the purge marker existed: assume everything older than the
+	// current retention window may already be gone (conservative for rebuilds).
+	if _, ok := PurgedBefore(db); !ok {
+		_ = setPurgedBefore(db, s.cutoff())
+	}
+	s.wg.Add(3)
 	go s.writer()
+	go s.syncer()
 	go s.janitor()
 	return s, nil
+}
+
+// purgedKey is the settings row that records how far raw call logs have been purged.
+// Rebuilding the rollup for hours before it would replace real history with zeros.
+const purgedKey = "logs_purged_before"
+
+// PurgedBefore returns the persisted purge boundary, if any.
+func PurgedBefore(db *gorm.DB) (time.Time, bool) {
+	var row model.Setting
+	if err := db.Where("key = ?", purgedKey).First(&row).Error; err != nil {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339, row.Value)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
+}
+
+// setPurgedBefore advances the persisted purge boundary (it never moves backwards).
+func setPurgedBefore(db *gorm.DB, t time.Time) error {
+	if cur, ok := PurgedBefore(db); ok && !t.After(cur) {
+		return nil
+	}
+	return db.Save(&model.Setting{Key: purgedKey, Value: t.UTC().Format(time.RFC3339), UpdatedAt: time.Now()}).Error
+}
+
+func (s *Store) cutoff() time.Time {
+	days := s.retDays()
+	if days <= 0 {
+		days = 30
+	}
+	return time.Now().AddDate(0, 0, -days)
 }
 
 func (s *Store) openJournal() error {
@@ -128,12 +168,18 @@ func (s *Store) openJournal() error {
 
 // Record appends a call log to the journal. It never blocks on the database.
 //
-// Durability boundary: when Record returns, the record has been handed to the OS via a
-// direct write(2) (no user-space buffering), so it survives a crash of this process. It
-// is flushed to stable storage by the periodic fsync (every second) or immediately when
-// YZAPI_JOURNAL_FSYNC=always, which is the setting to use when power loss must not lose
-// the last second of records. Write errors fall back to an in-memory overflow that is
-// only discarded once it is full.
+// Durability boundary, stated precisely:
+//   - When write(2) succeeds, the record is in the OS page cache before Record returns:
+//     it survives a crash of this process, not a power loss.
+//   - The syncer fsyncs dirty bytes about once per second; with YZAPI_JOURNAL_FSYNC=always
+//     Record fsyncs before returning. A failed fsync leaves the bytes marked dirty (retried
+//     on the next tick) and is counted in Stats.SyncFailures / yzapi_metering_sync_failures_total,
+//     so "always" cannot promise stable storage when the device itself fails.
+//   - If write(2) fails, the record is kept in memory only (Stats.OverflowRecords) and is
+//     lost if the process dies before the journal becomes writable again; once the overflow
+//     is full further records are dropped and counted.
+//
+// Callers needing a hard guarantee should alert on overflow_records, dirty and sync_failures.
 func (s *Store) Record(l *model.CallLog) {
 	b, err := json.Marshal(l)
 	if err != nil {
@@ -149,9 +195,11 @@ func (s *Store) Record(l *model.CallLog) {
 			s.dirty = true
 			if s.syncEach {
 				if serr := s.f.Sync(); serr != nil {
-					slog.Warn("journal fsync failed", "err", serr)
+					// Keep dirty so the periodic syncer retries; count it for /metrics.
+					s.syncFailures.Add(1)
+				} else {
+					s.dirty = false
 				}
-				s.dirty = false
 			}
 		} else if n > 0 {
 			// A short write left a torn line; drop it so the next record starts clean.
@@ -178,18 +226,26 @@ func (s *Store) Record(l *model.CallLog) {
 
 // Stats for /metrics and the settings page.
 type Stats struct {
-	PendingBytes int64      `json:"pending_bytes"`
-	Dropped      int64      `json:"dropped"`
-	Replayed     int64      `json:"replayed"`
-	Failures     int64      `json:"write_failures"`
-	LastCommit   *time.Time `json:"last_commit_at"`
+	PendingBytes    int64      `json:"pending_bytes"`
+	OverflowRecords int        `json:"overflow_records"` // held only in memory (journal unwritable)
+	Dirty           bool       `json:"dirty"`            // bytes written but not yet fsynced
+	Dropped         int64      `json:"dropped"`
+	Replayed        int64      `json:"replayed"`
+	Failures        int64      `json:"write_failures"`
+	SyncFailures    int64      `json:"sync_failures"`
+	LastCommit      *time.Time `json:"last_commit_at"`
+	PurgedBefore    *time.Time `json:"purged_before"` // raw logs older than this are gone; rebuilds refuse earlier hours
 }
 
 func (s *Store) Stats() Stats {
 	s.mu.Lock()
-	size := s.size
+	size, overflow, dirty := s.size, len(s.overflow), s.dirty
 	s.mu.Unlock()
-	st := Stats{PendingBytes: size - s.ckpt.Load(), Dropped: s.dropped.Load(), Replayed: s.replayed.Load(), Failures: s.failures.Load()}
+	st := Stats{PendingBytes: size - s.ckpt.Load(), OverflowRecords: overflow, Dirty: dirty, Dropped: s.dropped.Load(),
+		Replayed: s.replayed.Load(), Failures: s.failures.Load(), SyncFailures: s.syncFailures.Load()}
+	if pb, ok := PurgedBefore(s.db); ok {
+		st.PurgedBefore = &pb
+	}
 	if t := s.lastOK.Load(); t > 0 {
 		tt := time.Unix(t, 0)
 		st.LastCommit = &tt
@@ -203,17 +259,12 @@ func (s *Store) Dropped() int64 { return s.dropped.Load() }
 func (s *Store) writer() {
 	defer s.wg.Done()
 	poll := time.NewTicker(pollInterval)
-	syncT := time.NewTicker(syncInterval)
 	defer poll.Stop()
-	defer syncT.Stop()
 	backoff := time.Duration(0)
 	for {
 		select {
 		case <-s.notify:
 		case <-poll.C:
-		case <-syncT.C:
-			s.fsync()
-			continue
 		case <-s.stop:
 			for i := 0; i < 3; i++ {
 				if _, err := s.drain(); err == nil {
@@ -238,11 +289,32 @@ func (s *Store) writer() {
 	}
 }
 
+// syncer flushes the journal to stable storage on its own schedule so a stalled database
+// commit or retry backoff cannot delay it.
+func (s *Store) syncer() {
+	defer s.wg.Done()
+	t := time.NewTicker(syncInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-t.C:
+			s.fsync()
+		case <-s.stop:
+			return
+		}
+	}
+}
+
+// fsync flushes dirty journal bytes. On failure the data stays marked dirty so the next
+// tick retries, and the failure is counted so operators can see it.
 func (s *Store) fsync() {
 	s.mu.Lock()
 	if s.dirty && s.f != nil {
 		if err := s.f.Sync(); err != nil {
-			slog.Warn("journal fsync failed", "err", err)
+			s.syncFailures.Add(1)
+			if n := s.syncFailures.Load(); n == 1 || n%100 == 0 {
+				slog.Warn("journal fsync failed; retrying", "err", err, "failures", n)
+			}
 		} else {
 			s.dirty = false
 		}
@@ -440,6 +512,11 @@ func Rebuild(db *gorm.DB, from, to time.Time, retentionDays int) (hours int, row
 	if !RebuildAllowed(from, retentionDays, time.Now()) {
 		return 0, 0, ErrRebuildOutsideRetention
 	}
+	// The persisted purge boundary wins over the current retention setting: raising the
+	// retention later does not bring purged raw logs back.
+	if pb, ok := PurgedBefore(db); ok && from.Truncate(time.Hour).Before(pb.Add(time.Hour).Truncate(time.Hour)) {
+		return 0, 0, ErrRebuildOutsideRetention
+	}
 	from = from.Truncate(time.Hour)
 	to = to.Truncate(time.Hour).Add(time.Hour)
 	err = db.Transaction(func(tx *gorm.DB) error {
@@ -567,11 +644,12 @@ func (s *Store) janitor() {
 }
 
 func (s *Store) cleanup() {
-	days := s.retDays()
-	if days <= 0 {
-		days = 30
+	cutoff := s.cutoff()
+	// Persist the boundary first: if we crash mid-delete, rebuilds still refuse the range.
+	if err := setPurgedBefore(s.db, cutoff); err != nil {
+		slog.Warn("could not record purge boundary; skipping cleanup this round", "err", err)
+		return
 	}
-	cutoff := time.Now().AddDate(0, 0, -days)
 	for _, tbl := range []any{&model.CallLog{}, &model.RouteDecision{}, &model.AuditLog{}} {
 		// Delete in bounded batches so SQLite does not hold a long write lock.
 		for i := 0; i < 100; i++ {

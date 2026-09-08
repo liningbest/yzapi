@@ -70,7 +70,7 @@ make run          # 本地启动（数据目录 ./data）
 | `YZAPI_JWT_SECRET` | 自动生成 | 多实例部署时需统一 |
 | `YZAPI_LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `YZAPI_METRICS_TOKEN` | 空 | 设置后 `/metrics` 需要 Bearer 认证 |
-| `YZAPI_JOURNAL_FSYNC` | `interval` | `always` 时每条计量记录都 fsync（断电不丢，吞吐下降） |
+| `YZAPI_JOURNAL_FSYNC` | `interval` | 计量 journal 默认约每秒 fsync 一次；`always` 时每条记录返回前 fsync（吞吐下降）。fsync 失败会保留待同步标记并计入 `sync_failures`，并非无条件承诺 |
 | `YZAPI_SHUTDOWN_TIMEOUT` | `60` | 优雅退出等待秒数 |
 
 管理员密码重置（容器内或二进制）：

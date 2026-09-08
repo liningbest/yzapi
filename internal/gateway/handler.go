@@ -81,10 +81,6 @@ func (g *Gateway) fail(req *request, e *GatewayError) {
 	}
 	req.log.StatusCode = e.Status
 	req.log.Error = e.Message
-	if req.log.UsageStatus == "" {
-		req.log.UsageStatus, req.log.PromptTokens, req.log.CompletionTokens = usageFromAttempts(req.attempts)
-		req.log.TotalTokens = req.log.PromptTokens + req.log.CompletionTokens
-	}
 	switch {
 	case e == ErrContentBlocked:
 		req.log.Result = "blocked"
@@ -105,16 +101,14 @@ func (g *Gateway) finish(req *request) {
 	}
 	l := req.log
 	l.LatencyMs = time.Since(req.start).Milliseconds()
-	if l.UsageStatus == "" {
-		l.UsageStatus = model.UsageNone
-	}
-	if l.UsageStatus != model.UsageConfirmed && l.UsageStatus != model.UsageNone {
+	// Request-level usage is always derived from the per-attempt records, whatever path
+	// led here: retries keep their consumption, error bodies keep their tokens and any
+	// attempt whose consumption is undeterminable taints the whole request.
+	l.UsageStatus, l.PromptTokens, l.CompletionTokens = usageFromAttempts(req.attempts)
+	l.TotalTokens = l.PromptTokens + l.CompletionTokens
+	l.TokensKnown = l.UsageStatus == model.UsageConfirmed
+	if l.UsageStatus == model.UsagePartial || l.UsageStatus == model.UsageUnknown {
 		l.EstPromptTokens = int64(len(req.body)) / 4
-	}
-	if n := len(req.attempts); n > 0 && req.attempts[n-1].StatusCode < 300 && req.attempts[n-1].Error == "" {
-		last := &req.attempts[n-1]
-		last.UsageStatus = l.UsageStatus
-		last.PromptTokens, last.CompletionTokens = l.PromptTokens, l.CompletionTokens
 	}
 	g.Metrics.Requests.With(metrics.Label("result", l.Result) + "," + metrics.Label("api_type", l.APIType)).Inc()
 	g.Metrics.Latency.Observe(float64(l.LatencyMs) / 1000)
@@ -589,14 +583,15 @@ func (g *Gateway) forward(req *request, cands []string) {
 				ctx, cancel = context.WithTimeout(req.r.Context(), time.Duration(perf.RequestTimeoutSec)*time.Second)
 			}
 			t0 := time.Now()
-			resp, err := g.doUpstream(ctx, &upstreamCall{up: up, proto: proto, body: body, stream: req.stream, headers: req.r.Header})
+			sent := false
+			resp, err := g.doUpstream(ctx, &upstreamCall{up: up, proto: proto, body: body, stream: req.stream, headers: req.r.Header, sent: &sent})
 			// Older OpenAI-compatible servers reject stream_options; retry once without the injection.
 			if err == nil && resp.StatusCode == 400 && dropUsage {
 				msg, _ := readErrorBody(resp)
 				if strings.Contains(msg, "stream_options") {
 					if b2, e2 := stripStreamOptions(body); e2 == nil {
 						body, dropUsage = b2, false
-						resp, err = g.doUpstream(ctx, &upstreamCall{up: up, proto: proto, body: body, stream: req.stream, headers: req.r.Header})
+						resp, err = g.doUpstream(ctx, &upstreamCall{up: up, proto: proto, body: body, stream: req.stream, headers: req.r.Header, sent: &sent})
 					}
 				} else {
 					resp.Body = io.NopCloser(strings.NewReader(msg))
@@ -609,6 +604,8 @@ func (g *Gateway) forward(req *request, cands []string) {
 				ctr.release()
 				if req.r.Context().Err() != nil {
 					rec.Error = "client disconnected"
+					// The client went away, but the upstream may already have processed the request.
+					rec.UsageStatus = networkFailureUsage(err, sent)
 					req.attempts = append(req.attempts, rec)
 					req.log.Result = "client_error"
 					req.log.Error = "client disconnected"
@@ -618,7 +615,7 @@ func (g *Gateway) forward(req *request, cands []string) {
 					return
 				}
 				rec.Error = err.Error()
-				rec.UsageStatus = networkFailureUsage(err)
+				rec.UsageStatus = networkFailureUsage(err, sent)
 				req.attempts = append(req.attempts, rec)
 				g.Metrics.UpstreamAttempts.With(metrics.Label("outcome", "network")).Inc()
 				g.health.fail(up.ID, cooldown, err.Error())
@@ -698,9 +695,13 @@ func (g *Gateway) forward(req *request, cands []string) {
 	g.fail(req, newErr(status, "upstream_failed", "All upstream attempts failed: "+truncate(lastMsg, 300)))
 }
 
-// networkFailureUsage classifies a transport error: a request that never reached the
-// upstream (dial failure) consumed nothing, anything after that is undeterminable.
-func networkFailureUsage(err error) string {
+// networkFailureUsage classifies a transport error: a request that was never written
+// to the upstream (dial / DNS failure, or cancelled before sending) consumed nothing;
+// anything after the request went out is undeterminable.
+func networkFailureUsage(err error, sent bool) string {
+	if !sent {
+		return model.UsageNone
+	}
 	var op *net.OpError
 	if errors.As(err, &op) && op.Op == "dial" {
 		return model.UsageNone
@@ -721,22 +722,36 @@ func httpFailureUsage(status int) string {
 	return model.UsageNone
 }
 
-// usageFromAttempts folds attempt-level usage into a request-level status for requests
-// that failed overall: confirmed tokens are summed, any undeterminable attempt makes the
-// whole request unknown, and only requests no upstream processed are "none".
+// usageFromAttempts folds attempt-level usage into the request-level view: every known
+// token is summed across attempts (a failed first try still cost tokens), an undeterminable
+// attempt makes the whole request "unknown", a cut-short stream makes it "partial", and
+// only requests no upstream ever processed are "none". Attempt records are never
+// modified, so the fold can be repeated safely.
 func usageFromAttempts(attempts []attemptRecord) (status string, prompt, completion int64) {
-	status = model.UsageNone
+	var hasUnknown, hasPartial, hasConfirmed bool
 	for _, a := range attempts {
 		switch a.UsageStatus {
-		case model.UsageConfirmed, model.UsagePartial:
+		case model.UsageConfirmed:
+			hasConfirmed = true
 			prompt += a.PromptTokens
 			completion += a.CompletionTokens
-			if status != model.UsageUnknown {
-				status = model.UsageConfirmed
-			}
+		case model.UsagePartial:
+			hasPartial = true
+			prompt += a.PromptTokens
+			completion += a.CompletionTokens
 		case model.UsageUnknown:
-			status = model.UsageUnknown
+			hasUnknown = true
 		}
+	}
+	switch {
+	case hasUnknown:
+		status = model.UsageUnknown
+	case hasPartial:
+		status = model.UsagePartial
+	case hasConfirmed:
+		status = model.UsageConfirmed
+	default:
+		status = model.UsageNone
 	}
 	return status, prompt, completion
 }
@@ -929,7 +944,7 @@ func (g *Gateway) relay(req *request, resp *http.Response, upProto string, dropU
 			usage, known = *up, up.TotalTokens > 0 || up.PromptTokens > 0
 		}
 		req.log.UpstreamLatencyMs += time.Since(t0).Milliseconds()
-		setUsage(req.log, usage, known, err == nil)
+		setUsage(req, usage, known, err == nil)
 		switch {
 		case err == nil:
 			req.log.Result, req.log.StatusCode = "success", 200
@@ -966,7 +981,7 @@ func (g *Gateway) relay(req *request, resp *http.Response, upProto string, dropU
 		}
 	}
 	u, ok := usageFromJSON(upProto, raw)
-	setUsage(req.log, u, ok, true)
+	setUsage(req, u, ok, true)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = dst.Write(out)
@@ -1030,27 +1045,33 @@ func convertResponse(raw []byte, upProto, clientProto, model string) ([]byte, er
 	return raw, nil
 }
 
-// setUsage stores reported usage and classifies how trustworthy it is. complete is
-// false when the upstream stream ended before its terminal event.
-func setUsage(l *model.CallLog, u convert.Usage, known bool, complete bool) {
-	l.PromptTokens = int64(u.PromptTokens)
-	l.CompletionTokens = int64(u.CompletionTokens)
-	l.TotalTokens = int64(u.TotalTokens)
-	if l.TotalTokens == 0 {
-		l.TotalTokens = l.PromptTokens + l.CompletionTokens
+// setUsage records the usage reported by the attempt that produced the response on that
+// attempt's record (the last one) and classifies how trustworthy it is. complete is
+// false when the upstream stream ended before its terminal event. The request-level
+// numbers are derived later in finish() from all attempts.
+func setUsage(req *request, u convert.Usage, known bool, complete bool) {
+	if len(req.attempts) == 0 {
+		return
 	}
+	a := &req.attempts[len(req.attempts)-1]
+	a.PromptTokens = int64(u.PromptTokens)
+	a.CompletionTokens = int64(u.CompletionTokens)
 	if u.PromptTokensDetails != nil {
-		l.CachedTokens = int64(u.PromptTokensDetails.CachedTokens)
+		req.log.CachedTokens = int64(u.PromptTokensDetails.CachedTokens)
+	}
+	total := a.PromptTokens + a.CompletionTokens
+	if total == 0 && u.TotalTokens > 0 {
+		total = int64(u.TotalTokens)
+		a.PromptTokens = total
 	}
 	switch {
-	case known && l.TotalTokens > 0 && complete:
-		l.UsageStatus = model.UsageConfirmed
-	case known && l.TotalTokens > 0:
-		l.UsageStatus = model.UsagePartial // e.g. prompt tokens seen, output cut short
+	case known && total > 0 && complete:
+		a.UsageStatus = model.UsageConfirmed
+	case known && total > 0:
+		a.UsageStatus = model.UsagePartial // e.g. prompt tokens seen, output cut short
 	default:
-		l.UsageStatus = model.UsageUnknown // the upstream processed the request but reported nothing
+		a.UsageStatus = model.UsageUnknown // the upstream processed the request but reported nothing
 	}
-	l.TokensKnown = l.UsageStatus == model.UsageConfirmed
 }
 
 // extractSystem returns system / developer / instructions text for compliance checks.

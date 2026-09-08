@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -321,6 +322,11 @@ func (s *Server) rebuildUsage(c *gin.Context) {
 		return
 	}
 	hours, rows, err := logstore.Rebuild(s.db, in.From, in.To, retention)
+	if errors.Is(err, logstore.ErrRebuildOutsideRetention) {
+		pb, _ := logstore.PurgedBefore(s.db)
+		fail(c, 400, "outside_retention", fmt.Sprintf("该区间的原始明细已于 %s 之前清理，无法重建；调大保留期不会恢复已删除的明细", pb.Local().Format("2006-01-02 15:04")))
+		return
+	}
 	if err != nil {
 		serverError(c, err)
 		return

@@ -226,3 +226,104 @@ func TestReconcileMidHourRange(t *testing.T) {
 		t.Fatalf("expected consistent, got %v %+v", err, mm)
 	}
 }
+
+// A4: raising the retention window later must not allow a rebuild over hours whose raw
+// logs were already purged under the old window (that would zero real history).
+func TestExtendedRetentionMustNotEraseHistory(t *testing.T) {
+	db := testDB(t)
+	dir := t.TempDir()
+	now := time.Now().UTC()
+	old := now.AddDate(0, 0, -60).Truncate(time.Hour)
+	l := sample("old1", 5)
+	l.CreatedAt = old.Add(10 * time.Minute)
+	db.Create(l)
+	db.Create(&model.UsageHourly{Hour: old, UserID: 1, GroupID: 1, Provider: "p", RequestModel: "m", APIType: "text", Requests: 1, TotalTokens: 5})
+
+	s, err := New(db, dir, func() int { return 30 })
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.cleanup() // the janitor does this at startup too; run it synchronously here
+	s.Close(context.Background())
+	var n int64
+	db.Model(&model.CallLog{}).Count(&n)
+	if n != 0 {
+		t.Fatalf("raw log should be purged, %d left", n)
+	}
+	pb, ok := PurgedBefore(db)
+	if !ok || pb.Before(now.AddDate(0, 0, -31)) {
+		t.Fatalf("purge boundary not persisted: %v %v", pb, ok)
+	}
+
+	// Operator raises retention to 90 days: the purged hour must still be refused.
+	if _, _, err := Rebuild(db, old, now, 90); err != ErrRebuildOutsideRetention {
+		t.Fatalf("rebuild over purged hours must be refused, got %v", err)
+	}
+	var roll model.UsageHourly
+	if err := db.First(&roll).Error; err != nil || roll.Requests != 1 || roll.TotalTokens != 5 {
+		t.Fatalf("history rollup must be untouched: %+v %v", roll, err)
+	}
+	// Hours inside the complete window can still be corrected.
+	recent := now.AddDate(0, 0, -7).Truncate(time.Hour)
+	r := sample("new1", 7)
+	r.CreatedAt = recent.Add(5 * time.Minute)
+	db.Create(r)
+	db.Create(&model.UsageHourly{Hour: recent, UserID: 1, GroupID: 1, Provider: "p", RequestModel: "m", APIType: "text", Requests: 9, TotalTokens: 99})
+	if _, _, err := Rebuild(db, recent, now, 90); err != nil {
+		t.Fatalf("rebuild inside the complete window: %v", err)
+	}
+	var fixed model.UsageHourly
+	db.Where("hour = ?", recent).First(&fixed)
+	if fixed.Requests != 1 || fixed.TotalTokens != 7 {
+		t.Fatalf("recent rollup not corrected: %+v", fixed)
+	}
+}
+
+// Databases created before the purge marker existed get a conservative boundary at the
+// current retention cutoff, so a later retention increase cannot rebuild over it.
+func TestLegacyDBGetsConservativePurgeBoundary(t *testing.T) {
+	db := testDB(t)
+	if _, ok := PurgedBefore(db); ok {
+		t.Fatal("fresh db must not have a boundary yet")
+	}
+	s, err := New(db, t.TempDir(), func() int { return 30 })
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close(context.Background())
+	pb, ok := PurgedBefore(db)
+	if !ok || time.Since(pb) > 31*24*time.Hour || time.Since(pb) < 29*24*time.Hour {
+		t.Fatalf("boundary = %v ok=%v", pb, ok)
+	}
+	// The boundary never moves backwards.
+	if err := setPurgedBefore(db, pb.AddDate(0, 0, -10)); err != nil {
+		t.Fatal(err)
+	}
+	if pb2, _ := PurgedBefore(db); !pb2.Equal(pb) {
+		t.Fatalf("boundary moved backwards: %v -> %v", pb, pb2)
+	}
+}
+
+// Stats expose what is not yet durable: overflow-only records and a failed fsync keep
+// the store visibly dirty instead of pretending the data is on disk.
+func TestStatsExposeNonDurableState(t *testing.T) {
+	db := testDB(t)
+	dir := t.TempDir()
+	s := &Store{db: db, retDays: func() int { return 30 }, path: filepath.Join(dir, journalFile),
+		ckptPath: filepath.Join(dir, checkpointFile), notify: make(chan struct{}, 1), stop: make(chan struct{})}
+	s.Record(sample("nd1", 1)) // no journal file: overflow only
+	if st := s.Stats(); st.OverflowRecords != 1 {
+		t.Fatalf("overflow must be visible: %+v", st)
+	}
+	// A closed file descriptor makes fsync fail: the failure is counted and dirty stays set.
+	f, err := os.Create(filepath.Join(dir, journalFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	s.f, s.dirty, s.syncEach = f, true, true
+	s.fsync()
+	if st := s.Stats(); st.SyncFailures != 1 || !st.Dirty {
+		t.Fatalf("failed fsync must stay dirty and be counted: %+v", st)
+	}
+}

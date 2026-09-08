@@ -164,11 +164,17 @@ func TestParseRetryAfter(t *testing.T) {
 }
 
 func TestFailedAttemptUsageClassification(t *testing.T) {
-	if got := networkFailureUsage(&net.OpError{Op: "dial", Err: errors.New("refused")}); got != model.UsageNone {
+	if got := networkFailureUsage(&net.OpError{Op: "dial", Err: errors.New("refused")}, false); got != model.UsageNone {
 		t.Fatalf("dial failure = %s, want none", got)
 	}
-	if got := networkFailureUsage(errors.New("unexpected EOF")); got != model.UsageUnknown {
+	if got := networkFailureUsage(errors.New("unexpected EOF"), true); got != model.UsageUnknown {
 		t.Fatalf("mid-response failure = %s, want unknown", got)
+	}
+	if got := networkFailureUsage(errors.New("context canceled"), false); got != model.UsageNone {
+		t.Fatalf("cancelled before sending = %s, want none", got)
+	}
+	if got := networkFailureUsage(errors.New("context canceled"), true); got != model.UsageUnknown {
+		t.Fatalf("cancelled after sending = %s, want unknown", got)
 	}
 	if httpFailureUsage(500) != model.UsageUnknown || httpFailureUsage(429) != model.UsageNone || httpFailureUsage(401) != model.UsageNone {
 		t.Fatal("http failure classification")
@@ -183,6 +189,21 @@ func TestFailedAttemptUsageClassification(t *testing.T) {
 	st, _, _ = usageFromAttempts([]attemptRecord{{UsageStatus: model.UsageNone}, {UsageStatus: model.UsageUnknown}})
 	if st != model.UsageUnknown {
 		t.Fatalf("unknown attempt must taint: %s", st)
+	}
+	// Retry after a failed-but-billed attempt keeps both; unknown before success still taints.
+	st, p, c = usageFromAttempts([]attemptRecord{
+		{StatusCode: 500, UsageStatus: model.UsageConfirmed, PromptTokens: 10, CompletionTokens: 3},
+		{StatusCode: 200, UsageStatus: model.UsageConfirmed, PromptTokens: 20, CompletionTokens: 5},
+	})
+	if st != model.UsageConfirmed || p != 30 || c != 8 {
+		t.Fatalf("retry sum: %s %d %d", st, p, c)
+	}
+	st, p, c = usageFromAttempts([]attemptRecord{
+		{StatusCode: 500, UsageStatus: model.UsageUnknown},
+		{StatusCode: 200, UsageStatus: model.UsageConfirmed, PromptTokens: 20, CompletionTokens: 5},
+	})
+	if st != model.UsageUnknown || p != 20 || c != 5 {
+		t.Fatalf("unknown then success: %s %d %d", st, p, c)
 	}
 	st, _, _ = usageFromAttempts([]attemptRecord{{UsageStatus: model.UsageNone}})
 	if st != model.UsageNone {

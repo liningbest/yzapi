@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -39,6 +40,7 @@ type upstreamCall struct {
 	body    []byte
 	stream  bool
 	headers http.Header // selected client headers to forward
+	sent    *bool       // set once the request has been written to the upstream connection
 }
 
 type attemptRecord struct {
@@ -59,6 +61,11 @@ type attemptRecord struct {
 
 // doUpstream sends the request and returns the response without reading the body.
 func (g *Gateway) doUpstream(ctx context.Context, c *upstreamCall) (*http.Response, error) {
+	if c.sent != nil {
+		// Once the request is on the wire the upstream may bill it even if we never see
+		// a response, so record that moment for usage classification.
+		ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{WroteRequest: func(httptrace.WroteRequestInfo) { *c.sent = true }})
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.up.BaseURL+protoPath(c.proto), bytes.NewReader(c.body))
 	if err != nil {
 		return nil, err

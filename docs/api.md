@@ -112,11 +112,16 @@
 
 ### 计量维护 `/api/admin/usage`
 - 用量响应的 `summary` 与各分布项含 `unknown_usage`（用量为 partial / unknown 的请求数）。
-- `POST /api/admin/usage/rebuild {from, to}`（RFC3339，最多 92 天；`from` 不得早于调用日志保留期，否则 400 `outside_retention`，避免用已清理的明细抹掉历史聚合）→ `{hours, rows}`：从原始调用日志重建小时聚合。
+- `POST /api/admin/usage/rebuild {from, to}`（RFC3339，最多 92 天；`from` 不得早于调用日志保留期，也不得早于持久化的明细清理边界 `purged_before`，否则 400 `outside_retention`，避免用已清理的明细抹掉历史聚合。调大保留期不会恢复已删除的明细，因此边界只前进不后退）→ `{hours, rows}`：从原始调用日志重建小时聚合。
 - `GET /api/admin/usage/reconcile?range=` → `{consistent, mismatches:[{hour, log_requests, rollup_requests, log_tokens, rollup_tokens}]}`：逐小时对账。
-- `GET /api/admin/usage/metering` → `{pending_bytes, dropped, replayed, write_failures, last_commit_at}`：计量 journal 状态。
+- `GET /api/admin/usage/metering` → `{pending_bytes, overflow_records, dirty, dropped, replayed, write_failures, sync_failures, last_commit_at, purged_before}`：计量 journal 状态。`overflow_records` > 0 或 `dirty` 长期为 true、`sync_failures` 增长，都表示有记录尚未持久化。
 
-计量可靠性：每次调用先以直接 write(2) 追加到 `data/journal/calls.jsonl`（无用户态缓冲，进程崩溃不丢；每秒 fsync，设置 `YZAPI_JOURNAL_FSYNC=always` 则每条 fsync，断电也不丢），后台事务性地写入 `call_logs` 并更新小时聚合，提交后推进检查点；重启回放未提交部分，`request_id` 唯一保证幂等。
+计量可靠性（按条件说明，不做无条件承诺）：
+- 写入成功：每次调用以直接 write(2) 追加到 `data/journal/calls.jsonl`，无用户态缓冲，`Record` 返回后记录已在内核页缓存，进程崩溃不丢。
+- 同步成功：独立的同步协程约每秒 fsync 一次（不与入库、重试退避共用循环）；`YZAPI_JOURNAL_FSYNC=always` 时每条记录返回前 fsync。fsync 失败保留待同步标记并在下一轮重试，计入 `sync_failures`；设备故障时 `always` 也不能保证已到稳定存储。
+- 故障降级：journal 不可写时记录只保留在内存溢出区（`overflow_records`），进程退出即丢失；溢出区满后丢弃并计入 `dropped`。
+- 入库：后台事务性地写入 `call_logs` 并更新小时聚合，提交后推进检查点；重启回放未提交部分，`request_id` 唯一保证幂等。
+- 请求级用量始终由各次上游尝试汇总：已知 Token 累加（含失败尝试与错误响应体报告的用量），任一尝试 unknown 则请求为 unknown，流被截断为 partial，只有未到达任何上游才是 none；客户端取消时按"请求是否已写到上游"区分 none / unknown。
 
 ### 设置 `/api/admin/settings`
 - `GET` → `{basic, performance, vector, smart_route, compliance, elasticsearch}`（密钥字段脱敏为 `"******"`）
