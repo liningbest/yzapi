@@ -1,9 +1,8 @@
 bin/
 data/
 pgdata/
+dist/
 web/node_modules/
-web/dist/
 .git/
 *.log
 docs/
-dist/

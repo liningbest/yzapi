@@ -1,16 +1,10 @@
-# ---------- frontend ----------
-FROM node:22-alpine AS web
-WORKDIR /src/web
-# pnpm 9 on purpose: pnpm 10+ keeps its store index in SQLite, which fails with
-# "disk I/O error" on some Docker storage drivers (seen on overlay2 hosts), and newer
-# majors also refuse installs over un-approved build scripts. pnpm 9 reads the same
-# lockfile (v9.0) and needs neither. Installed via npm so corepack cannot swap versions.
-RUN npm install -g pnpm@9.15.9
-COPY web/package.json web/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
-COPY web/ ./
-# npm run: pnpm 9 would treat the local pnpm-workspace.yaml (pnpm 11 allowBuilds) as a workspace file
-RUN npm run build
+# The image build compiles only the Go binary. The frontend (web/dist) is built
+# beforehand on the developer machine or the CI runner (scripts/package-src.sh,
+# .github/workflows/docker.yml): running pnpm inside `docker build` proved fragile on
+# some hosts' storage drivers (SQLite store "disk I/O error", EPERM on hard links).
+#
+#   cd web && pnpm install && pnpm build && cd ..      # or: ./scripts/package-src.sh
+#   docker build -t yzapi/gateway:1.0.0 .
 
 # ---------- backend ----------
 FROM golang:1.26-alpine AS build
@@ -20,7 +14,8 @@ ENV CGO_ENABLED=0 GOFLAGS=-trimpath
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-COPY --from=web /src/web/dist ./web/dist
+# Fail early with a clear message if the frontend was not built.
+RUN test -f web/dist/index.html || (echo "web/dist is missing: build the frontend first (cd web && pnpm build) or use scripts/package-src.sh" >&2; exit 1)
 RUN go build -ldflags="-s -w -X main.version=${VERSION}" -o /out/yzapi ./cmd/yzapi
 
 # ---------- runtime ----------

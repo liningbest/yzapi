@@ -29,7 +29,7 @@ bench:
 	go run ./tools/mockupstream -delay 0 & \
 	sleep 1; go run ./tools/loadgen -url http://127.0.0.1:8080/v1/chat/completions -key $(KEY) -c 128 -n 5000
 
-docker:
+docker: web
 	docker build --build-arg VERSION=$(VERSION) -t yzapi/gateway:$(VERSION) -t yzapi/gateway:latest .
 
 clean:

@@ -29,16 +29,23 @@ yzapi 是单个二进制（前端已内嵌），运行时只依赖一个数据�
 
 ## 2. 构建镜像
 
-镜像构建是多阶段（Node 22 构建前端 → Go 1.26 编译 → Alpine 运行），最终镜像约 40 MB，以非 root 用户 `yzapi`（uid 10001）运行。三种取得镜像的方式，选一种：
+前端在打包机（你的电脑或 GitHub Actions）上预先构建，`docker build` 只编译 Go，因此服务器上不需要 Node，也不会碰到 pnpm 在部分 Docker 存储驱动上的兼容问题。最终镜像约 40 MB，以非 root 用户 `yzapi`（uid 10001）运行。三种取得镜像的方式，选一种：
 
 **A. 在服务器上构建（最省事）**
 
+在本机打包（会先构建前端，再把源码和 `web/dist` 打成一个包）：
+
 ```bash
-git clone <仓库地址> /opt/src/yzapi && cd /opt/src/yzapi
-docker build --build-arg VERSION=$(git describe --always) -t yzapi/gateway:1.0.0 .
+./scripts/package-src.sh ~/Desktop/yzapi-src.tar.gz
 ```
 
-也可以在 1Panel「容器 → 镜像 → 构建」里填名称 `yzapi/gateway:1.0.0`、Dockerfile 选择上传后的源码目录中的 `Dockerfile`，效果相同。
+把包上传到服务器（如 1Panel「文件」的 `/opt/1panel/apps/yzapi`），解压后构建：
+
+```bash
+tar xzf yzapi-src.tar.gz && cd yzapi && docker build -t yzapi/gateway:1.0.0 .
+```
+
+也可以在 1Panel「容器 → 镜像 → 构建」里填名称 `yzapi/gateway:1.0.0`、Dockerfile 选择解压目录中的 `Dockerfile`，效果相同。直接 `git clone` 到服务器再构建则需要先在服务器上 `cd web && pnpm install && pnpm build`。
 
 **B. 本机构建后导入**（Apple Silicon 注意跨架构）
 
