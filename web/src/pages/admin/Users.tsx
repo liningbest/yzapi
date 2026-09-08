@@ -186,12 +186,13 @@ export default function Users() {
     {
       title: t('common:common.username'),
       dataIndex: 'username',
+      width: 200,
       render: (v: string, r) => (
-        <Space size={10}>
+        <Space size={10} style={{ whiteSpace: 'nowrap' }}>
           <Avatar size={24} shape="square" style={{ background: avatarColor(v), fontWeight: 600, fontSize: 12, borderRadius: 4 }}>
             {v.slice(0, 1).toUpperCase()}
           </Avatar>
-          <span>
+          <span style={{ whiteSpace: 'nowrap' }}>
             <Typography.Text strong>{v}</Typography.Text>
             {isSelf(r) ? (
               <Typography.Text type="secondary" style={{ fontSize: 12, marginLeft: 6 }}>
@@ -205,18 +206,20 @@ export default function Users() {
     {
       title: t('common:common.role'),
       dataIndex: 'role',
-      width: 110,
+      width: 96,
       render: (v: Role) => <RoleTag role={v} />,
     },
     {
       title: t('common:common.userGroup'),
       dataIndex: 'group_name',
+      width: 120,
+      ellipsis: true,
       render: (v: string) => v || '-',
     },
     {
       title: t('common:common.enabled'),
       dataIndex: 'enabled',
-      width: 80,
+      width: 72,
       render: (v: boolean, r) => {
         const locked = isLastAdmin(r) && v;
         const node = (
@@ -234,7 +237,7 @@ export default function Users() {
     {
       title: t('common:common.status'),
       key: 'status',
-      width: 220,
+      width: 170,
       render: (_, r) => {
         const tags: React.ReactNode[] = [];
         if (!r.enabled) tags.push(<NeutralTag key="disabled" tone="danger">{t('common:common.disabled')}</NeutralTag>);
@@ -267,11 +270,10 @@ export default function Users() {
     {
       title: t('common:nav.keys'),
       dataIndex: 'api_keys_count',
-      width: 110,
-      align: 'right',
+      width: 90,
       render: (v: number) => (
         <Space size={4}>
-          <KeyOutlined style={{ color: 'var(--yz-text-secondary)' }} />
+          <KeyOutlined style={{ color: 'var(--yz-text-tertiary)' }} />
           <span style={{ fontVariantNumeric: 'tabular-nums' }}>{v ?? 0}</span>
         </Space>
       ),
@@ -279,28 +281,33 @@ export default function Users() {
     {
       title: t('users:lastLogin'),
       dataIndex: 'last_login_at',
-      width: 140,
+      width: 110,
       render: (v: string | null) => <TimeCell value={v} emptyText={t('common:common.never')} />,
     },
     {
       title: t('common:common.createdAt'),
       dataIndex: 'created_at',
-      width: 160,
+      width: 150,
       render: (v: string) => <TimeCell value={v} absolute />,
     },
     {
       title: t('common:common.note'),
       dataIndex: 'note',
       ellipsis: true,
-      width: 200,
       render: (v: string) =>
-        v ? <Typography.Text ellipsis={{ tooltip: v }} style={{ maxWidth: 180 }}>{v}</Typography.Text> : '-',
+        v ? (
+          <Typography.Text type="secondary" ellipsis={{ tooltip: v }}>
+            {v}
+          </Typography.Text>
+        ) : (
+          <span style={{ color: 'var(--yz-text-tertiary)' }}>-</span>
+        ),
     },
     {
       title: t('common:common.actions'),
       key: 'actions',
-      width: 130,
-      fixed: 'right',
+      width: 120,
+      align: 'right',
       render: (_, r) => {
         const lastAdmin = isLastAdmin(r);
         const self = isSelf(r);
@@ -401,7 +408,7 @@ export default function Users() {
           columns={columns}
           dataSource={list.data?.items ?? []}
           loading={list.isLoading}
-          scroll={{ x: 'max-content' }}
+          scroll={{ x: 1080 }}
           pagination={pagination(list.data?.total)}
           locale={{
             emptyText: (
