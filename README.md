@@ -22,6 +22,8 @@
 
 ## 快速开始
 
+完整部署方案（1Panel 编排、Docker Compose、二进制 + systemd、多实例 PostgreSQL、备份与升级）见 [docs/deploy.md](docs/deploy.md)。
+
 ### Docker
 
 ```bash
@@ -130,7 +132,7 @@ Apple Silicon 单机，mock 上游零延迟，128 并发 5000 请求：
 
 ```bash
 go test ./...          # 单元测试
-./scripts/smoke.sh     # 端到端：启动 mock 上游 + 网关，跑 45 项检查
+./scripts/smoke.sh     # 端到端：启动 mock 上游 + 网关，跑 46 项检查
 ```
 
 ## 高可用

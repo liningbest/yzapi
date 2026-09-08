@@ -1,0 +1,23 @@
+# 二进制部署：/usr/local/bin/yzapi + /etc/systemd/system/yzapi.service
+[Unit]
+Description=yzapi AI gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=yzapi
+Group=yzapi
+Environment=YZAPI_DATA_DIR=/var/lib/yzapi
+Environment=YZAPI_LISTEN=127.0.0.1:8080
+# Environment=YZAPI_INITIAL_ADMIN_PASSWORD=ChangeMe12345!
+ExecStart=/usr/local/bin/yzapi
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/yzapi
+
+[Install]
+WantedBy=multi-user.target

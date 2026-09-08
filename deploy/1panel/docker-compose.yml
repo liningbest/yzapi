@@ -1,0 +1,38 @@
+# yzapi on 1Panel（容器 → 编排 → 创建编排，粘贴本文件）
+#
+# 前置：
+#   1. 镜像已存在于服务器（1Panel 镜像 → 构建 / 导入 / 拉取），标签与下面 image 一致
+#   2. 数据目录已创建并归属容器用户（镜像内以 uid 10001 运行）：
+#        mkdir -p /opt/1panel/apps/yzapi/data && chown -R 10001:10001 /opt/1panel/apps/yzapi
+#   3. 用 1Panel「网站 → 反向代理」对外提供 HTTPS，因此这里只绑定 127.0.0.1
+#
+services:
+  yzapi:
+    image: yzapi/gateway:1.0.0
+    container_name: yzapi
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - /opt/1panel/apps/yzapi/data:/opt/yzapi
+    environment:
+      TZ: Asia/Shanghai
+      # 首次启动的管理员密码（首次登录会强制修改）。不设则随机密码只打印到容器日志。
+      YZAPI_INITIAL_ADMIN_PASSWORD: "ChangeMe12345!"
+      # 可选：/metrics 抓取令牌；不设则 /metrics 公开（仅内网时可接受）
+      # YZAPI_METRICS_TOKEN: "some-random-token"
+      # 可选：访问上游供应商用的代理
+      # YZAPI_HTTP_PROXY: "http://127.0.0.1:7890"
+      # 可选：计量 journal 每条 fsync（更稳，吞吐略降）
+      # YZAPI_JOURNAL_FSYNC: "always"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health/ready"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
