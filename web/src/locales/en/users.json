@@ -30,5 +30,6 @@
     "confirmPlaceholder": "Enter the password again",
     "passwordMismatch": "The two passwords do not match",
     "noteMax": "Note must be at most 255 characters"
-  }
+  },
+  "mustChangePassword": "Password change required"
 }

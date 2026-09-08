@@ -30,5 +30,6 @@
     "confirmPlaceholder": "请再次输入密码",
     "passwordMismatch": "两次输入的密码不一致",
     "noteMax": "备注最多 255 个字符"
-  }
+  },
+  "mustChangePassword": "待修改密码"
 }

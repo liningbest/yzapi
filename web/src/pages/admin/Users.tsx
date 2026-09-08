@@ -31,7 +31,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { userGroupsApi, usersApi } from '@/api';
 import type { NormalizedError } from '@/api';
-import { EmptyState, FilterBar, FormDrawer, PageHeader, RoleTag, StatusDot, TimeCell } from '@/components';
+import { EmptyState, FilterBar, FormDrawer, NeutralTag, PageHeader, RoleTag, StatusDot, TimeCell } from '@/components';
 import { useTableQuery } from '@/hooks/useTableQuery';
 import { useAuthStore } from '@/stores/auth';
 import type { AdminUser, Role, UserCreateInput, UserUpdateInput } from '@/types';
@@ -214,9 +214,9 @@ export default function Users() {
       render: (v: string) => v || '-',
     },
     {
-      title: t('common:common.status'),
+      title: t('common:common.enabled'),
       dataIndex: 'enabled',
-      width: 100,
+      width: 80,
       render: (v: boolean, r) => {
         const locked = isLastAdmin(r) && v;
         const node = (
@@ -232,29 +232,37 @@ export default function Users() {
       },
     },
     {
-      title: t('users:lockStatus'),
-      dataIndex: 'locked',
-      width: 150,
-      render: (v: boolean, r) =>
-        v ? (
-          <Space size={6}>
-            <StatusDot tone="danger" style={{ color: 'var(--yz-danger)' }}>
-              {t('common:common.locked')}
-            </StatusDot>
-            <Button
-              size="small"
-              type="link"
-              icon={<UnlockOutlined />}
-              loading={unlockMut.isPending && unlockMut.variables === r.id}
-              onClick={() => unlockMut.mutate(r.id)}
-              style={{ padding: 0, height: 'auto' }}
-            >
-              {t('common:action.unlock')}
-            </Button>
+      title: t('common:common.status'),
+      key: 'status',
+      width: 220,
+      render: (_, r) => {
+        const tags: React.ReactNode[] = [];
+        if (!r.enabled) tags.push(<NeutralTag key="disabled" tone="danger">{t('common:common.disabled')}</NeutralTag>);
+        if (r.locked) {
+          tags.push(
+            <Space key="locked" size={4}>
+              <NeutralTag tone="danger">{t('common:common.locked')}</NeutralTag>
+              <Button
+                size="small"
+                type="link"
+                icon={<UnlockOutlined />}
+                loading={unlockMut.isPending && unlockMut.variables === r.id}
+                onClick={() => unlockMut.mutate(r.id)}
+                style={{ padding: 0, height: 'auto' }}
+              >
+                {t('common:action.unlock')}
+              </Button>
+            </Space>,
+          );
+        }
+        if (r.must_change_password) tags.push(<NeutralTag key="pw" tone="warning">{t('users:mustChangePassword')}</NeutralTag>);
+        if (tags.length === 0) return <StatusDot tone="success">{t('users:normal')}</StatusDot>;
+        return (
+          <Space size={4} wrap>
+            {tags}
           </Space>
-        ) : (
-          <Typography.Text type="secondary">{t('users:normal')}</Typography.Text>
-        ),
+        );
+      },
     },
     {
       title: t('common:nav.keys'),
@@ -273,6 +281,12 @@ export default function Users() {
       dataIndex: 'last_login_at',
       width: 140,
       render: (v: string | null) => <TimeCell value={v} emptyText={t('common:common.never')} />,
+    },
+    {
+      title: t('common:common.createdAt'),
+      dataIndex: 'created_at',
+      width: 160,
+      render: (v: string) => <TimeCell value={v} absolute />,
     },
     {
       title: t('common:common.note'),
