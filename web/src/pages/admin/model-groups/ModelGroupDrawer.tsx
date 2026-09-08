@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import type { CSSProperties } from 'react';
-import { App, Button, Form, Input, Radio, Select, Tag, Tooltip, Typography } from 'antd';
+import { App, Button, Form, Input, Radio, Select, Tooltip, Typography } from 'antd';
 import {
   ArrowDownOutlined,
   ArrowUpOutlined,
@@ -14,7 +14,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { modelGroupsApi, providersApi } from '@/api';
-import { FormDrawer, KindTag, ProviderAvatar } from '@/components';
+import { FormDrawer, KindTag, NeutralTag, ProviderAvatar } from '@/components';
 import type { ModelGroup, ModelGroupInput, ModelType, RoutableModel } from '@/types';
 import { MODEL_TYPES } from '@/utils/constants';
 
@@ -55,11 +55,11 @@ function SortableRow({ id, index, total, onUp, onDown, onRemove }: RowProps) {
     alignItems: 'center',
     gap: 6,
     padding: '4px 6px 4px 4px',
-    borderRadius: 8,
+    borderRadius: 6,
     border: '1px solid var(--yz-border)',
     background: 'var(--yz-card)',
     opacity: isDragging ? 0.65 : 1,
-    boxShadow: isDragging ? 'var(--yz-shadow)' : undefined,
+    boxShadow: isDragging ? '0 4px 12px rgba(0,0,0,0.08)' : undefined,
     position: 'relative',
     zIndex: isDragging ? 2 : undefined,
   };
@@ -187,7 +187,7 @@ function ModelListEditor({ value, onChange, candidates, loading }: EditorProps) 
               textAlign: 'center',
               color: 'var(--yz-text-secondary)',
               border: '1px dashed var(--yz-border)',
-              borderRadius: 10,
+              borderRadius: 6,
               fontSize: 13,
             }}
           >
@@ -338,9 +338,7 @@ export default function ModelGroupDrawer({ open, group, onClose, onSaved }: Prop
         </Form.Item>
       </Form>
       {isEdit && group?.in_use_by_route ? (
-        <Tag color="blue" style={{ marginTop: 4 }}>
-          {t('modelGroups:inUseByRoute')}
-        </Tag>
+        <NeutralTag style={{ marginTop: 4 }}>{t('modelGroups:inUseByRoute')}</NeutralTag>
       ) : null}
     </FormDrawer>
   );

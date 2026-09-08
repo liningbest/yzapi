@@ -1,6 +1,6 @@
-import { Descriptions, Drawer, Tag, Typography } from 'antd';
+import { Descriptions, Drawer, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
-import { LabelTag, SectionTitle, TimeCell, TokenText } from '@/components';
+import { LabelTag, SectionTitle, StatusDot, TimeCell, TokenText } from '@/components';
 import type { RouteDecision } from '@/types';
 import { formatMs, formatPercent } from '@/utils/format';
 import SourceTag, { useRequestTypeText } from './SourceTag';
@@ -48,13 +48,9 @@ export default function DecisionDrawer({ decision, onClose }: Props) {
             <Descriptions.Item label={t('common:common.latency')}>{formatMs(d.latency_ms)}</Descriptions.Item>
             <Descriptions.Item label={t('route:decisions.failed')} span={2}>
               {d.failed ? (
-                <Tag color="error" style={{ marginInlineEnd: 0 }}>
-                  {t('route:decisions.failedTag')}
-                </Tag>
+                <StatusDot tone="danger">{t('route:decisions.failedTag')}</StatusDot>
               ) : (
-                <Tag color="success" style={{ marginInlineEnd: 0 }}>
-                  {t('route:decisions.succeeded')}
-                </Tag>
+                <StatusDot tone="success">{t('route:decisions.succeeded')}</StatusDot>
               )}
             </Descriptions.Item>
           </Descriptions>

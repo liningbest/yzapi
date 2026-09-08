@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Alert, Button, Card, Form, Input, Progress, Space, Typography, message } from 'antd';
+import { Alert, Button, Form, Input, Progress, Space, Typography, message } from 'antd';
 import { ArrowLeftOutlined, LockOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { authApi } from '@/api';
 import type { NormalizedError } from '@/api';
 import { useAuthStore } from '@/stores/auth';
 import BrandMark from '@/components/BrandMark';
+import { useThemeStore } from '@/stores/theme';
+import { SEMANTIC } from '@/utils/constants';
 import { homeFor } from '@/layouts/guards';
 
 function strength(pwd: string): { score: number; level: 'weak' | 'medium' | 'strong' } {
@@ -32,7 +34,8 @@ export default function ChangePassword() {
   const [loading, setLoading] = useState(false);
   const newPwd = Form.useWatch('new_password', form) as string | undefined;
   const st = strength(newPwd ?? '');
-  const strokeColor = st.level === 'strong' ? '#10b981' : st.level === 'medium' ? '#f59e0b' : '#ef4444';
+  const dark = useThemeStore((s) => s.mode) === 'dark';
+  const strokeColor = st.level === 'strong' ? SEMANTIC.success : st.level === 'medium' ? SEMANTIC.warning : SEMANTIC.danger;
 
   const onFinish = async (v: { old_password: string; new_password: string }) => {
     setLoading(true);
@@ -61,19 +64,19 @@ export default function ChangePassword() {
 
   return (
     <div className="yz-auth-bg">
-      <Card className="yz-auth-card" styles={{ body: { padding: 32 } }}>
+      <div className="yz-auth-card" style={{ padding: 28 }}>
         <div className="yz-auth-brand">
-          <BrandMark size={40} />
-          <div>
-            <Typography.Title level={4} style={{ margin: 0 }}>
-              {t('auth:changePassword.title')}
-            </Typography.Title>
-            <Typography.Text type="secondary">{user?.username}</Typography.Text>
+          <BrandMark size={24} color={dark ? '#fafafa' : '#18181b'} stroke={dark ? '#18181b' : '#ffffff'} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.3 }}>{t('auth:changePassword.title')}</div>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {user?.username}
+            </Typography.Text>
           </div>
         </div>
         {forced ? <Alert type="warning" showIcon message={t('auth:changePassword.forcedHint')} style={{ marginBottom: 16 }} /> : null}
         {error ? <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} /> : null}
-        <Form form={form} layout="vertical" onFinish={onFinish} size="large" requiredMark={false} autoComplete="off">
+        <Form form={form} layout="vertical" onFinish={onFinish} requiredMark={false} autoComplete="off">
           <Form.Item
             name="old_password"
             label={t('auth:changePassword.old')}
@@ -87,7 +90,7 @@ export default function ChangePassword() {
             extra={
               newPwd ? (
                 <Space direction="vertical" size={2} style={{ width: '100%', marginTop: 6 }}>
-                  <Progress percent={st.score} showInfo={false} size="small" strokeColor={strokeColor} />
+                  <Progress percent={st.score} showInfo={false} size={['100%', 4]} strokeColor={strokeColor} />
                   <span style={{ fontSize: 12 }}>
                     {t('auth:changePassword.strength')}: <span style={{ color: strokeColor }}>{t(`auth:changePassword.${st.level}`)}</span>
                     {' · '}
@@ -127,22 +130,22 @@ export default function ChangePassword() {
           >
             <Input.Password prefix={<LockOutlined />} placeholder={t('auth:changePassword.confirmPlaceholder')} />
           </Form.Item>
-          <Button type="primary" htmlType="submit" block loading={loading} style={{ marginTop: 8 }}>
+          <Button type="primary" htmlType="submit" block loading={loading} style={{ marginTop: 4, height: 36 }}>
             {t('auth:changePassword.submit')}
           </Button>
           <div style={{ marginTop: 12, textAlign: 'center' }}>
             {forced ? (
-              <Button type="link" onClick={onLogout}>
+              <Button type="link" size="small" onClick={onLogout}>
                 {t('auth:changePassword.logoutInstead')}
               </Button>
             ) : (
-              <Button type="link" icon={<ArrowLeftOutlined />} onClick={() => navigate(homeFor(user?.role))}>
+              <Button type="link" size="small" icon={<ArrowLeftOutlined />} onClick={() => navigate(homeFor(user?.role))}>
                 {t('common:action.back')}
               </Button>
             )}
           </div>
         </Form>
-      </Card>
+      </div>
     </div>
   );
 }

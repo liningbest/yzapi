@@ -24,28 +24,40 @@ export const PROTOCOL_LABELS: Record<Protocol, string> = {
   'openai-images': 'OpenAI Images',
 };
 
-export const CHART_PALETTE = ['#4f46e5', '#06b6d4', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6'];
+export const CHART_PALETTE = ['#2563eb', '#0891b2', '#64748b', '#d97706', '#16a34a', '#dc2626', '#7c3aed', '#db2777'];
 
-export const PRIMARY = '#4f46e5';
+export const PRIMARY = '#2563eb';
 
-export const TYPE_COLORS: Record<ModelType, string> = {
-  text: 'geekblue',
-  image: 'magenta',
-  embedding: 'cyan',
+/** Semantic colors used for status dots and small text; never large filled areas. */
+export const SEMANTIC = {
+  success: '#16a34a',
+  warning: '#d97706',
+  danger: '#dc2626',
+  neutral: '#a1a1aa',
+  info: '#2563eb',
+} as const;
+
+export type SemanticKey = keyof typeof SEMANTIC;
+
+/** Model types are all rendered as neutral outlined tags. */
+export const TYPE_COLORS: Record<ModelType, SemanticKey> = {
+  text: 'neutral',
+  image: 'neutral',
+  embedding: 'neutral',
 };
 
-export const HEALTH_COLORS = {
+export const HEALTH_COLORS: Record<string, SemanticKey> = {
   available: 'success',
   cooling: 'warning',
-  unavailable: 'error',
-} as const;
+  unavailable: 'danger',
+};
 
-export const RESULT_COLORS = {
+export const RESULT_COLORS: Record<string, SemanticKey> = {
   success: 'success',
   client_error: 'warning',
-  upstream_error: 'error',
-  blocked: 'magenta',
-  rate_limited: 'orange',
-} as const;
+  upstream_error: 'danger',
+  blocked: 'danger',
+  rate_limited: 'warning',
+};
 
 export const PAGE_SIZE = 20;

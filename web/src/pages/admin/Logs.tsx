@@ -1,17 +1,17 @@
 import { useMemo, useState } from 'react';
-import { Button, Card, Input, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { Button, Card, Input, Select, Space, Table, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { ArrowRightOutlined, EyeOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { logsApi } from '@/api';
-import { EmptyState, FilterBar, PageHeader, ProviderAvatar, RangeSelector, ResultTag, TimeCell } from '@/components';
+import { EmptyState, FilterBar, NeutralTag, PageHeader, ProviderAvatar, RangeSelector, ResultTag, StatusCodeTag, TimeCell } from '@/components';
 import { useRange } from '@/hooks/useRange';
 import { useTableQuery } from '@/hooks/useTableQuery';
 import type { CallLog, LogResult } from '@/types';
 import { MODEL_TYPES } from '@/utils/constants';
 import { formatMs, formatNumber, formatTokens, shortId } from '@/utils/format';
-import LogDetailDrawer, { statusColor } from './logs/LogDetailDrawer';
+import LogDetailDrawer from './logs/LogDetailDrawer';
 
 interface Filters {
   user_id?: number;
@@ -138,7 +138,7 @@ export default function Logs() {
       align: 'right',
       render: (_, r) =>
         r.tokens_known === false ? (
-          <Tag style={{ marginInlineEnd: 0 }}>{t('common:common.unknown')}</Tag>
+          <NeutralTag>{t('common:common.unknown')}</NeutralTag>
         ) : (
           <Tooltip
             title={
@@ -179,11 +179,7 @@ export default function Logs() {
       dataIndex: 'status_code',
       width: 90,
       align: 'center',
-      render: (v: number) => (
-        <Tag color={statusColor(v)} style={{ marginInlineEnd: 0, fontVariantNumeric: 'tabular-nums' }}>
-          {v || '-'}
-        </Tag>
-      ),
+      render: (v: number) => <StatusCodeTag code={v} />,
     },
     {
       title: t('common:common.totalLatency'),

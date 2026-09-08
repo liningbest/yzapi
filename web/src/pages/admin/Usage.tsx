@@ -17,7 +17,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { logsApi, usageApi } from '@/api';
-import { FilterBar, PageHeader, ProviderAvatar, RangeSelector, SectionTitle, StatCard } from '@/components';
+import { FilterBar, PageHeader, ProviderAvatar, RangeSelector, SectionTitle, StatCard, StatGroup } from '@/components';
 import { useRange } from '@/hooks/useRange';
 import type { UsageParams } from '@/types';
 import { CHART_PALETTE, MODEL_TYPES } from '@/utils/constants';
@@ -91,28 +91,24 @@ export default function Usage() {
       value: s ? formatNumber(s.requests) : '-',
       hint: s ? t('usage:stats.requestsHint', { success: formatNumber(s.success), failed: formatNumber(s.failed) }) : undefined,
       icon: <SendOutlined />,
-      color: CHART_PALETTE[0],
     },
     {
       key: 'prompt',
       title: t('common:common.promptTokens'),
       value: stat(s?.prompt_tokens),
       icon: <UploadOutlined />,
-      color: CHART_PALETTE[1],
     },
     {
       key: 'completion',
       title: t('common:common.completionTokens'),
       value: stat(s?.completion_tokens),
       icon: <DownloadOutlined />,
-      color: CHART_PALETTE[2],
     },
     {
       key: 'total',
       title: t('common:common.totalTokens'),
       value: stat(s?.total_tokens),
       icon: <DatabaseOutlined />,
-      color: CHART_PALETTE[3],
     },
     {
       key: 'cached',
@@ -123,7 +119,6 @@ export default function Usage() {
           ? t('usage:stats.cacheRate', { rate: ((s.cached_tokens / s.total_tokens) * 100).toFixed(1) })
           : undefined,
       icon: <ThunderboltOutlined />,
-      color: CHART_PALETTE[5],
     },
   ];
 
@@ -231,11 +226,11 @@ export default function Usage() {
         </FilterBar>
       </Card>
 
-      <div className="yz-stat-grid">
+      <StatGroup>
         {stats.map((st) => (
-          <StatCard key={st.key} title={st.title} value={st.value} hint={st.hint} icon={st.icon} color={st.color} loading={loading} />
+          <StatCard key={st.key} title={st.title} value={st.value} hint={st.hint} icon={st.icon} loading={loading} />
         ))}
-      </div>
+      </StatGroup>
 
       <Card className="yz-card" style={{ marginBottom: 16 }}>
         <SectionTitle

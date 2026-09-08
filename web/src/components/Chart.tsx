@@ -19,9 +19,9 @@ export function useChartTheme() {
   const mode = useThemeStore((s) => s.mode);
   return useMemo(() => {
     const dark = mode === 'dark';
-    const text = dark ? 'rgba(255,255,255,0.65)' : 'rgba(15,23,42,0.65)';
-    const line = dark ? 'rgba(255,255,255,0.10)' : 'rgba(15,23,42,0.08)';
-    const axis = dark ? 'rgba(255,255,255,0.25)' : 'rgba(15,23,42,0.2)';
+    const text = dark ? '#a1a1aa' : '#71717a';
+    const line = dark ? '#27272a' : '#e4e4e7';
+    const axis = dark ? '#3f3f46' : '#d4d4d8';
     return {
       dark,
       palette: CHART_PALETTE,
@@ -29,26 +29,28 @@ export function useChartTheme() {
       splitLineColor: line,
       axisLineColor: axis,
       tooltip: {
-        backgroundColor: dark ? '#1e293b' : '#ffffff',
-        borderColor: dark ? 'rgba(255,255,255,0.12)' : 'rgba(15,23,42,0.08)',
-        textStyle: { color: dark ? '#e2e8f0' : '#0f172a', fontSize: 12 },
-        extraCssText: 'box-shadow:0 8px 24px rgba(0,0,0,0.12);border-radius:10px;',
+        backgroundColor: dark ? '#18181b' : '#ffffff',
+        borderColor: dark ? '#27272a' : '#e4e4e7',
+        borderWidth: 1,
+        padding: [6, 10],
+        textStyle: { color: dark ? '#fafafa' : '#18181b', fontSize: 12 },
+        extraCssText: 'box-shadow:0 4px 12px rgba(0,0,0,0.06);border-radius:6px;',
       },
       base: {
         color: CHART_PALETTE,
         textStyle: { fontFamily: 'inherit' },
         grid: { left: 12, right: 16, top: 36, bottom: 8, containLabel: true },
-        legend: { textStyle: { color: text }, icon: 'roundRect', itemWidth: 12, itemHeight: 8, top: 0 },
+        legend: { textStyle: { color: text, fontSize: 12 }, icon: 'rect', itemWidth: 10, itemHeight: 10, top: 0 },
         xAxis: {
           axisLine: { lineStyle: { color: axis } },
           axisTick: { show: false },
-          axisLabel: { color: text },
+          axisLabel: { color: text, fontSize: 11 },
         },
         yAxis: {
           axisLine: { show: false },
           axisTick: { show: false },
           splitLine: { lineStyle: { color: line } },
-          axisLabel: { color: text },
+          axisLabel: { color: text, fontSize: 11 },
         },
       },
     };
@@ -85,7 +87,7 @@ export default function Chart({ option, height = 300, loading, style, onEvents }
         notMerge
         lazyUpdate
         showLoading={loading}
-        loadingOption={{ text: '', color: '#4f46e5', maskColor: 'transparent' }}
+        loadingOption={{ text: '', color: '#2563eb', maskColor: 'transparent' }}
         style={{ height, width: '100%', ...style }}
         onEvents={onEvents}
         opts={{ renderer: 'canvas' }}

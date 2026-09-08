@@ -36,10 +36,10 @@ export default function TrendChart({ trend, range, loading, height = 320 }: Prop
       name: reqName,
       type: 'line' as const,
       yAxisIndex: 1,
-      smooth: true,
+      smooth: false,
       showSymbol: false,
-      lineStyle: { width: 2, color: theme.dark ? '#f1f5f9' : '#0f172a' },
-      itemStyle: { color: theme.dark ? '#f1f5f9' : '#0f172a' },
+      lineStyle: { width: 1.5, color: theme.dark ? '#fafafa' : '#18181b' },
+      itemStyle: { color: theme.dark ? '#fafafa' : '#18181b' },
       data: trend.map((p) => p.requests),
       z: 10,
     };

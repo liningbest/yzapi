@@ -1,11 +1,11 @@
-import { Alert, Card, Col, List, Progress, Row, Skeleton, Tag, Tooltip, Typography } from 'antd';
+import { Alert, Card, Col, List, Progress, Row, Skeleton, Tooltip, Typography } from 'antd';
 import { AppstoreOutlined, DashboardOutlined, KeyOutlined, PieChartOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { userApi } from '@/api';
-import { PageHeader, StatCard, TokenText } from '@/components';
+import { NeutralTag, PageHeader, StatCard, StatGroup, TokenText } from '@/components';
 import type { MyGroup } from '@/types';
-import { CHART_PALETTE, PRIMARY } from '@/utils/constants';
+import { PRIMARY, SEMANTIC } from '@/utils/constants';
 import { formatNumber, formatTokens } from '@/utils/format';
 
 const MAX_VISIBLE_MODELS = 6;
@@ -17,16 +17,14 @@ function ModelTags({ models }: { models: string[] }) {
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
       {visible.map((m, i) => (
-        <Tag key={`${i}-${m}`} bordered={false} className="yz-mono" style={{ marginInlineEnd: 0 }}>
+        <NeutralTag key={`${i}-${m}`} mono>
           <span style={{ color: 'var(--yz-text-tertiary)', marginRight: 4 }}>{i + 1}</span>
           {m}
-        </Tag>
+        </NeutralTag>
       ))}
       {rest.length ? (
         <Tooltip title={<div className="yz-mono" style={{ wordBreak: 'break-all' }}>{rest.join(' → ')}</div>}>
-          <Tag bordered={false} style={{ marginInlineEnd: 0, cursor: 'default' }}>
-            +{rest.length}
-          </Tag>
+          <NeutralTag style={{ cursor: 'default' }}>+{rest.length}</NeutralTag>
         </Tooltip>
       ) : null}
       {models.length === 0 ? <Typography.Text type="secondary">{t('common:common.none')}</Typography.Text> : null}
@@ -41,29 +39,32 @@ function MonthUsage({ group }: { group: MyGroup }) {
   const ratio = quota > 0 ? used / quota : 0;
   const percent = Math.min(100, ratio * 100);
   const exceeded = quota > 0 && ratio >= 1;
-  const strokeColor = exceeded ? undefined : ratio >= 0.8 ? CHART_PALETTE[2] : PRIMARY;
+  const strokeColor = exceeded ? SEMANTIC.danger : ratio >= 0.8 ? SEMANTIC.warning : PRIMARY;
 
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-        <TokenText value={used} style={{ fontSize: 34, fontWeight: 700, letterSpacing: -0.5, lineHeight: 1.1 }} />
-        <Typography.Text type="secondary">{t('common:common.tokens')}</Typography.Text>
+        <TokenText value={used} style={{ fontSize: 22, fontWeight: 600, letterSpacing: -0.3, lineHeight: 1.2 }} />
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {t('common:common.tokens')}
+        </Typography.Text>
       </div>
       {quota > 0 ? (
-        <div style={{ marginTop: 14 }}>
+        <div style={{ marginTop: 12 }}>
           <Progress
             percent={percent}
             status={exceeded ? 'exception' : 'normal'}
             strokeColor={strokeColor}
+            size={['100%', 4]}
             showInfo
             format={() => `${percent.toFixed(1)}%`}
           />
-          <Typography.Text type="secondary" style={{ fontSize: 12.5 }}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {t('console:group.usedOfQuota', { used: formatNumber(used), quota: formatNumber(quota) })}
           </Typography.Text>
         </div>
       ) : (
-        <Typography.Text type="secondary" style={{ display: 'block', marginTop: 14, fontSize: 12.5 }}>
+        <Typography.Text type="secondary" style={{ display: 'block', marginTop: 12, fontSize: 12 }}>
           {t('console:group.noQuota')}
         </Typography.Text>
       )}
@@ -81,56 +82,43 @@ export default function Group() {
     <div>
       <PageHeader title={t('console:group.title')} subtitle={t('console:group.subtitle')} />
 
-      <Card className="yz-card" style={{ marginBottom: 16 }} styles={{ body: { padding: '18px 24px' } }}>
+      <Card className="yz-card" style={{ marginBottom: 16 }} styles={{ body: { padding: '14px 16px' } }}>
         {loading ? (
           <Skeleton active paragraph={{ rows: 1 }} title={{ width: 160 }} />
         ) : (
           <>
-            <Typography.Title level={4} style={{ margin: 0 }}>
-              {group?.name || '-'}
-            </Typography.Title>
-            <Typography.Text type="secondary" style={{ fontSize: 12.5 }}>
+            <div style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.3 }}>{group?.name || '-'}</div>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               {t('console:group.hint')}
             </Typography.Text>
           </>
         )}
       </Card>
 
-      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col md={8} xs={24}>
-          <StatCard
-            title={t('console:group.maxConcurrency')}
-            value={group && group.max_concurrency > 0 ? formatNumber(group.max_concurrency) : t('common:common.unlimited')}
-            icon={<DashboardOutlined />}
-            color={CHART_PALETTE[0]}
-            loading={loading}
-          />
-        </Col>
-        <Col md={8} xs={24}>
-          <StatCard
-            title={t('console:group.keyMaxConcurrency')}
-            value={
-              group && group.key_max_concurrency > 0
-                ? formatNumber(group.key_max_concurrency)
-                : t('console:group.inheritGroup')
-            }
-            icon={<KeyOutlined />}
-            color={CHART_PALETTE[1]}
-            loading={loading}
-          />
-        </Col>
-        <Col md={8} xs={24}>
-          <StatCard
-            title={t('console:group.tokenQuota')}
-            value={group && group.token_quota > 0 ? formatTokens(group.token_quota) : t('common:common.unlimited')}
-            tooltip={group && group.token_quota > 0 ? formatNumber(group.token_quota) : undefined}
-            hint={t('console:group.monthly')}
-            icon={<PieChartOutlined />}
-            color={CHART_PALETTE[5]}
-            loading={loading}
-          />
-        </Col>
-      </Row>
+      <StatGroup>
+        <StatCard
+          title={t('console:group.maxConcurrency')}
+          value={group && group.max_concurrency > 0 ? formatNumber(group.max_concurrency) : t('common:common.unlimited')}
+          icon={<DashboardOutlined />}
+          loading={loading}
+        />
+        <StatCard
+          title={t('console:group.keyMaxConcurrency')}
+          value={
+            group && group.key_max_concurrency > 0 ? formatNumber(group.key_max_concurrency) : t('console:group.inheritGroup')
+          }
+          icon={<KeyOutlined />}
+          loading={loading}
+        />
+        <StatCard
+          title={t('console:group.tokenQuota')}
+          value={group && group.token_quota > 0 ? formatTokens(group.token_quota) : t('common:common.unlimited')}
+          tooltip={group && group.token_quota > 0 ? formatNumber(group.token_quota) : undefined}
+          hint={t('console:group.monthly')}
+          icon={<PieChartOutlined />}
+          loading={loading}
+        />
+      </StatGroup>
 
       <Row gutter={[16, 16]}>
         <Col lg={9} xs={24}>
@@ -157,12 +145,13 @@ export default function Group() {
                             display: 'inline-flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            width: 36,
-                            height: 36,
-                            borderRadius: 10,
-                            background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
-                            color: '#fff',
-                            fontSize: 17,
+                            width: 28,
+                            height: 28,
+                            borderRadius: 4,
+                            border: '1px solid var(--yz-border)',
+                            background: 'var(--yz-track)',
+                            color: 'var(--yz-text-secondary)',
+                            fontSize: 14,
                           }}
                         >
                           <AppstoreOutlined />

@@ -1,10 +1,11 @@
-import { Card, Col, Descriptions, Row, Space, Table, Tag, Typography } from 'antd';
+import { Card, Col, Descriptions, Row, Space, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { BookOutlined, GithubOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { settingsApi, systemApi } from '@/api';
-import { BrandMark, PageHeader, SectionTitle, TimeCell } from '@/components';
+import { BrandMark, NeutralTag, PageHeader, SectionTitle, TimeCell } from '@/components';
+import { useThemeStore } from '@/stores/theme';
 import { formatDuration } from '@/utils/format';
 
 const REPO_URL = 'https://github.com/yzapi';
@@ -27,6 +28,7 @@ const ENDPOINTS: EndpointRow[] = [
 
 export default function About() {
   const { t } = useTranslation(['about', 'common']);
+  const dark = useThemeStore((s) => s.mode) === 'dark';
   const info = useQuery({ queryKey: ['system', 'info'], queryFn: systemApi.info });
   const settings = useQuery({ queryKey: ['settings'], queryFn: settingsApi.all });
 
@@ -40,9 +42,7 @@ export default function About() {
       dataIndex: 'method',
       width: 90,
       render: (m: EndpointRow['method']) => (
-        <Tag color={m === 'GET' ? 'green' : 'geekblue'} style={{ marginInlineEnd: 0 }}>
-          {m}
-        </Tag>
+        <NeutralTag mono>{m}</NeutralTag>
       ),
     },
     {
@@ -66,11 +66,11 @@ export default function About() {
       <PageHeader title={t('about:title')} subtitle={t('about:subtitle')} />
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={10}>
-          <Card className="yz-card" styles={{ body: { padding: 24 } }} loading={info.isLoading}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
-              <BrandMark size={56} />
+          <Card className="yz-card" styles={{ body: { padding: 20 } }} loading={info.isLoading}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+              <BrandMark size={40} color={dark ? '#fafafa' : '#18181b'} stroke={dark ? '#18181b' : '#ffffff'} />
               <div>
-                <Typography.Title level={4} style={{ margin: 0 }}>
+                <Typography.Title level={5} style={{ margin: 0 }}>
                   {siteName}
                 </Typography.Title>
                 <Typography.Text type="secondary">{t('common:app.tagline')}</Typography.Text>
@@ -110,7 +110,7 @@ export default function About() {
           </Card>
         </Col>
         <Col xs={24} xl={14}>
-          <Card className="yz-card" styles={{ body: { padding: 24 } }}>
+          <Card className="yz-card" styles={{ body: { padding: 20 } }}>
             <SectionTitle>{t('about:access.title')}</SectionTitle>
             <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
               {t('about:access.hint')}

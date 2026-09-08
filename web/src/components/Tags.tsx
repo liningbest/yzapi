@@ -1,18 +1,57 @@
-import { Badge, Tag, Tooltip } from 'antd';
+import { Tooltip } from 'antd';
+import type { CSSProperties, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Health, LogResult, ModelKind, ModelType, PolicyAction, Protocol, RiskLevel, Role, RouteLabel } from '@/types';
-import { HEALTH_COLORS, RESULT_COLORS, TYPE_COLORS } from '@/utils/constants';
+import { HEALTH_COLORS, RESULT_COLORS, SEMANTIC, type SemanticKey } from '@/utils/constants';
 import { formatDateTime } from '@/utils/format';
 import { useCountdown } from '@/hooks/useCountdown';
 
+/* ---------- primitives ---------- */
+
+export type NeutralTone = 'neutral' | 'danger' | 'warning' | 'success';
+
+interface NeutralTagProps {
+  children: ReactNode;
+  tone?: NeutralTone;
+  mono?: boolean;
+  style?: CSSProperties;
+  className?: string;
+  title?: string;
+  onClick?: () => void;
+}
+
+/** Outlined neutral tag: 1px border, transparent bg, 11px secondary text. */
+export function NeutralTag({ children, tone = 'neutral', mono, style, className, title, onClick }: NeutralTagProps) {
+  const cls = ['yz-tag', tone !== 'neutral' ? tone : '', mono ? 'mono' : '', className ?? ''].filter(Boolean).join(' ');
+  return (
+    <span className={cls} style={{ cursor: onClick ? 'pointer' : undefined, ...style }} title={title} onClick={onClick}>
+      {children}
+    </span>
+  );
+}
+
+interface StatusDotProps {
+  tone: SemanticKey;
+  children: ReactNode;
+  style?: CSSProperties;
+  className?: string;
+}
+
+/** Semantic dot + plain text; used for health/result/enabled states. */
+export function StatusDot({ tone, children, style, className }: StatusDotProps) {
+  return (
+    <span className={`yz-status${className ? ` ${className}` : ''}`} style={style}>
+      <i className="yz-dot" style={{ background: SEMANTIC[tone] }} />
+      {children}
+    </span>
+  );
+}
+
+/* ---------- domain tags ---------- */
+
 export function TypeTag({ type }: { type: ModelType | string }) {
   const { t } = useTranslation();
-  const color = TYPE_COLORS[type as ModelType] ?? 'default';
-  return (
-    <Tag color={color} style={{ marginInlineEnd: 0 }}>
-      {t(`type.${type}`, { defaultValue: type })}
-    </Tag>
-  );
+  return <NeutralTag>{t(`type.${type}`, { defaultValue: type })}</NeutralTag>;
 }
 
 export function ProtocolTag({ protocol }: { protocol: Protocol | string }) {
@@ -26,9 +65,7 @@ export function ProtocolTag({ protocol }: { protocol: Protocol | string }) {
   };
   return (
     <Tooltip title={t(`protocol.${protocol}`, { defaultValue: protocol })}>
-      <Tag bordered={false} style={{ marginInlineEnd: 0 }}>
-        {short[protocol] ?? protocol}
-      </Tag>
+      <NeutralTag>{short[protocol] ?? protocol}</NeutralTag>
     </Tooltip>
   );
 }
@@ -44,7 +81,7 @@ export function HealthTag({
 }) {
   const { t } = useTranslation();
   const remaining = useCountdown(health === 'cooling' ? cooldownUntil : null);
-  const color = HEALTH_COLORS[health as Health] ?? 'default';
+  const tone = HEALTH_COLORS[health] ?? 'neutral';
   const label = t(`health.${health}`, { defaultValue: health });
   const tip = (
     <div>
@@ -60,73 +97,70 @@ export function HealthTag({
   );
   const hasTip = Boolean(lastError || (cooldownUntil && health === 'cooling'));
   const node = (
-    <Tag color={color} style={{ marginInlineEnd: 0 }}>
+    <StatusDot tone={tone}>
       {label}
-      {health === 'cooling' && remaining ? ` ${remaining}` : ''}
-    </Tag>
+      {health === 'cooling' && remaining ? (
+        <span className="yz-mono" style={{ color: 'var(--yz-text-tertiary)', marginLeft: 2 }}>
+          {remaining}
+        </span>
+      ) : null}
+    </StatusDot>
   );
   return hasTip ? <Tooltip title={tip}>{node}</Tooltip> : node;
 }
 
 export function ResultTag({ result }: { result: LogResult | string }) {
   const { t } = useTranslation();
-  const color = RESULT_COLORS[result as LogResult] ?? 'default';
-  return (
-    <Tag color={color} style={{ marginInlineEnd: 0 }}>
-      {t(`result.${result}`, { defaultValue: result })}
-    </Tag>
-  );
+  const tone = RESULT_COLORS[result] ?? 'neutral';
+  const text = t(`result.${result}`, { defaultValue: result });
+  if (result === 'blocked') {
+    return (
+      <StatusDot tone="danger" style={{ color: 'var(--yz-danger)' }}>
+        {text}
+      </StatusDot>
+    );
+  }
+  return <StatusDot tone={tone}>{text}</StatusDot>;
 }
 
 export function EnabledBadge({ enabled }: { enabled: boolean }) {
   const { t } = useTranslation();
-  return <Badge status={enabled ? 'success' : 'default'} text={enabled ? t('common.enabled') : t('common.disabled')} />;
+  return (
+    <StatusDot tone={enabled ? 'success' : 'neutral'} style={enabled ? undefined : { color: 'var(--yz-text-secondary)' }}>
+      {enabled ? t('common.enabled') : t('common.disabled')}
+    </StatusDot>
+  );
 }
 
 export function RoleTag({ role }: { role: Role | string }) {
   const { t } = useTranslation();
-  return (
-    <Tag color={role === 'admin' ? 'purple' : 'default'} style={{ marginInlineEnd: 0 }}>
-      {t(`role.${role}`, { defaultValue: role })}
-    </Tag>
-  );
+  return <NeutralTag>{t(`role.${role}`, { defaultValue: role })}</NeutralTag>;
 }
 
 export function KindTag({ kind }: { kind: ModelKind | string }) {
   const { t } = useTranslation();
   if (kind === 'model') return null;
-  return (
-    <Tag color={kind === 'virtual' ? 'blue' : 'purple'} style={{ marginInlineEnd: 0 }}>
-      {t(`kind.${kind}`, { defaultValue: kind })}
-    </Tag>
-  );
+  return <NeutralTag>{t(`kind.${kind}`, { defaultValue: kind })}</NeutralTag>;
 }
 
 export function LabelTag({ label }: { label: RouteLabel | string }) {
   const { t } = useTranslation();
-  return (
-    <Tag color={label === 'complex' ? 'volcano' : 'green'} style={{ marginInlineEnd: 0 }}>
-      {t(`label.${label}`, { defaultValue: label })}
-    </Tag>
-  );
+  return <NeutralTag>{t(`label.${label}`, { defaultValue: label })}</NeutralTag>;
 }
 
 export function ActionTag({ action }: { action: PolicyAction | string }) {
   const { t } = useTranslation();
   return (
-    <Tag color={action === 'block' ? 'red' : 'blue'} style={{ marginInlineEnd: 0 }}>
+    <NeutralTag tone={action === 'block' ? 'danger' : 'neutral'}>
       {t(`policyAction.${action}`, { defaultValue: action })}
-    </Tag>
+    </NeutralTag>
   );
 }
 
 export function RiskTag({ risk }: { risk: RiskLevel | string }) {
   const { t } = useTranslation();
-  const color = risk === 'high' ? 'red' : risk === 'medium' ? 'orange' : 'green';
   return (
-    <Tag color={color} style={{ marginInlineEnd: 0 }}>
-      {t(`risk.${risk}`, { defaultValue: risk })}
-    </Tag>
+    <NeutralTag tone={risk === 'high' ? 'danger' : 'neutral'}>{t(`risk.${risk}`, { defaultValue: risk })}</NeutralTag>
   );
 }
 
@@ -134,10 +168,23 @@ export function VectorizedBadge({ vectorized, dim }: { vectorized: boolean; dim?
   const { t } = useTranslation();
   return (
     <Tooltip title={vectorized && dim ? `${t('common.dimension')}: ${dim}` : undefined}>
-      <Badge
-        status={vectorized ? 'success' : 'default'}
-        text={vectorized ? t('common.vectorized') : t('common.notVectorized')}
-      />
+      <StatusDot
+        tone={vectorized ? 'success' : 'neutral'}
+        style={vectorized ? undefined : { color: 'var(--yz-text-secondary)' }}
+      >
+        {vectorized ? t('common.vectorized') : t('common.notVectorized')}
+      </StatusDot>
     </Tooltip>
+  );
+}
+
+/** HTTP status code rendered as mono text with a semantic tone. */
+export function StatusCodeTag({ code }: { code: number | null | undefined }) {
+  if (code === null || code === undefined) return <span style={{ color: 'var(--yz-text-tertiary)' }}>-</span>;
+  const tone: NeutralTone = code >= 500 ? 'danger' : code >= 400 ? 'warning' : code >= 200 && code < 300 ? 'success' : 'neutral';
+  return (
+    <NeutralTag tone={tone} mono>
+      {code}
+    </NeutralTag>
   );
 }

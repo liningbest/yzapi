@@ -8,7 +8,7 @@ interface Props {
   model: UserModel;
 }
 
-const AVATAR_SIZE = 36;
+const AVATAR_SIZE = 28;
 
 function GatewayAvatar({ kind }: { kind: 'virtual' | 'group' }) {
   const virtual = kind === 'virtual';
@@ -20,14 +20,12 @@ function GatewayAvatar({ kind }: { kind: 'virtual' | 'group' }) {
         justifyContent: 'center',
         width: AVATAR_SIZE,
         height: AVATAR_SIZE,
-        borderRadius: Math.round(AVATAR_SIZE * 0.3),
-        background: virtual
-          ? 'linear-gradient(135deg, #6366f1 0%, #06b6d4 100%)'
-          : 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
-        color: '#fff',
-        fontSize: 18,
+        borderRadius: 4,
+        border: '1px solid var(--yz-border)',
+        background: 'var(--yz-track)',
+        color: 'var(--yz-text-secondary)',
+        fontSize: 14,
         flexShrink: 0,
-        boxShadow: '0 1px 2px rgba(0,0,0,0.12)',
       }}
     >
       {virtual ? <ThunderboltOutlined /> : <AppstoreOutlined />}
@@ -41,8 +39,8 @@ export default function ModelCard({ model }: Props) {
   const groupModels = model.models ?? [];
 
   return (
-    <Card hoverable className="yz-card" styles={{ body: { padding: 16 } }}>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+    <Card hoverable className="yz-card" styles={{ body: { padding: 14 } }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
         {model.kind === 'virtual' || model.kind === 'group' ? (
           <GatewayAvatar kind={model.kind} />
         ) : (
@@ -51,9 +49,10 @@ export default function ModelCard({ model }: Props) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <Typography.Text
             strong
+            className="yz-mono"
             ellipsis={{ tooltip: model.name }}
             copyable={{ text: model.name, tooltips: [t('console:models.copyName'), t('common:action.copied')] }}
-            style={{ maxWidth: '100%', fontSize: 14 }}
+            style={{ maxWidth: '100%', fontSize: 13 }}
           >
             {model.name}
           </Typography.Text>
@@ -62,7 +61,7 @@ export default function ModelCard({ model }: Props) {
           </Typography.Text>
         </div>
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 14 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
         <TypeTag type={model.type} />
         {model.kind === 'virtual' ? <KindTag kind="virtual" /> : null}
         {model.kind === 'group' ? (

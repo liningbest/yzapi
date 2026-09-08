@@ -1,20 +1,6 @@
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import {
-  Avatar,
-  Breadcrumb,
-  Button,
-  ConfigProvider,
-  Drawer,
-  Dropdown,
-  Layout,
-  Menu,
-  Spin,
-  Tooltip,
-  Typography,
-  message,
-  theme as antdTheme,
-} from 'antd';
+import { Breadcrumb, Button, Drawer, Dropdown, Layout, Menu, Spin, Tooltip, Typography, message } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   GlobalOutlined,
@@ -132,29 +118,15 @@ export default function AppLayout({ area }: Props) {
   }));
 
   const siderInner = (isCollapsed: boolean) => (
-    <ConfigProvider
-      theme={{
-        algorithm: antdTheme.darkAlgorithm,
-        components: {
-          Menu: {
-            darkItemBg: 'transparent',
-            darkSubMenuItemBg: 'transparent',
-            darkItemSelectedBg: '#4f46e5',
-            darkItemSelectedColor: '#ffffff',
-            darkItemColor: 'rgba(255,255,255,0.72)',
-            darkItemHoverBg: 'rgba(255,255,255,0.06)',
-            darkItemHoverColor: '#ffffff',
-            itemBorderRadius: 10,
-            iconSize: 16,
-            collapsedIconSize: 18,
-          },
-        },
-      }}
-    >
-      <div className={`yz-sider-logo${isCollapsed ? ' collapsed' : ''}`} onClick={() => navigate(area === 'admin' ? '/admin/overview' : '/console/models')} style={{ cursor: 'pointer' }}>
-        <BrandMark size={32} />
+    <>
+      <div
+        className={`yz-sider-logo${isCollapsed ? ' collapsed' : ''}`}
+        onClick={() => navigate(area === 'admin' ? '/admin/overview' : '/console/models')}
+        style={{ cursor: 'pointer' }}
+      >
+        <BrandMark size={24} color={themeMode === 'dark' ? '#fafafa' : '#18181b'} stroke={themeMode === 'dark' ? '#18181b' : '#ffffff'} />
         {!isCollapsed ? (
-          <div>
+          <div style={{ minWidth: 0 }}>
             <div className="brand-name">{t('app.name')}</div>
             <div className="brand-sub">{area === 'admin' ? t('app.adminConsole') : t('app.userConsole')}</div>
           </div>
@@ -162,7 +134,7 @@ export default function AppLayout({ area }: Props) {
       </div>
       <Menu
         className="yz-sider-menu"
-        theme="dark"
+        theme="light"
         mode="inline"
         inlineCollapsed={isCollapsed}
         selectedKeys={current ? [current.path] : []}
@@ -170,9 +142,9 @@ export default function AppLayout({ area }: Props) {
         onClick={({ key }) => navigate(key)}
       />
       <div className="yz-sider-footer">
-        <Avatar size={32} style={{ background: 'linear-gradient(135deg,#6366f1,#06b6d4)', flexShrink: 0 }} icon={<UserOutlined />}>
-          {user?.username?.slice(0, 1).toUpperCase()}
-        </Avatar>
+        <span className="yz-avatar" style={{ width: 24, height: 24 }}>
+          {user?.username?.slice(0, 1).toUpperCase() || <UserOutlined />}
+        </span>
         {!isCollapsed ? (
           <div style={{ minWidth: 0 }}>
             <div className="name">{user?.username}</div>
@@ -180,7 +152,7 @@ export default function AppLayout({ area }: Props) {
           </div>
         ) : null}
       </div>
-    </ConfigProvider>
+    </>
   );
 
   return (
@@ -190,14 +162,14 @@ export default function AppLayout({ area }: Props) {
           placement="left"
           open={mobileOpen}
           onClose={() => setMobileOpen(false)}
-          width={240}
+          width={220}
           closable={false}
           styles={{ body: { padding: 0, background: 'var(--yz-sider)', display: 'flex', flexDirection: 'column' } }}
         >
           {siderInner(false)}
         </Drawer>
       ) : (
-        <Sider className="yz-sider" width={232} collapsedWidth={72} collapsed={collapsed} trigger={null} collapsible>
+        <Sider className="yz-sider" width={220} collapsedWidth={56} collapsed={collapsed} trigger={null} collapsible>
           {siderInner(collapsed)}
         </Sider>
       )}
@@ -241,11 +213,11 @@ export default function AppLayout({ area }: Props) {
             </Tooltip>
             <Dropdown menu={{ items: userMenu }} placement="bottomRight" trigger={['click']}>
               <div className="yz-user-chip">
-                <Avatar size={30} style={{ background: 'linear-gradient(135deg,#6366f1,#06b6d4)' }}>
+                <span className="yz-avatar" style={{ width: 20, height: 20 }}>
                   {user?.username?.slice(0, 1).toUpperCase()}
-                </Avatar>
+                </span>
                 {!mobile ? (
-                  <Typography.Text strong style={{ maxWidth: 140 }} ellipsis>
+                  <Typography.Text style={{ maxWidth: 140, fontSize: 13, fontWeight: 500 }} ellipsis>
                     {user?.username}
                   </Typography.Text>
                 ) : null}

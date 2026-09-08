@@ -2,6 +2,7 @@ export { default as BrandMark } from './BrandMark';
 export { default as ProviderAvatar } from './ProviderAvatar';
 export { default as PageHeader } from './PageHeader';
 export { default as StatCard } from './StatCard';
+export { default as StatGroup } from './StatGroup';
 export { default as TimeCell } from './TimeCell';
 export { default as TokenText } from './TokenText';
 export { default as RangeSelector } from './RangeSelector';

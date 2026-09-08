@@ -486,7 +486,7 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
                       margin: 0,
                       padding: '6px 12px 6px 10px',
                       border: '1px solid var(--yz-border)',
-                      borderRadius: 8,
+                      borderRadius: 6,
                       alignItems: 'center',
                     }}
                   >
@@ -528,7 +528,7 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
                           textAlign: 'center',
                           color: 'var(--yz-text-secondary)',
                           border: '1px dashed var(--yz-border)',
-                          borderRadius: 10,
+                          borderRadius: 6,
                           marginBottom: 12,
                           fontSize: 13,
                         }}

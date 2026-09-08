@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Alert, Col, Collapse, Form, Input, InputNumber, Row, Select, Switch, Tag } from 'antd';
+import { Alert, Col, Collapse, Form, Input, InputNumber, Row, Select, Switch } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { modelGroupsApi, settingsApi } from '@/api';
 import type { SmartRouteSettings } from '@/types';
 import { SaveBar, SliderInput, useSaveSettings, useSyncForm } from './shared';
+import { NeutralTag } from '@/components';
 
 interface Props {
   data?: SmartRouteSettings;
@@ -39,9 +40,7 @@ export default function SmartRouteTab({ data }: Props) {
     label: (
       <span>
         {g.name}
-        <Tag bordered={false} style={{ marginInlineStart: 8, fontSize: 11 }}>
-          {t('settings:smartRoute.modelsCount', { count: g.models.length })}
-        </Tag>
+        <NeutralTag style={{ marginInlineStart: 8 }}>{t('settings:smartRoute.modelsCount', { count: g.models.length })}</NeutralTag>
       </span>
     ),
     searchText: g.name,

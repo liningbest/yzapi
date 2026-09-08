@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { App, Button, Card, Input, Popconfirm, Segmented, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { App, Button, Card, Input, Popconfirm, Segmented, Space, Table, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { modelGroupsApi } from '@/api';
-import { EmptyState, FilterBar, PageHeader, TimeCell, TypeTag } from '@/components';
+import { EmptyState, FilterBar, NeutralTag, PageHeader, TimeCell, TypeTag } from '@/components';
 import { useTableQuery } from '@/hooks/useTableQuery';
 import type { ModelGroup, ModelType } from '@/types';
 import { MODEL_TYPES } from '@/utils/constants';
@@ -57,9 +57,7 @@ export default function ModelGroups() {
         <Space size={6} wrap>
           <span style={{ fontWeight: 600 }}>{v}</span>
           {g.in_use_by_route ? (
-            <Tag color="blue" bordered={false} style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: '18px' }}>
-              {t('modelGroups:inUseByRoute')}
-            </Tag>
+            <NeutralTag>{t('modelGroups:inUseByRoute')}</NeutralTag>
           ) : null}
         </Space>
       ),
@@ -82,9 +80,9 @@ export default function ModelGroups() {
         return (
           <Space size={4} wrap>
             {shown.map((m, i) => (
-              <Tag key={`${m}-${i}`} className="yz-mono" style={{ marginInlineEnd: 0 }}>
+              <NeutralTag key={`${m}-${i}`} mono>
                 {m}
-              </Tag>
+              </NeutralTag>
             ))}
             {rest.length ? (
               <Tooltip
@@ -99,7 +97,7 @@ export default function ModelGroups() {
                   </div>
                 }
               >
-                <Tag style={{ marginInlineEnd: 0, cursor: 'default' }}>+{rest.length}</Tag>
+                <NeutralTag style={{ cursor: 'default' }}>+{rest.length}</NeutralTag>
               </Tooltip>
             ) : null}
           </Space>

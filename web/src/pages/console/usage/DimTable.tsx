@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
-import { Table, Tag, Typography } from 'antd';
+import { Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useTranslation } from 'react-i18next';
-import { EmptyState, ProportionBar, TokenText, useChartTheme } from '@/components';
+import { EmptyState, NeutralTag, ProportionBar, TokenText, useChartTheme } from '@/components';
 import type { UsageDim } from '@/types';
 import { formatNumber } from '@/utils/format';
 
@@ -40,7 +40,7 @@ export default function DimTable({ rows, loading }: Props) {
               {label || '-'}
             </Typography.Text>
             {deleted ? (
-              <Tag style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: '18px' }}>{t('common:common.deleted')}</Tag>
+              <NeutralTag>{t('common:common.deleted')}</NeutralTag>
             ) : null}
           </span>
         );

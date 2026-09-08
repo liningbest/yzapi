@@ -10,10 +10,10 @@ import {
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { userApi } from '@/api';
-import { FilterBar, PageHeader, RangeSelector, StatCard } from '@/components';
+import { FilterBar, PageHeader, RangeSelector, StatCard, StatGroup } from '@/components';
 import { useRange } from '@/hooks/useRange';
 import type { ModelType, UserUsageParams } from '@/types';
-import { CHART_PALETTE, MODEL_TYPES } from '@/utils/constants';
+import { MODEL_TYPES } from '@/utils/constants';
 import { formatNumber, formatTokens } from '@/utils/format';
 import DimTable from './usage/DimTable';
 import TrendChart from './usage/TrendChart';
@@ -62,7 +62,6 @@ export default function Usage() {
         failed: formatNumber(summary?.failed ?? 0),
       }),
       icon: <ApiOutlined />,
-      color: CHART_PALETTE[0],
     },
     {
       key: 'prompt',
@@ -70,7 +69,6 @@ export default function Usage() {
       value: formatTokens(summary?.prompt_tokens ?? 0),
       tooltip: formatNumber(summary?.prompt_tokens ?? 0),
       icon: <ImportOutlined />,
-      color: CHART_PALETTE[1],
     },
     {
       key: 'completion',
@@ -78,7 +76,6 @@ export default function Usage() {
       value: formatTokens(summary?.completion_tokens ?? 0),
       tooltip: formatNumber(summary?.completion_tokens ?? 0),
       icon: <ExportOutlined />,
-      color: CHART_PALETTE[2],
     },
     {
       key: 'total',
@@ -86,7 +83,6 @@ export default function Usage() {
       value: formatTokens(summary?.total_tokens ?? 0),
       tooltip: formatNumber(summary?.total_tokens ?? 0),
       icon: <DatabaseOutlined />,
-      color: CHART_PALETTE[5],
     },
     {
       key: 'cached',
@@ -94,7 +90,6 @@ export default function Usage() {
       value: formatTokens(summary?.cached_tokens ?? 0),
       tooltip: formatNumber(summary?.cached_tokens ?? 0),
       icon: <ThunderboltOutlined />,
-      color: CHART_PALETTE[3],
     },
   ];
 
@@ -161,14 +156,7 @@ export default function Usage() {
         </FilterBar>
       </Card>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
-          gap: 16,
-          marginBottom: 16,
-        }}
-      >
+      <StatGroup>
         {stats.map((s) => (
           <StatCard
             key={s.key}
@@ -177,11 +165,10 @@ export default function Usage() {
             hint={s.hint}
             tooltip={s.tooltip}
             icon={s.icon}
-            color={s.color}
             loading={loading}
           />
         ))}
-      </div>
+      </StatGroup>
 
       <Card
         className="yz-card"

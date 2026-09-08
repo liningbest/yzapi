@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Input, Modal, Tag, Typography } from 'antd';
+import { Button, Input, Modal, Typography } from 'antd';
 import { CheckCircleOutlined, ExperimentOutlined, StopOutlined, WarningOutlined } from '@ant-design/icons';
 import { useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -26,10 +26,10 @@ export default function TestModal({ open, onClose }: Props) {
 
   const verdict = result
     ? !result.hit
-      ? { color: 'success', icon: <CheckCircleOutlined />, text: t('compliance:testModal.pass') }
+      ? { color: 'var(--yz-success)', icon: <CheckCircleOutlined />, text: t('compliance:testModal.pass') }
       : result.block
-        ? { color: 'error', icon: <StopOutlined />, text: t('compliance:testModal.block') }
-        : { color: 'processing', icon: <WarningOutlined />, text: t('compliance:testModal.audit') }
+        ? { color: 'var(--yz-danger)', icon: <StopOutlined />, text: t('compliance:testModal.block') }
+        : { color: 'var(--yz-warning)', icon: <WarningOutlined />, text: t('compliance:testModal.audit') }
     : null;
 
   return (
@@ -62,15 +62,16 @@ export default function TestModal({ open, onClose }: Props) {
               display: 'flex',
               alignItems: 'center',
               gap: 16,
-              padding: '14px 16px',
-              borderRadius: 10,
-              background: 'var(--yz-track)',
+              padding: '12px 14px',
+              borderRadius: 6,
+              border: '1px solid var(--yz-border)',
               marginBottom: 12,
             }}
           >
-            <Tag color={verdict.color} icon={verdict.icon} style={{ fontSize: 14, padding: '4px 12px', marginInlineEnd: 0 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600, color: verdict.color }}>
+              {verdict.icon}
               {verdict.text}
-            </Tag>
+            </span>
             <Typography.Text type="secondary">
               {t('compliance:testModal.hitCount', { count: result.hits?.length ?? 0 })}
             </Typography.Text>

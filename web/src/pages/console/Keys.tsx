@@ -157,7 +157,7 @@ export default function Keys() {
           <Popconfirm
             title={t('console:keys.deleteTitle', { name: row.name })}
             description={
-              <span style={{ color: '#ef4444', display: 'inline-block', maxWidth: 320 }}>
+              <span style={{ color: 'var(--yz-danger)', display: 'inline-block', maxWidth: 320 }}>
                 {t('console:keys.deleteWarn')}
               </span>
             }

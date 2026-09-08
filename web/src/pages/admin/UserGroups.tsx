@@ -11,7 +11,6 @@ import {
   Space,
   Switch,
   Table,
-  Tag,
   Tooltip,
   Typography,
 } from 'antd';
@@ -20,18 +19,10 @@ import { CrownOutlined, DeleteOutlined, EditOutlined, PlusOutlined, TeamOutlined
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { modelGroupsApi, userGroupsApi } from '@/api';
-import {
-  EmptyState,
-  FilterBar,
-  FormDrawer,
-  PageHeader,
-  ProportionBar,
-  TokenText,
-  TypeTag,
-} from '@/components';
+import { EmptyState, FilterBar, FormDrawer, NeutralTag, PageHeader, ProportionBar, TokenText, TypeTag } from '@/components';
 import { useTableQuery } from '@/hooks/useTableQuery';
 import type { UserGroup, UserGroupInput } from '@/types';
-import { CHART_PALETTE } from '@/utils/constants';
+import { PRIMARY, SEMANTIC } from '@/utils/constants';
 import { QUOTA_UNITS, formatNumber, formatTokens, joinQuota, splitQuota } from '@/utils/format';
 
 interface Filters {
@@ -75,11 +66,11 @@ function toFormValues(g: UserGroup): FormValues {
 }
 
 function quotaColor(used: number, quota: number): string {
-  if (!quota) return CHART_PALETTE[0];
+  if (!quota) return PRIMARY;
   const r = used / quota;
-  if (r >= 0.9) return CHART_PALETTE[4];
-  if (r >= 0.7) return CHART_PALETTE[2];
-  return CHART_PALETTE[0];
+  if (r >= 0.9) return SEMANTIC.danger;
+  if (r >= 0.7) return SEMANTIC.warning;
+  return PRIMARY;
 }
 
 export default function UserGroups() {
@@ -171,9 +162,10 @@ export default function UserGroups() {
         <Space size={8}>
           <Typography.Text strong>{v}</Typography.Text>
           {r.is_default ? (
-            <Tag color="gold" icon={<CrownOutlined />} style={{ marginInlineEnd: 0 }}>
+            <NeutralTag>
+              <CrownOutlined style={{ marginRight: 4, fontSize: 10 }} />
               {t('common:common.default')}
-            </Tag>
+            </NeutralTag>
           ) : null}
         </Space>
       ),
@@ -214,9 +206,7 @@ export default function UserGroups() {
         v && v.length ? (
           <Space size={[4, 4]} wrap>
             {v.map((g) => (
-              <Tag key={g.id} style={{ marginInlineEnd: 0 }}>
-                {g.name}
-              </Tag>
+              <NeutralTag key={g.id}>{g.name}</NeutralTag>
             ))}
           </Space>
         ) : (

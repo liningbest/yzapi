@@ -1,6 +1,6 @@
-import { Descriptions, Drawer, Space, Tag, Timeline, Typography } from 'antd';
+import { Descriptions, Drawer, Space, Timeline, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
-import { ProtocolTag, ProviderAvatar, ResultTag, SectionTitle, TypeTag } from '@/components';
+import { NeutralTag, ProtocolTag, ProviderAvatar, ResultTag, SectionTitle, StatusCodeTag, TypeTag } from '@/components';
 import { useIsMobile } from '@/hooks/useMediaQuery';
 import type { CallLog, LogAttempt } from '@/types';
 import { formatDateTime, formatMs, formatNumber } from '@/utils/format';
@@ -9,14 +9,6 @@ interface Props {
   open: boolean;
   log: CallLog | null;
   onClose: () => void;
-}
-
-export function statusColor(code: number | undefined | null): string {
-  if (!code) return 'default';
-  if (code < 300) return 'success';
-  if (code < 400) return 'processing';
-  if (code < 500) return 'warning';
-  return 'error';
 }
 
 function Secondary({ children }: { children: React.ReactNode }) {
@@ -95,7 +87,7 @@ export default function LogDetailDrawer({ open, log, onClose }: Props) {
               {log.stream ? t('common:common.yes') : t('common:common.no')}
             </Descriptions.Item>
             <Descriptions.Item label={t('logs:detail.routeLabel')}>
-              {log.route_label ? <Tag style={{ marginInlineEnd: 0 }}>{log.route_label}</Tag> : dash}
+              {log.route_label ? <NeutralTag>{log.route_label}</NeutralTag> : dash}
             </Descriptions.Item>
           </Descriptions>
 
@@ -111,9 +103,7 @@ export default function LogDetailDrawer({ open, log, onClose }: Props) {
               <ResultTag result={log.result} />
             </Descriptions.Item>
             <Descriptions.Item label={t('common:common.statusCode')}>
-              <Tag color={statusColor(log.status_code)} style={{ marginInlineEnd: 0 }}>
-                {log.status_code || dash}
-              </Tag>
+              <StatusCodeTag code={log.status_code} />
             </Descriptions.Item>
             <Descriptions.Item label={t('common:common.totalLatency')}>{formatMs(log.latency_ms)}</Descriptions.Item>
             <Descriptions.Item label={t('common:common.upstreamLatency')}>{formatMs(log.upstream_latency_ms)}</Descriptions.Item>
@@ -148,9 +138,7 @@ export default function LogDetailDrawer({ open, log, onClose }: Props) {
                     </Space>
                     <div style={{ marginTop: 4, fontSize: 12 }}>
                       <Space size={8} wrap>
-                        <Tag color={statusColor(a.status_code)} style={{ marginInlineEnd: 0 }}>
-                          {a.status_code || dash}
-                        </Tag>
+                        <StatusCodeTag code={a.status_code} />
                         <Secondary>{formatMs(a.latency_ms)}</Secondary>
                         {a.error ? (
                           <Typography.Text type="danger" style={{ fontSize: 12, wordBreak: 'break-all' }}>

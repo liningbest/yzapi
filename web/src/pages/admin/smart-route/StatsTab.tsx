@@ -13,7 +13,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { EChartsOption } from 'echarts';
 import { routeApi } from '@/api';
-import { Chart, EmptyState, FilterBar, RangeSelector, StatCard, TokenText, ProportionBar, useChartTheme } from '@/components';
+import { Chart, EmptyState, FilterBar, RangeSelector, StatCard, StatGroup, TokenText, ProportionBar, useChartTheme } from '@/components';
 import { useRange } from '@/hooks/useRange';
 import type { KeyCount, RangeKey } from '@/types';
 import { CHART_PALETTE } from '@/utils/constants';
@@ -54,7 +54,7 @@ export default function StatsTab() {
           barMaxWidth: 28,
           data: items.map((i, idx) => ({
             value: i.count,
-            itemStyle: { color: LABEL_COLORS[i.key] ?? CHART_PALETTE[idx % CHART_PALETTE.length], borderRadius: [0, 6, 6, 0] },
+            itemStyle: { color: LABEL_COLORS[i.key] ?? CHART_PALETTE[idx % CHART_PALETTE.length], borderRadius: [0, 2, 2, 0] },
           })),
           label: { show: true, position: 'right', color: theme.textColor, formatter: (p) => formatNumber(Number(p.value)) },
         },
@@ -75,7 +75,7 @@ export default function StatsTab() {
         barMaxWidth: 36,
         data: items.map((i, idx) => ({
           value: i.count,
-          itemStyle: { color: CHART_PALETTE[idx % CHART_PALETTE.length], borderRadius: [6, 6, 0, 0] },
+          itemStyle: { color: CHART_PALETTE[idx % CHART_PALETTE.length], borderRadius: [2, 2, 0, 0] },
         })),
         label: { show: true, position: 'top', color: theme.textColor, formatter: (p) => formatNumber(Number(p.value)) },
       },
@@ -126,71 +126,47 @@ export default function StatsTab() {
         <RangeSelector value={range} onChange={setRange} />
       </FilterBar>
 
-      <Row gutter={[16, 16]}>
-        <Col xs={12} md={8} xl={4}>
-          <StatCard
-            size="small"
-            title={t('route:stats.decisions')}
-            value={formatNumber(data?.decisions ?? 0)}
-            icon={<BranchesOutlined />}
-            color={CHART_PALETTE[0]}
-            loading={loading}
-          />
-        </Col>
-        <Col xs={12} md={8} xl={4}>
-          <StatCard
-            size="small"
-            title={t('route:stats.requests')}
-            value={formatNumber(data?.requests ?? 0)}
-            icon={<SendOutlined />}
-            color={CHART_PALETTE[1]}
-            loading={loading}
-          />
-        </Col>
-        <Col xs={12} md={8} xl={4}>
-          <StatCard
-            size="small"
-            title={t('route:stats.failed')}
-            value={formatNumber(data?.failed ?? 0)}
-            icon={<CloseCircleOutlined />}
-            color={CHART_PALETTE[4]}
-            loading={loading}
-          />
-        </Col>
-        <Col xs={12} md={8} xl={4}>
-          <StatCard
-            size="small"
-            title={t('route:stats.totalTokens')}
-            value={formatTokens(data?.total_tokens ?? 0)}
-            icon={<DatabaseOutlined />}
-            color={CHART_PALETTE[5]}
-            loading={loading}
-            tooltip={formatNumber(data?.total_tokens ?? 0)}
-          />
-        </Col>
-        <Col xs={12} md={8} xl={4}>
-          <StatCard
-            size="small"
-            title={t('route:stats.avgTokens')}
-            value={formatTokens(Math.round(data?.avg_tokens ?? 0))}
-            icon={<PercentageOutlined />}
-            color={CHART_PALETTE[7]}
-            loading={loading}
-          />
-        </Col>
-        <Col xs={12} md={8} xl={4}>
-          <StatCard
-            size="small"
-            title={t('route:stats.latency')}
-            value={formatMs(data?.latency_ms ?? 0)}
-            icon={<ClockCircleOutlined />}
-            color={CHART_PALETTE[2]}
-            loading={loading}
-          />
-        </Col>
-      </Row>
+      <StatGroup>
+        <StatCard
+          title={t('route:stats.decisions')}
+          value={formatNumber(data?.decisions ?? 0)}
+          icon={<BranchesOutlined />}
+          loading={loading}
+        />
+        <StatCard
+          title={t('route:stats.requests')}
+          value={formatNumber(data?.requests ?? 0)}
+          icon={<SendOutlined />}
+          loading={loading}
+        />
+        <StatCard
+          title={t('route:stats.failed')}
+          value={formatNumber(data?.failed ?? 0)}
+          icon={<CloseCircleOutlined />}
+          loading={loading}
+        />
+        <StatCard
+          title={t('route:stats.totalTokens')}
+          value={formatTokens(data?.total_tokens ?? 0)}
+          icon={<DatabaseOutlined />}
+          loading={loading}
+          tooltip={formatNumber(data?.total_tokens ?? 0)}
+        />
+        <StatCard
+          title={t('route:stats.avgTokens')}
+          value={formatTokens(Math.round(data?.avg_tokens ?? 0))}
+          icon={<PercentageOutlined />}
+          loading={loading}
+        />
+        <StatCard
+          title={t('route:stats.latency')}
+          value={formatMs(data?.latency_ms ?? 0)}
+          icon={<ClockCircleOutlined />}
+          loading={loading}
+        />
+      </StatGroup>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+      <Row gutter={[16, 16]}>
         <Col xs={24} xl={12}>
           <Card className="yz-card" title={t('route:stats.byLabel')} styles={{ body: cardBody }}>
             {data?.by_label?.length ? <Chart option={byLabelOption} height={260} loading={loading} /> : empty}

@@ -11,7 +11,6 @@ import {
   Space,
   Switch,
   Table,
-  Tag,
   Tooltip,
   Typography,
 } from 'antd';
@@ -27,16 +26,7 @@ import {
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { accountsApi, providersApi } from '@/api';
-import {
-  EmptyState,
-  FilterBar,
-  HealthTag,
-  PageHeader,
-  ProtocolTag,
-  ProviderAvatar,
-  TimeCell,
-  TypeTag,
-} from '@/components';
+import { EmptyState, FilterBar, HealthTag, NeutralTag, PageHeader, ProtocolTag, ProviderAvatar, TimeCell, TypeTag } from '@/components';
 import { useTableQuery } from '@/hooks/useTableQuery';
 import type { Account, AccountListParams, Health, ModelType, Protocol } from '@/types';
 import { MODEL_TYPES, PROTOCOLS, PROTOCOL_LABELS } from '@/utils/constants';
@@ -199,7 +189,7 @@ export default function Accounts() {
                     </div>
                   }
                 >
-                  <Tag style={{ cursor: 'pointer', marginInlineEnd: 0 }}>{t('accounts:modelsCount', { count: n })}</Tag>
+                  <NeutralTag style={{ cursor: 'pointer' }}>{t('accounts:modelsCount', { count: n })}</NeutralTag>
                 </Popover>
               );
             },

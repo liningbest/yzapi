@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Button, Card, Descriptions, Drawer, Input, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { Button, Card, Descriptions, Drawer, Input, Select, Space, Table, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { EyeOutlined } from '@ant-design/icons';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { userApi } from '@/api';
-import { EmptyState, FilterBar, PageHeader, RangeSelector, ResultTag, SectionTitle, TimeCell, TypeTag } from '@/components';
+import { EmptyState, FilterBar, NeutralTag, PageHeader, RangeSelector, ResultTag, SectionTitle, TimeCell, TypeTag } from '@/components';
 import { useIsMobile } from '@/hooks/useMediaQuery';
 import { useRange } from '@/hooks/useRange';
 import { useTableQuery } from '@/hooks/useTableQuery';
@@ -22,7 +22,7 @@ interface Filters {
 }
 
 function TokenCell({ log, unknownLabel, inLabel, outLabel }: { log: CallLog; unknownLabel: string; inLabel: string; outLabel: string }) {
-  if (log.tokens_known === false) return <Tag style={{ marginInlineEnd: 0 }}>{unknownLabel}</Tag>;
+  if (log.tokens_known === false) return <NeutralTag>{unknownLabel}</NeutralTag>;
   return (
     <div style={{ lineHeight: 1.3, fontVariantNumeric: 'tabular-nums' }}>
       <Typography.Text strong>{formatNumber(log.total_tokens)}</Typography.Text>
@@ -248,7 +248,7 @@ export default function Logs() {
               </Descriptions.Item>
               <Descriptions.Item label={t('console:logs.fields.tokens')}>
                 {selected.tokens_known === false ? (
-                  <Tag style={{ marginInlineEnd: 0 }}>{unknownLabel}</Tag>
+                  <NeutralTag>{unknownLabel}</NeutralTag>
                 ) : (
                   <Space split={<span style={{ color: 'var(--yz-text-tertiary)' }}>/</span>} wrap>
                     <span>
@@ -280,7 +280,7 @@ export default function Logs() {
             {selected.error ? (
               <>
                 <SectionTitle>{t('console:logs.fields.error')}</SectionTitle>
-                <pre className="yz-code-block" style={{ margin: 0, color: '#ef4444' }}>
+                <pre className="yz-code-block" style={{ margin: 0, color: 'var(--yz-danger)' }}>
                   {selected.error}
                 </pre>
               </>

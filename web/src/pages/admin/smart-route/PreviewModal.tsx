@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Button, Collapse, Descriptions, Input, Modal, Space, Tag, Typography } from 'antd';
+import { Button, Collapse, Descriptions, Input, Modal, Space, Typography } from 'antd';
 import { ExperimentOutlined } from '@ant-design/icons';
 import { useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { routeApi } from '@/api';
-import { EmptyState, LabelTag, SectionTitle } from '@/components';
+import { EmptyState, LabelTag, NeutralTag, SectionTitle } from '@/components';
 import type { RoutePreview } from '@/types';
 import { formatMs, formatPercent } from '@/utils/format';
 import SourceTag from './SourceTag';
@@ -66,15 +66,13 @@ export default function PreviewModal({ open, onClose }: Props) {
               alignItems: 'center',
               gap: 16,
               flexWrap: 'wrap',
-              padding: '14px 16px',
-              borderRadius: 10,
-              background: 'var(--yz-track)',
+              padding: '12px 14px',
+              borderRadius: 6,
+              border: '1px solid var(--yz-border)',
               marginBottom: 12,
             }}
           >
-            <span style={{ fontSize: 22, lineHeight: 1 }}>
-              <LabelTag label={result.label} />
-            </span>
+            <LabelTag label={result.label} />
             <SourceTag source={result.source} />
             <Typography.Text>
               {t('common:common.confidence')}{' '}
@@ -94,9 +92,9 @@ export default function PreviewModal({ open, onClose }: Props) {
               {result.models?.length ? (
                 <Space size={[4, 4]} wrap>
                   {result.models.map((m) => (
-                    <Tag key={m} bordered={false} className="yz-mono" style={{ marginInlineEnd: 0 }}>
+                    <NeutralTag key={m} mono>
                       {m}
-                    </Tag>
+                    </NeutralTag>
                   ))}
                 </Space>
               ) : (

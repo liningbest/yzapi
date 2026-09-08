@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { Button, Descriptions, Drawer, Input, Select, Table, Tag, Tooltip, Typography } from 'antd';
+import { Button, Descriptions, Drawer, Input, Select, Table, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { EyeOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { complianceApi } from '@/api';
-import { ActionTag, EmptyState, FilterBar, ProtocolTag, RangeSelector, RiskTag, SectionTitle, TimeCell } from '@/components';
+import { ActionTag, EmptyState, FilterBar, ProtocolTag, RangeSelector, RiskTag, SectionTitle, StatusCodeTag, TimeCell } from '@/components';
 import { useRange } from '@/hooks/useRange';
 import { useTableQuery } from '@/hooks/useTableQuery';
 import type { AuditLog, AuditLogListParams, PolicyAction, PolicyGroup, RiskLevel } from '@/types';
@@ -24,12 +24,7 @@ interface Props {
 
 function StatusCode({ code }: { code: number }) {
   if (!code) return <Typography.Text type="secondary">-</Typography.Text>;
-  const color = code >= 500 ? 'error' : code >= 400 ? 'warning' : 'success';
-  return (
-    <Tag color={color} bordered={false} className="yz-mono" style={{ marginInlineEnd: 0 }}>
-      {code}
-    </Tag>
-  );
+  return <StatusCodeTag code={code} />;
 }
 
 function AuditLogDrawer({ log, onClose }: { log: AuditLog | null; onClose: () => void }) {

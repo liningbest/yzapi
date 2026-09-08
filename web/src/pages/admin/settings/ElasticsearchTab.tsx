@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { Alert, Button, Col, Descriptions, Form, Input, InputNumber, Radio, Row, Switch, Tag } from 'antd';
+import { Alert, Button, Col, Descriptions, Form, Input, InputNumber, Radio, Row, Switch } from 'antd';
 import { ExperimentOutlined } from '@ant-design/icons';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { settingsApi } from '@/api';
 import type { NormalizedError } from '@/api';
-import { SectionTitle, TimeCell } from '@/components';
+import { SectionTitle, StatusDot, TimeCell } from '@/components';
 import type { ElasticsearchSettings, EsTestResult } from '@/types';
 import { formatBytes, formatNumber } from '@/utils/format';
 import { SaveBar, useSaveSettings, useSyncForm } from './shared';
@@ -178,11 +178,9 @@ export default function ElasticsearchTab({ data }: Props) {
         <Descriptions.Item label={t('settings:es.status.configured')}>
           {st ? (
             st.configured ? (
-              <Tag color="success" style={{ marginInlineEnd: 0 }}>
-                {t('settings:es.status.configuredYes')}
-              </Tag>
+              <StatusDot tone="success">{t('settings:es.status.configuredYes')}</StatusDot>
             ) : (
-              <Tag style={{ marginInlineEnd: 0 }}>{t('settings:es.status.notConfigured')}</Tag>
+              <StatusDot tone="neutral">{t('settings:es.status.notConfigured')}</StatusDot>
             )
           ) : (
             '-'
@@ -200,13 +198,11 @@ export default function ElasticsearchTab({ data }: Props) {
         </Descriptions.Item>
         <Descriptions.Item label={t('settings:es.status.failingSince')}>
           {st?.failing_since ? (
-            <span style={{ color: '#ef4444' }}>
+            <span style={{ color: 'var(--yz-danger)' }}>
               <TimeCell value={st.failing_since} />
             </span>
           ) : (
-            <Tag color="success" style={{ marginInlineEnd: 0 }}>
-              {t('settings:es.status.healthy')}
-            </Tag>
+            <StatusDot tone="success">{t('settings:es.status.healthy')}</StatusDot>
           )}
         </Descriptions.Item>
       </Descriptions>

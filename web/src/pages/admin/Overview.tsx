@@ -31,12 +31,13 @@ import {
   RangeSelector,
   SectionTitle,
   StatCard,
+  StatGroup,
   TokenText,
   useChartTheme,
 } from '@/components';
 import { useRange } from '@/hooks/useRange';
 import type { LiveAccount, LiveGroup } from '@/types';
-import { CHART_PALETTE } from '@/utils/constants';
+import { CHART_PALETTE, PRIMARY, SEMANTIC } from '@/utils/constants';
 import { dayjs, formatNumber, formatPercent, formatTokens } from '@/utils/format';
 
 const LIVE_INTERVAL = 5000;
@@ -53,9 +54,9 @@ function ratioPercent(current: number, limit: number): number {
 }
 
 function progressColor(percent: number): string {
-  if (percent >= 90) return CHART_PALETTE[4];
-  if (percent >= 70) return CHART_PALETTE[2];
-  return CHART_PALETTE[0];
+  if (percent >= 90) return SEMANTIC.danger;
+  if (percent >= 70) return SEMANTIC.warning;
+  return PRIMARY;
 }
 
 export default function Overview() {
@@ -115,7 +116,7 @@ export default function Overview() {
       width: 160,
       render: (util: number) => {
         const pct = utilPercent(util);
-        return <Progress percent={pct} size="small" strokeColor={progressColor(pct)} />;
+        return <Progress percent={pct} size={['100%', 4]} strokeColor={progressColor(pct)} />;
       },
     },
     {
@@ -148,7 +149,7 @@ export default function Overview() {
       width: 160,
       render: (util: number) => {
         const pct = utilPercent(util);
-        return <Progress percent={pct} size="small" strokeColor={progressColor(pct)} />;
+        return <Progress percent={pct} size={['100%', 4]} strokeColor={progressColor(pct)} />;
       },
     },
     {
@@ -174,19 +175,7 @@ export default function Overview() {
   const chartOption = useMemo<EChartsOption>(() => {
     const fmt = range === '24h' ? 'MM-DD HH:mm' : 'MM-DD';
     const [c0, c1, c2] = [CHART_PALETTE[0], CHART_PALETTE[1], CHART_PALETTE[2]];
-    const area = (color: string) => ({
-      color: {
-        type: 'linear' as const,
-        x: 0,
-        y: 0,
-        x2: 0,
-        y2: 1,
-        colorStops: [
-          { offset: 0, color: `${color}55` },
-          { offset: 1, color: `${color}08` },
-        ],
-      },
-    });
+    const area = (color: string) => ({ color, opacity: 0.08 });
     return {
       tooltip: { trigger: 'axis' },
       legend: { data: [t('common:common.promptTokens'), t('common:common.completionTokens'), t('common:common.requests')] },
@@ -216,7 +205,7 @@ export default function Overview() {
           name: t('common:common.promptTokens'),
           type: 'line',
           stack: 'tokens',
-          smooth: true,
+          smooth: false,
           showSymbol: false,
           itemStyle: { color: c0 },
           lineStyle: { width: 2 },
@@ -227,7 +216,7 @@ export default function Overview() {
           name: t('common:common.completionTokens'),
           type: 'line',
           stack: 'tokens',
-          smooth: true,
+          smooth: false,
           showSymbol: false,
           itemStyle: { color: c1 },
           lineStyle: { width: 2 },
@@ -238,7 +227,7 @@ export default function Overview() {
           name: t('common:common.requests'),
           type: 'line',
           yAxisIndex: 1,
-          smooth: true,
+          smooth: false,
           showSymbol: false,
           itemStyle: { color: c2 },
           lineStyle: { width: 2, type: 'dashed' },
@@ -275,70 +264,58 @@ export default function Overview() {
         }
       />
 
-      <Row gutter={[16, 16]}>
-        <Col xs={24} sm={12} xl={6}>
-          <StatCard
-            title={t('overview:live.activeUsers')}
-            value={formatNumber(liveData?.active_users ?? 0)}
-            icon={<UserOutlined />}
-            color={CHART_PALETTE[0]}
-            loading={live.isLoading}
-            hint={t('overview:live.activeUsersHint')}
+      <StatGroup>
+        <StatCard
+          title={t('overview:live.activeUsers')}
+          value={formatNumber(liveData?.active_users ?? 0)}
+          icon={<UserOutlined />}
+          loading={live.isLoading}
+          hint={t('overview:live.activeUsersHint')}
+        />
+        <StatCard
+          title={t('overview:live.streams')}
+          value={formatNumber(liveData?.streams ?? 0)}
+          icon={<ThunderboltOutlined />}
+          loading={live.isLoading}
+          hint={t('overview:live.streamsHint')}
+        />
+        <StatCard
+          title={t('overview:live.inflight')}
+          value={formatNumber(liveData?.inflight ?? 0)}
+          suffix={`/ ${liveData?.limit ? formatNumber(liveData.limit) : unlimited}`}
+          icon={<ClusterOutlined />}
+          loading={live.isLoading}
+          footer={
+            <Progress
+            percent={inflightPct}
+            size={['100%', 4]}
+            showInfo={Boolean(liveData?.limit)}
+            strokeColor={progressColor(inflightPct)}
           />
-        </Col>
-        <Col xs={24} sm={12} xl={6}>
-          <StatCard
-            title={t('overview:live.streams')}
-            value={formatNumber(liveData?.streams ?? 0)}
-            icon={<ThunderboltOutlined />}
-            color={CHART_PALETTE[1]}
-            loading={live.isLoading}
-            hint={t('overview:live.streamsHint')}
+          }
+        />
+        <StatCard
+          title={t('overview:live.waiting')}
+          value={formatNumber(liveData?.waiting ?? 0)}
+          suffix={`/ ${liveData?.queue_size ? formatNumber(liveData.queue_size) : unlimited}`}
+          icon={<HourglassOutlined />}
+          loading={live.isLoading}
+          footer={
+            <Progress
+            percent={waitingPct}
+            size={['100%', 4]}
+            showInfo={Boolean(liveData?.queue_size)}
+            strokeColor={progressColor(waitingPct)}
           />
-        </Col>
-        <Col xs={24} sm={12} xl={6}>
-          <StatCard
-            title={t('overview:live.inflight')}
-            value={formatNumber(liveData?.inflight ?? 0)}
-            suffix={`/ ${liveData?.limit ? formatNumber(liveData.limit) : unlimited}`}
-            icon={<ClusterOutlined />}
-            color={CHART_PALETTE[3]}
-            loading={live.isLoading}
-            footer={
-              <Progress
-                percent={inflightPct}
-                size="small"
-                showInfo={Boolean(liveData?.limit)}
-                strokeColor={progressColor(inflightPct)}
-              />
-            }
-          />
-        </Col>
-        <Col xs={24} sm={12} xl={6}>
-          <StatCard
-            title={t('overview:live.waiting')}
-            value={formatNumber(liveData?.waiting ?? 0)}
-            suffix={`/ ${liveData?.queue_size ? formatNumber(liveData.queue_size) : unlimited}`}
-            icon={<HourglassOutlined />}
-            color={CHART_PALETTE[2]}
-            loading={live.isLoading}
-            footer={
-              <Progress
-                percent={waitingPct}
-                size="small"
-                showInfo={Boolean(liveData?.queue_size)}
-                strokeColor={progressColor(waitingPct)}
-              />
-            }
-          />
-        </Col>
-      </Row>
+          }
+        />
+      </StatGroup>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+      <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
-          <Card className="yz-card" styles={{ body: { padding: 20 } }}>
+          <Card className="yz-card" styles={{ body: { padding: 16 } }}>
             <SectionTitle
-              extra={
+            extra={
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   {t('common:common.totalItems', { total: liveData?.accounts?.length ?? 0 })}
                 </Typography.Text>
@@ -363,9 +340,9 @@ export default function Overview() {
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card className="yz-card" styles={{ body: { padding: 20 } }}>
+          <Card className="yz-card" styles={{ body: { padding: 16 } }}>
             <SectionTitle
-              extra={
+            extra={
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   {t('common:common.totalItems', { total: liveData?.groups?.length ?? 0 })}
                 </Typography.Text>
@@ -391,104 +368,82 @@ export default function Overview() {
         </Col>
       </Row>
 
-      <Card className="yz-card" style={{ marginTop: 16 }} styles={{ body: { padding: 20 } }}>
+      <Card className="yz-card" style={{ marginTop: 16 }} styles={{ body: { padding: 16 } }}>
         <SectionTitle extra={<RangeSelector value={range} onChange={setRange} size="small" />}>
           {t('overview:usage.title')}
         </SectionTitle>
 
-        <div className="yz-stat-grid yz-stat-grid-5">
-            <StatCard
-              size="small"
-              title={t('common:common.totalTokens')}
-              value={<TokenText value={usageData?.tokens.total} />}
-              icon={<DatabaseOutlined />}
-              color={CHART_PALETTE[0]}
-              loading={usage.isLoading}
-            />
-            <StatCard
-              size="small"
-              title={t('common:common.promptTokens')}
-              value={<TokenText value={usageData?.tokens.prompt} />}
-              icon={<SendOutlined />}
-              color={CHART_PALETTE[1]}
-              loading={usage.isLoading}
-            />
-            <StatCard
-              size="small"
-              title={t('common:common.completionTokens')}
-              value={<TokenText value={usageData?.tokens.completion} />}
-              icon={<ApiOutlined />}
-              color={CHART_PALETTE[5]}
-              loading={usage.isLoading}
-            />
-            <StatCard
-              size="small"
-              title={t('common:common.cachedTokens')}
-              value={<TokenText value={usageData?.tokens.cached} />}
-              icon={<DatabaseOutlined />}
-              color={CHART_PALETTE[3]}
-              loading={usage.isLoading}
-            />
-            <StatCard
-              size="small"
-              title={t('overview:usage.cacheRate')}
-              value={formatPercent(usageData?.tokens.cache_rate ?? 0)}
-              icon={<PercentageOutlined />}
-              color={CHART_PALETTE[2]}
-              loading={usage.isLoading}
-            />
-        </div>
+        <StatGroup>
+          <StatCard
+            title={t('common:common.totalTokens')}
+            value={<TokenText value={usageData?.tokens.total} />}
+            icon={<DatabaseOutlined />}
+            loading={usage.isLoading}
+          />
+          <StatCard
+            title={t('common:common.promptTokens')}
+            value={<TokenText value={usageData?.tokens.prompt} />}
+            icon={<SendOutlined />}
+            loading={usage.isLoading}
+          />
+          <StatCard
+            title={t('common:common.completionTokens')}
+            value={<TokenText value={usageData?.tokens.completion} />}
+            icon={<ApiOutlined />}
+            loading={usage.isLoading}
+          />
+          <StatCard
+            title={t('common:common.cachedTokens')}
+            value={<TokenText value={usageData?.tokens.cached} />}
+            icon={<DatabaseOutlined />}
+            loading={usage.isLoading}
+          />
+          <StatCard
+            title={t('overview:usage.cacheRate')}
+            value={formatPercent(usageData?.tokens.cache_rate ?? 0)}
+            icon={<PercentageOutlined />}
+            loading={usage.isLoading}
+          />
+        </StatGroup>
 
-        <div className="yz-stat-grid yz-stat-grid-6">
-            <StatCard
-              size="small"
-              title={t('overview:usage.requests')}
-              value={<TokenText value={usageData?.requests.total} />}
-              icon={<ApiOutlined />}
-              color={CHART_PALETTE[0]}
-              loading={usage.isLoading}
-            />
-            <StatCard
-              size="small"
-              title={t('overview:usage.success')}
-              value={<TokenText value={usageData?.requests.success} />}
-              icon={<CheckCircleOutlined />}
-              color={CHART_PALETTE[3]}
-              loading={usage.isLoading}
-            />
-            <StatCard
-              size="small"
-              title={t('overview:usage.failed')}
-              value={<TokenText value={usageData?.requests.failed} />}
-              icon={<CloseCircleOutlined />}
-              color={CHART_PALETTE[4]}
-              loading={usage.isLoading}
-            />
-            <StatCard
-              size="small"
-              title={t('overview:usage.failRate')}
-              value={formatPercent(usageData?.requests.fail_rate ?? 0)}
-              icon={<PercentageOutlined />}
-              color={CHART_PALETTE[2]}
-              loading={usage.isLoading}
-            />
-            <StatCard
-              size="small"
-              title={t('overview:usage.activeUsers')}
-              value={formatNumber(usageData?.active_users ?? 0)}
-              icon={<TeamOutlined />}
-              color={CHART_PALETTE[1]}
-              loading={usage.isLoading}
-            />
-            <StatCard
-              size="small"
-              title={t('overview:usage.activeKeys')}
-              value={formatNumber(usageData?.active_keys ?? 0)}
-              icon={<KeyOutlined />}
-              color={CHART_PALETTE[5]}
-              loading={usage.isLoading}
-            />
-        </div>
+        <StatGroup>
+          <StatCard
+            title={t('overview:usage.requests')}
+            value={<TokenText value={usageData?.requests.total} />}
+            icon={<ApiOutlined />}
+            loading={usage.isLoading}
+          />
+          <StatCard
+            title={t('overview:usage.success')}
+            value={<TokenText value={usageData?.requests.success} />}
+            icon={<CheckCircleOutlined />}
+            loading={usage.isLoading}
+          />
+          <StatCard
+            title={t('overview:usage.failed')}
+            value={<TokenText value={usageData?.requests.failed} />}
+            icon={<CloseCircleOutlined />}
+            loading={usage.isLoading}
+          />
+          <StatCard
+            title={t('overview:usage.failRate')}
+            value={formatPercent(usageData?.requests.fail_rate ?? 0)}
+            icon={<PercentageOutlined />}
+            loading={usage.isLoading}
+          />
+          <StatCard
+            title={t('overview:usage.activeUsers')}
+            value={formatNumber(usageData?.active_users ?? 0)}
+            icon={<TeamOutlined />}
+            loading={usage.isLoading}
+          />
+          <StatCard
+            title={t('overview:usage.activeKeys')}
+            value={formatNumber(usageData?.active_keys ?? 0)}
+            icon={<KeyOutlined />}
+            loading={usage.isLoading}
+          />
+        </StatGroup>
 
         <SectionTitle style={{ marginTop: 24 }}>{t('overview:usage.trend')}</SectionTitle>
         {!usage.isLoading && trend.length === 0 ? (

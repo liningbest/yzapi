@@ -8,12 +8,11 @@ interface Props {
 }
 
 /**
- * Letter avatar with brand-ish color per provider key.
+ * Flat, 1px-bordered square letter avatar with a muted brand color per provider key.
  * Special-cases a few providers with a tiny inline SVG glyph.
  */
-export default function ProviderAvatar({ provider, size = 28, radius, style }: Props) {
+export default function ProviderAvatar({ provider, size = 20, radius = 4, style }: Props) {
   const s = providerStyle(provider);
-  const r = radius ?? Math.round(size * 0.3);
   const font = Math.round(size * 0.5);
   return (
     <span
@@ -24,15 +23,15 @@ export default function ProviderAvatar({ provider, size = 28, radius, style }: P
         justifyContent: 'center',
         width: size,
         height: size,
-        borderRadius: r,
+        borderRadius: radius,
         background: s.bg,
         color: s.fg,
         fontSize: font,
-        fontWeight: 700,
+        fontWeight: 600,
         lineHeight: 1,
         flexShrink: 0,
-        letterSpacing: -0.5,
-        boxShadow: '0 1px 2px rgba(0,0,0,0.12)',
+        letterSpacing: -0.3,
+        boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.08)',
         ...style,
       }}
     >
@@ -42,7 +41,7 @@ export default function ProviderAvatar({ provider, size = 28, radius, style }: P
 }
 
 function glyph(key: string | null | undefined, size: number) {
-  const sz = Math.round(size * 0.58);
+  const sz = Math.round(size * 0.6);
   switch (key) {
     case 'openai':
       return (

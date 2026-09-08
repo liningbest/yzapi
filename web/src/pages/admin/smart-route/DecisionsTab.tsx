@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { Button, Input, Select, Tag, Tooltip, Typography, Table } from 'antd';
+import { Button, Input, Select, Tooltip, Typography, Table } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { EyeOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { routeApi } from '@/api';
-import { EmptyState, FilterBar, LabelTag, RangeSelector, TimeCell, TokenText } from '@/components';
+import { EmptyState, FilterBar, LabelTag, NeutralTag, RangeSelector, TimeCell, TokenText } from '@/components';
 import { useRange } from '@/hooks/useRange';
 import { useTableQuery } from '@/hooks/useTableQuery';
 import type { RouteDecision, RouteDecisionListParams, RouteLabel } from '@/types';
@@ -110,9 +110,7 @@ export default function DecisionsTab() {
       align: 'center',
       render: (failed: boolean) =>
         failed ? (
-          <Tag color="error" style={{ marginInlineEnd: 0 }}>
-            {t('route:decisions.failedTag')}
-          </Tag>
+          <NeutralTag tone="danger">{t('route:decisions.failedTag')}</NeutralTag>
         ) : (
           <Typography.Text type="secondary">-</Typography.Text>
         ),

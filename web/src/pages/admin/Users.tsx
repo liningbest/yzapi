@@ -3,7 +3,6 @@ import {
   Alert,
   App,
   Avatar,
-  Badge,
   Button,
   Card,
   Form,
@@ -32,7 +31,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { userGroupsApi, usersApi } from '@/api';
 import type { NormalizedError } from '@/api';
-import { EmptyState, FilterBar, FormDrawer, PageHeader, RoleTag, TimeCell } from '@/components';
+import { EmptyState, FilterBar, FormDrawer, PageHeader, RoleTag, StatusDot, TimeCell } from '@/components';
 import { useTableQuery } from '@/hooks/useTableQuery';
 import { useAuthStore } from '@/stores/auth';
 import type { AdminUser, Role, UserCreateInput, UserUpdateInput } from '@/types';
@@ -189,7 +188,7 @@ export default function Users() {
       dataIndex: 'username',
       render: (v: string, r) => (
         <Space size={10}>
-          <Avatar size={28} style={{ background: avatarColor(v), fontWeight: 600, fontSize: 13 }}>
+          <Avatar size={24} shape="square" style={{ background: avatarColor(v), fontWeight: 600, fontSize: 12, borderRadius: 4 }}>
             {v.slice(0, 1).toUpperCase()}
           </Avatar>
           <span>
@@ -239,7 +238,9 @@ export default function Users() {
       render: (v: boolean, r) =>
         v ? (
           <Space size={6}>
-            <Badge status="error" text={<span style={{ color: '#ef4444' }}>{t('common:common.locked')}</span>} />
+            <StatusDot tone="danger" style={{ color: 'var(--yz-danger)' }}>
+              {t('common:common.locked')}
+            </StatusDot>
             <Button
               size="small"
               type="link"

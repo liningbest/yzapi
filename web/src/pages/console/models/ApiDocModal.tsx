@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
-import { Alert, App, Button, Modal, Space, Table, Tag, Typography } from 'antd';
+import { Alert, App, Button, Modal, Space, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { CopyOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import { SectionTitle } from '@/components';
+import { NeutralTag, SectionTitle } from '@/components';
 
 interface Props {
   open: boolean;
@@ -29,8 +29,6 @@ const ENDPOINTS: Endpoint[] = [
   { key: 'embeddings', method: 'POST', path: '/v1/embeddings' },
   { key: 'images', method: 'POST', path: '/v1/images/generations' },
 ];
-
-const METHOD_COLORS: Record<Method, string> = { GET: 'green', POST: 'blue' };
 
 /** Strip a trailing `/v1` (and slash) so endpoint paths can be appended. */
 export function apiRoot(baseUrl: string): string {
@@ -65,9 +63,9 @@ export default function ApiDocModal({ open, onClose, baseUrl, exampleModel }: Pr
       dataIndex: 'method',
       width: 80,
       render: (m: Method) => (
-        <Tag color={METHOD_COLORS[m]} style={{ marginInlineEnd: 0, fontWeight: 600 }}>
+        <NeutralTag mono style={{ fontWeight: 600 }}>
           {m}
-        </Tag>
+        </NeutralTag>
       ),
     },
     {

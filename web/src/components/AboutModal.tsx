@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { authApi, systemApi } from '@/api';
 import { useAuthStore, isAdmin } from '@/stores/auth';
+import { useThemeStore } from '@/stores/theme';
 import { formatDateTime, formatDuration } from '@/utils/format';
 import BrandMark from './BrandMark';
 
@@ -15,14 +16,17 @@ export default function AboutModal({ open, onClose }: Props) {
   const { t } = useTranslation();
   const user = useAuthStore((s) => s.user);
   const admin = isAdmin(user);
+  const dark = useThemeStore((s) => s.mode) === 'dark';
   const info = useQuery({ queryKey: ['system', 'info'], queryFn: systemApi.info, enabled: open && admin });
   const pub = useQuery({ queryKey: ['public', 'info'], queryFn: authApi.publicInfo, enabled: open });
 
   return (
     <Modal open={open} onCancel={onClose} footer={null} title={null} width={480}>
       <div style={{ textAlign: 'center', padding: '12px 0 20px' }}>
-        <BrandMark size={56} />
-        <Typography.Title level={4} style={{ margin: '12px 0 4px' }}>
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <BrandMark size={40} color={dark ? '#fafafa' : '#18181b'} stroke={dark ? '#18181b' : '#ffffff'} />
+        </div>
+        <Typography.Title level={5} style={{ margin: '12px 0 4px' }}>
           {pub.data?.site_name || t('app.name')}
         </Typography.Title>
         <Typography.Text type="secondary">{t('app.tagline')}</Typography.Text>

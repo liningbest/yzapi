@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
-import { Card, Table, Tag, Tooltip, Typography } from 'antd';
+import { Card, Table, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useTranslation } from 'react-i18next';
-import { EmptyState, ProportionBar, ProviderAvatar, TokenText } from '@/components';
+import { EmptyState, NeutralTag, ProportionBar, ProviderAvatar, TokenText } from '@/components';
 import type { UsageDim } from '@/types';
 import { CHART_PALETTE } from '@/utils/constants';
 import { formatNumber } from '@/utils/format';
@@ -45,9 +45,7 @@ export default function DimTable({ title, icon, items, loading, provider, color 
               {label}
             </Typography.Text>
             {deleted ? (
-              <Tag style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: '18px', padding: '0 5px' }}>
-                {t('common:common.deleted')}
-              </Tag>
+              <NeutralTag>{t('common:common.deleted')}</NeutralTag>
             ) : null}
           </span>
         );
@@ -92,7 +90,7 @@ export default function DimTable({ title, icon, items, loading, provider, color 
       size="small"
       title={
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-          {icon ? <span style={{ color }}>{icon}</span> : null}
+          {icon ? <span style={{ color: 'var(--yz-text-tertiary)' }}>{icon}</span> : null}
           <span>{title}</span>
         </span>
       }

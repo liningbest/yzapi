@@ -31,7 +31,7 @@ export default function TrendChart({ trend, range, loading }: Props) {
         }
       }
     }
-    const lineColor = theme.dark ? '#e2e8f0' : '#0f172a';
+    const lineColor = theme.dark ? '#fafafa' : '#18181b';
     const requestsLabel = t('common:common.requests');
 
     return {
@@ -65,9 +65,9 @@ export default function TrendChart({ trend, range, loading }: Props) {
           name: requestsLabel,
           type: 'line' as const,
           yAxisIndex: 1,
-          smooth: true,
+          smooth: false,
           symbol: 'circle',
-          symbolSize: 6,
+          symbolSize: 4,
           z: 10,
           lineStyle: { width: 2, color: lineColor },
           itemStyle: { color: lineColor },

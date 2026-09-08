@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Checkbox, Input, Modal, Space, Tag, Typography } from 'antd';
+import { Button, Checkbox, Input, Modal, Space, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
-import { EmptyState } from '@/components';
+import { EmptyState, NeutralTag } from '@/components';
 
 interface Props {
   open: boolean;
@@ -84,7 +84,7 @@ export default function DiscoverModal({ open, models, mapped, onCancel, onConfir
             maxHeight: 380,
             overflow: 'auto',
             border: '1px solid var(--yz-border)',
-            borderRadius: 10,
+            borderRadius: 6,
             padding: '4px 0',
           }}
         >
@@ -107,9 +107,7 @@ export default function DiscoverModal({ open, models, mapped, onCancel, onConfir
                   {name}
                 </span>
                 {locked ? (
-                  <Tag bordered={false} style={{ marginInlineEnd: 0 }}>
-                    {t('accounts:discover.mapped')}
-                  </Tag>
+                  <NeutralTag>{t('accounts:discover.mapped')}</NeutralTag>
                 ) : null}
               </label>
             );
