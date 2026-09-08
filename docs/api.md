@@ -97,7 +97,7 @@
 - 对象：`{id,request_id,user_id,username,group_id,group_name,api_key_id,api_key_name,account_id,account_name,provider,request_model,upstream_model,model_group,api_type,client_protocol,upstream_protocol,stream,prompt_tokens,completion_tokens,total_tokens,cached_tokens,tokens_known,result:"success"|"client_error"|"upstream_error"|"blocked"|"rate_limited",status_code,latency_ms,upstream_latency_ms,first_byte_ms,error,attempts:[{account_id,account_name,provider,protocol,model,status_code,latency_ms,error}],route_label,client_ip,created_at}`
 - `GET /:id`
 - `GET /api/admin/logs/filters` → `{users:[{id,username}], accounts:[{id,name,provider}], providers:[...], models:[...]}`
-- 日志对象另含 `usage_status`（`confirmed` 上游返回了完整 usage；`partial` 流中断、只拿到部分 usage；`unknown` 上游处理了请求但未返回 usage；`none` 请求未被任何上游处理）与 `est_prompt_tokens`（非 confirmed 时按请求体字节 / 4 的输入下限估算）。`attempts[]` 每次尝试带 `usage_status`、`prompt_tokens`、`completion_tokens`。
+- 日志对象另含 `usage_status`（`confirmed` 上游返回了完整 usage；`partial` 流中断、只拿到部分 usage；`unknown` 上游处理了请求但未返回 usage；`none` 请求未被任何上游处理）与 `est_prompt_tokens`（非 confirmed 时按请求体字节 / 4 的粗略估算，仅供参考，不是下限；含图片或元数据时偏差大）。`attempts[]` 每次尝试带 `usage_status`、`prompt_tokens`、`completion_tokens`。
 
 ### 用量统计 `/api/admin/usage`
 - `GET ?user_id=&group_id=&account_id=&provider=&api_type=&model=&api_key_id=&range=&from=&to=&group_by=model|api_key`
@@ -112,11 +112,11 @@
 
 ### 计量维护 `/api/admin/usage`
 - 用量响应的 `summary` 与各分布项含 `unknown_usage`（用量为 partial / unknown 的请求数）。
-- `POST /api/admin/usage/rebuild {from, to}`（RFC3339，最多 92 天）→ `{hours, rows}`：从原始调用日志重建小时聚合。
+- `POST /api/admin/usage/rebuild {from, to}`（RFC3339，最多 92 天；`from` 不得早于调用日志保留期，否则 400 `outside_retention`，避免用已清理的明细抹掉历史聚合）→ `{hours, rows}`：从原始调用日志重建小时聚合。
 - `GET /api/admin/usage/reconcile?range=` → `{consistent, mismatches:[{hour, log_requests, rollup_requests, log_tokens, rollup_tokens}]}`：逐小时对账。
 - `GET /api/admin/usage/metering` → `{pending_bytes, dropped, replayed, write_failures, last_commit_at}`：计量 journal 状态。
 
-计量可靠性：每次调用先追加到 `data/journal/calls.jsonl`，后台事务性地写入 `call_logs` 并更新小时聚合，提交后推进检查点；重启回放未提交部分，`request_id` 唯一保证幂等。
+计量可靠性：每次调用先以直接 write(2) 追加到 `data/journal/calls.jsonl`（无用户态缓冲，进程崩溃不丢；每秒 fsync，设置 `YZAPI_JOURNAL_FSYNC=always` 则每条 fsync，断电也不丢），后台事务性地写入 `call_logs` 并更新小时聚合，提交后推进检查点；重启回放未提交部分，`request_id` 唯一保证幂等。
 
 ### 设置 `/api/admin/settings`
 - `GET` → `{basic, performance, vector, smart_route, compliance, elasticsearch}`（密钥字段脱敏为 `"******"`）

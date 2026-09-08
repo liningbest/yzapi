@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"time"
@@ -314,7 +315,12 @@ func (s *Server) rebuildUsage(c *gin.Context) {
 		badRequest(c, "最多一次重建 92 天")
 		return
 	}
-	hours, rows, err := logstore.Rebuild(s.db, in.From, in.To)
+	retention := s.st.Get().Basic.LogRetentionDays
+	if !logstore.RebuildAllowed(in.From, retention, time.Now()) {
+		fail(c, 400, "outside_retention", fmt.Sprintf("起始时间早于调用日志保留期（%d 天），原始明细已不完整，拒绝重建以免抹掉历史聚合", retention))
+		return
+	}
+	hours, rows, err := logstore.Rebuild(s.db, in.From, in.To, retention)
 	if err != nil {
 		serverError(c, err)
 		return

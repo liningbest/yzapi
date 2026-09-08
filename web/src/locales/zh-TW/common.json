@@ -279,6 +279,6 @@
     "unknown": "未知",
     "none": "無消耗",
     "partialHint": "串流中斷，僅取得部分用量（例如只有輸入 Token）",
-    "unknownHint": "上游未回傳 usage；依請求體估算輸入至少 {{n}} Token"
+    "unknownHint": "上游未回傳 usage；依請求體大小粗略估算輸入約 {{n}} Token（僅供參考，含圖片或中繼資料時偏差較大）"
   }
 }

@@ -65,9 +65,39 @@ func Open(cfg *config.Config) (*gorm.DB, error) {
 		sqlDB.SetMaxIdleConns(8)
 	}
 
+	if err := migrateCallLogRequestID(db); err != nil {
+		return nil, fmt.Errorf("migrate call_logs.request_id: %w", err)
+	}
 	if err := db.AutoMigrate(model.All()...); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	slog.Info("database ready", "driver", cfg.DBDriver)
 	return db, nil
+}
+
+// migrateCallLogRequestID upgrades databases created before request_id became unique.
+// AutoMigrate never replaces an existing non-unique index, so the old index is dropped
+// explicitly after duplicate rows (which only replays could have produced) are removed,
+// keeping the newest copy of each request.
+func migrateCallLogRequestID(db *gorm.DB) error {
+	m := db.Migrator()
+	if !m.HasTable(&model.CallLog{}) {
+		return nil
+	}
+	if m.HasIndex(&model.CallLog{}, "uq_call_logs_request_id") {
+		return nil
+	}
+	res := db.Exec("DELETE FROM call_logs WHERE id NOT IN (SELECT MAX(id) FROM call_logs GROUP BY request_id)")
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected > 0 {
+		slog.Warn("removed duplicate call log rows before adding the unique request_id index", "rows", res.RowsAffected)
+	}
+	if m.HasIndex(&model.CallLog{}, "idx_call_logs_request_id") {
+		if err := m.DropIndex(&model.CallLog{}, "idx_call_logs_request_id"); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -82,7 +82,8 @@ func (g *Gateway) fail(req *request, e *GatewayError) {
 	req.log.StatusCode = e.Status
 	req.log.Error = e.Message
 	if req.log.UsageStatus == "" {
-		req.log.UsageStatus = model.UsageNone
+		req.log.UsageStatus, req.log.PromptTokens, req.log.CompletionTokens = usageFromAttempts(req.attempts)
+		req.log.TotalTokens = req.log.PromptTokens + req.log.CompletionTokens
 	}
 	switch {
 	case e == ErrContentBlocked:
@@ -617,7 +618,7 @@ func (g *Gateway) forward(req *request, cands []string) {
 					return
 				}
 				rec.Error = err.Error()
-				rec.UsageStatus = model.UsageNone
+				rec.UsageStatus = networkFailureUsage(err)
 				req.attempts = append(req.attempts, rec)
 				g.Metrics.UpstreamAttempts.With(metrics.Label("outcome", "network")).Inc()
 				g.health.fail(up.ID, cooldown, err.Error())
@@ -631,7 +632,13 @@ func (g *Gateway) forward(req *request, cands []string) {
 				cancel()
 				ctr.release()
 				rec.Error = msg
-				rec.UsageStatus = model.UsageNone
+				// Some providers report tokens even on error responses; keep them.
+				if u, ok := usageFromJSON(proto, raw); ok && u.PromptTokens+u.CompletionTokens > 0 {
+					rec.UsageStatus = model.UsageConfirmed
+					rec.PromptTokens, rec.CompletionTokens = int64(u.PromptTokens), int64(u.CompletionTokens)
+				} else {
+					rec.UsageStatus = httpFailureUsage(resp.StatusCode)
+				}
 				req.attempts = append(req.attempts, rec)
 				req.log.UpstreamLatencyMs += rec.LatencyMs
 				if retryable(resp.StatusCode) {
@@ -689,6 +696,49 @@ func (g *Gateway) forward(req *request, cands []string) {
 		status = 429
 	}
 	g.fail(req, newErr(status, "upstream_failed", "All upstream attempts failed: "+truncate(lastMsg, 300)))
+}
+
+// networkFailureUsage classifies a transport error: a request that never reached the
+// upstream (dial failure) consumed nothing, anything after that is undeterminable.
+func networkFailureUsage(err error) string {
+	var op *net.OpError
+	if errors.As(err, &op) && op.Op == "dial" {
+		return model.UsageNone
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return model.UsageNone
+	}
+	return model.UsageUnknown
+}
+
+// httpFailureUsage classifies an error response without usage: 4xx means the upstream
+// rejected the request before generating; 5xx may have happened after work was done.
+func httpFailureUsage(status int) string {
+	if status >= 500 {
+		return model.UsageUnknown
+	}
+	return model.UsageNone
+}
+
+// usageFromAttempts folds attempt-level usage into a request-level status for requests
+// that failed overall: confirmed tokens are summed, any undeterminable attempt makes the
+// whole request unknown, and only requests no upstream processed are "none".
+func usageFromAttempts(attempts []attemptRecord) (status string, prompt, completion int64) {
+	status = model.UsageNone
+	for _, a := range attempts {
+		switch a.UsageStatus {
+		case model.UsageConfirmed, model.UsagePartial:
+			prompt += a.PromptTokens
+			completion += a.CompletionTokens
+			if status != model.UsageUnknown {
+				status = model.UsageConfirmed
+			}
+		case model.UsageUnknown:
+			status = model.UsageUnknown
+		}
+	}
+	return status, prompt, completion
 }
 
 // credentialCooldown is applied when an upstream rejects the account's credentials.

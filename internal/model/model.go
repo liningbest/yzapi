@@ -193,7 +193,7 @@ const (
 // CallLog records one data-plane request. RequestID is unique so journal replays are idempotent.
 type CallLog struct {
 	ID                uint      `gorm:"primaryKey" json:"id"`
-	RequestID         string    `gorm:"size:40;uniqueIndex" json:"request_id"`
+	RequestID         string    `gorm:"size:40;uniqueIndex:uq_call_logs_request_id" json:"request_id"`
 	UserID            uint      `gorm:"index" json:"user_id"`
 	Username          string    `gorm:"size:64" json:"username"`
 	GroupID           uint      `gorm:"index" json:"group_id"`

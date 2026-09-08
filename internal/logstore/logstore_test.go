@@ -118,7 +118,7 @@ func TestRebuild(t *testing.T) {
 	if len(mm) != 1 {
 		t.Fatalf("expected drift to be detected, got %+v", mm)
 	}
-	hours, rows, err := Rebuild(db, from, from.Add(24*time.Hour))
+	hours, rows, err := Rebuild(db, from, from.Add(24*time.Hour), 3650)
 	if err != nil || hours != 1 || rows != 1 {
 		t.Fatalf("rebuild hours=%d rows=%d err=%v", hours, rows, err)
 	}
@@ -130,5 +130,99 @@ func TestRebuild(t *testing.T) {
 	mm, _ = Reconcile(db, from, from.Add(24*time.Hour))
 	if len(mm) != 0 {
 		t.Fatalf("expected consistent after rebuild, got %+v", mm)
+	}
+}
+
+// Record must hand the bytes to the OS before returning (no user-space buffering).
+func TestRecordIsVisibleOnDiskImmediately(t *testing.T) {
+	db := testDB(t)
+	dir := t.TempDir()
+	s, err := New(db, dir, func() int { return 30 })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close(context.Background())
+	s.Record(sample("d1", 1))
+	st, err := os.Stat(filepath.Join(dir, "data", "journal", journalFile))
+	if err != nil || st.Size() == 0 {
+		t.Fatalf("journal must contain the record right after Record returns (size=%d err=%v)", st.Size(), err)
+	}
+}
+
+// Overflow records survive a failed database commit and are stored once it recovers.
+func TestOverflowSurvivesCommitFailure(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{Logger: logger.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Deliberately no tables yet: every commit fails.
+	dir := t.TempDir()
+	s := &Store{db: db, retDays: func() int { return 30 }, path: filepath.Join(dir, journalFile),
+		ckptPath: filepath.Join(dir, checkpointFile), notify: make(chan struct{}, 1), stop: make(chan struct{})}
+	// No journal file (s.f == nil) forces the overflow path.
+	s.Record(sample("o1", 1))
+	s.Record(sample("o2", 1))
+	if _, err := s.drain(); err == nil {
+		t.Fatal("expected commit to fail without tables")
+	}
+	s.mu.Lock()
+	n, d := len(s.overflow), s.dropped.Load()
+	s.mu.Unlock()
+	if n != 2 || d != 0 {
+		t.Fatalf("overflow must be kept after a failed commit: overflow=%d dropped=%d", n, d)
+	}
+	if err := db.AutoMigrate(model.All()...); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.drain(); err != nil {
+		t.Fatal(err)
+	}
+	var cnt int64
+	db.Model(&model.CallLog{}).Count(&cnt)
+	s.mu.Lock()
+	n = len(s.overflow)
+	s.mu.Unlock()
+	if cnt != 2 || n != 0 {
+		t.Fatalf("after recovery: rows=%d overflow=%d", cnt, n)
+	}
+}
+
+// A rebuild may not reach into hours whose raw logs may already be purged.
+func TestRebuildAllowed(t *testing.T) {
+	now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
+	if RebuildAllowed(now.AddDate(0, 0, -60), 30, now) {
+		t.Fatal("60 days back must be refused with 30-day retention")
+	}
+	if !RebuildAllowed(now.AddDate(0, 0, -7), 30, now) {
+		t.Fatal("7 days back must be allowed")
+	}
+	db := testDB(t)
+	db.Create(&model.UsageHourly{Hour: now.AddDate(0, 0, -60), Requests: 1, TotalTokens: 5, Provider: "p", RequestModel: "m", APIType: "text"})
+	if _, _, err := Rebuild(db, now.AddDate(0, 0, -60), now, 30); err == nil {
+		t.Fatal("Rebuild must refuse ranges outside retention")
+	}
+	var cnt int64
+	db.Model(&model.UsageHourly{}).Count(&cnt)
+	if cnt != 1 {
+		t.Fatalf("historical rollup must be untouched, got %d rows", cnt)
+	}
+}
+
+// A range that starts and ends mid-hour must not report spurious mismatches.
+func TestReconcileMidHourRange(t *testing.T) {
+	db := testDB(t)
+	dir := t.TempDir()
+	s, err := New(db, dir, func() int { return 30 })
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Record(sample("m1", 4)) // created 10:30
+	waitFor(t, func() bool { var n int64; db.Model(&model.CallLog{}).Count(&n); return n == 1 })
+	s.Close(context.Background())
+	from := time.Date(2026, 9, 8, 10, 15, 0, 0, time.UTC)
+	to := time.Date(2026, 9, 8, 10, 45, 0, 0, time.UTC)
+	mm, err := Reconcile(db, from, to)
+	if err != nil || len(mm) != 0 {
+		t.Fatalf("expected consistent, got %v %+v", err, mm)
 	}
 }

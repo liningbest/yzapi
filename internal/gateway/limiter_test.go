@@ -3,10 +3,14 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net"
 	"net/http"
 	"sync"
 	"testing"
 	"time"
+
+	"yzapi/internal/model"
 )
 
 func TestCounterLimit(t *testing.T) {
@@ -156,5 +160,32 @@ func TestParseRetryAfter(t *testing.T) {
 	}
 	if d := parseRetryAfter("garbage"); d != 0 {
 		t.Fatalf("garbage: %v", d)
+	}
+}
+
+func TestFailedAttemptUsageClassification(t *testing.T) {
+	if got := networkFailureUsage(&net.OpError{Op: "dial", Err: errors.New("refused")}); got != model.UsageNone {
+		t.Fatalf("dial failure = %s, want none", got)
+	}
+	if got := networkFailureUsage(errors.New("unexpected EOF")); got != model.UsageUnknown {
+		t.Fatalf("mid-response failure = %s, want unknown", got)
+	}
+	if httpFailureUsage(500) != model.UsageUnknown || httpFailureUsage(429) != model.UsageNone || httpFailureUsage(401) != model.UsageNone {
+		t.Fatal("http failure classification")
+	}
+	// A 500 that still reported tokens must keep them; a later unknown attempt taints the request.
+	st, p, c := usageFromAttempts([]attemptRecord{
+		{StatusCode: 500, UsageStatus: model.UsageConfirmed, PromptTokens: 10, CompletionTokens: 3},
+	})
+	if st != model.UsageConfirmed || p != 10 || c != 3 {
+		t.Fatalf("confirmed attempt: %s %d %d", st, p, c)
+	}
+	st, _, _ = usageFromAttempts([]attemptRecord{{UsageStatus: model.UsageNone}, {UsageStatus: model.UsageUnknown}})
+	if st != model.UsageUnknown {
+		t.Fatalf("unknown attempt must taint: %s", st)
+	}
+	st, _, _ = usageFromAttempts([]attemptRecord{{UsageStatus: model.UsageNone}})
+	if st != model.UsageNone {
+		t.Fatalf("all none: %s", st)
 	}
 }

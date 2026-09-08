@@ -48,9 +48,9 @@ type Store struct {
 	path     string
 	ckptPath string
 	f        *os.File
-	w        *bufio.Writer
 	size     int64 // logical end of journal (bytes appended)
 	dirty    bool  // bytes written since last fsync
+	syncEach bool  // fsync on every Record (YZAPI_JOURNAL_FSYNC=always)
 	overflow []*model.CallLog
 
 	ckpt     atomic.Int64 // committed offset
@@ -72,7 +72,8 @@ func New(db *gorm.DB, dataDir string, retentionDays func() int) (*Store, error) 
 		return nil, err
 	}
 	s := &Store{db: db, retDays: retentionDays, path: filepath.Join(dir, journalFile),
-		ckptPath: filepath.Join(dir, checkpointFile), notify: make(chan struct{}, 1), stop: make(chan struct{})}
+		ckptPath: filepath.Join(dir, checkpointFile), notify: make(chan struct{}, 1), stop: make(chan struct{}),
+		syncEach: os.Getenv("YZAPI_JOURNAL_FSYNC") == "always"}
 	if err := s.openJournal(); err != nil {
 		return nil, err
 	}
@@ -120,12 +121,19 @@ func (s *Store) openJournal() error {
 			ck = v
 		}
 	}
-	s.f, s.w, s.size = f, bufio.NewWriterSize(f, 256<<10), size
+	s.f, s.size = f, size
 	s.ckpt.Store(ck)
 	return nil
 }
 
 // Record appends a call log to the journal. It never blocks on the database.
+//
+// Durability boundary: when Record returns, the record has been handed to the OS via a
+// direct write(2) (no user-space buffering), so it survives a crash of this process. It
+// is flushed to stable storage by the periodic fsync (every second) or immediately when
+// YZAPI_JOURNAL_FSYNC=always, which is the setting to use when power loss must not lose
+// the last second of records. Write errors fall back to an in-memory overflow that is
+// only discarded once it is full.
 func (s *Store) Record(l *model.CallLog) {
 	b, err := json.Marshal(l)
 	if err != nil {
@@ -134,10 +142,21 @@ func (s *Store) Record(l *model.CallLog) {
 	}
 	b = append(b, '\n')
 	s.mu.Lock()
-	if s.w != nil {
-		if _, err = s.w.Write(b); err == nil {
+	if s.f != nil {
+		var n int
+		if n, err = s.f.Write(b); err == nil {
 			s.size += int64(len(b))
 			s.dirty = true
+			if s.syncEach {
+				if serr := s.f.Sync(); serr != nil {
+					slog.Warn("journal fsync failed", "err", serr)
+				}
+				s.dirty = false
+			}
+		} else if n > 0 {
+			// A short write left a torn line; drop it so the next record starts clean.
+			_ = s.f.Truncate(s.size)
+			_, _ = s.f.Seek(s.size, io.SeekStart)
 		}
 	} else {
 		err = errors.New("journal closed")
@@ -221,10 +240,12 @@ func (s *Store) writer() {
 
 func (s *Store) fsync() {
 	s.mu.Lock()
-	if s.dirty && s.w != nil {
-		_ = s.w.Flush()
-		_ = s.f.Sync()
-		s.dirty = false
+	if s.dirty && s.f != nil {
+		if err := s.f.Sync(); err != nil {
+			slog.Warn("journal fsync failed", "err", err)
+		} else {
+			s.dirty = false
+		}
 	}
 	s.mu.Unlock()
 }
@@ -237,11 +258,13 @@ func (s *Store) drain() (int, error) {
 		if err != nil {
 			return total, err
 		}
+		// Overflow records are copied into the batch but only removed after the commit
+		// succeeds, so a database failure keeps them for the next attempt.
 		s.mu.Lock()
+		took := 0
 		if len(batch) < batchMax && len(s.overflow) > 0 {
-			take := min(batchMax-len(batch), len(s.overflow))
-			batch = append(batch, s.overflow[:take]...)
-			s.overflow = append(s.overflow[:0], s.overflow[take:]...)
+			took = min(batchMax-len(batch), len(s.overflow))
+			batch = append(batch, s.overflow[:took]...)
 		}
 		s.mu.Unlock()
 		if len(batch) == 0 {
@@ -250,6 +273,11 @@ func (s *Store) drain() (int, error) {
 		}
 		if err := s.commit(batch); err != nil {
 			return total, err
+		}
+		if took > 0 {
+			s.mu.Lock()
+			s.overflow = append(s.overflow[:0], s.overflow[took:]...)
+			s.mu.Unlock()
 		}
 		s.ckpt.Store(next)
 		_ = os.WriteFile(s.ckptPath, []byte(strconv.FormatInt(next, 10)), 0o640)
@@ -261,9 +289,6 @@ func (s *Store) drain() (int, error) {
 // readBatch parses up to batchMax journal lines starting at the checkpoint.
 func (s *Store) readBatch() ([]*model.CallLog, int64, error) {
 	s.mu.Lock()
-	if s.w != nil {
-		_ = s.w.Flush()
-	}
 	end := s.size
 	s.mu.Unlock()
 	start := s.ckpt.Load()
@@ -395,8 +420,26 @@ func applyRollup(tx *gorm.DB, batch []*model.CallLog) error {
 	return nil
 }
 
-// Rebuild recomputes the hourly rollup for [from, to] from the raw call logs.
-func Rebuild(db *gorm.DB, from, to time.Time) (hours int, rows int, err error) {
+// ErrRebuildOutsideRetention is returned when a rebuild range reaches into hours whose
+// raw logs may already have been purged: rebuilding there would erase real history.
+var ErrRebuildOutsideRetention = errors.New("range starts before the log retention window; raw logs are no longer complete")
+
+// RebuildAllowed reports whether [from, ...] lies entirely inside the retention window.
+// A one-hour margin protects against the janitor running while the rebuild executes.
+func RebuildAllowed(from time.Time, retentionDays int, now time.Time) bool {
+	if retentionDays <= 0 {
+		retentionDays = 30
+	}
+	oldest := now.AddDate(0, 0, -retentionDays).Add(time.Hour)
+	return !from.Truncate(time.Hour).Before(oldest.Truncate(time.Hour))
+}
+
+// Rebuild recomputes the hourly rollup for [from, to] from the raw call logs. Callers
+// must check RebuildAllowed first (Rebuild enforces it too).
+func Rebuild(db *gorm.DB, from, to time.Time, retentionDays int) (hours int, rows int, err error) {
+	if !RebuildAllowed(from, retentionDays, time.Now()) {
+		return 0, 0, ErrRebuildOutsideRetention
+	}
 	from = from.Truncate(time.Hour)
 	to = to.Truncate(time.Hour).Add(time.Hour)
 	err = db.Transaction(func(tx *gorm.DB) error {
@@ -433,7 +476,11 @@ type Mismatch struct {
 }
 
 // Reconcile compares raw logs against the rollup per hour and returns the differences.
+// Both sides are evaluated on the same whole-hour window [from, to] so a range that
+// starts or ends mid-hour cannot produce spurious mismatches.
 func Reconcile(db *gorm.DB, from, to time.Time) ([]Mismatch, error) {
+	from = from.Truncate(time.Hour)
+	toExcl := to.Truncate(time.Hour).Add(time.Hour)
 	type hourSum struct {
 		Hour     time.Time
 		Requests int64
@@ -444,7 +491,7 @@ func Reconcile(db *gorm.DB, from, to time.Time) ([]Mismatch, error) {
 		CreatedAt   time.Time
 		TotalTokens int64
 	}
-	if err := db.Model(&model.CallLog{}).Select("created_at, total_tokens").Where("created_at >= ? AND created_at <= ?", from, to).Scan(&raw).Error; err != nil {
+	if err := db.Model(&model.CallLog{}).Select("created_at, total_tokens").Where("created_at >= ? AND created_at < ?", from, toExcl).Scan(&raw).Error; err != nil {
 		return nil, err
 	}
 	byHour := map[int64]*hourSum{}
@@ -464,7 +511,7 @@ func Reconcile(db *gorm.DB, from, to time.Time) ([]Mismatch, error) {
 		Tokens   int64
 	}
 	if err := db.Model(&model.UsageHourly{}).Select("hour, SUM(requests) AS requests, SUM(total_tokens) AS tokens").
-		Where("hour >= ? AND hour <= ?", from.Truncate(time.Hour), to).Group("hour").Scan(&roll).Error; err != nil {
+		Where("hour >= ? AND hour < ?", from, toExcl).Group("hour").Scan(&roll).Error; err != nil {
 		return nil, err
 	}
 	rollMap := map[int64]struct{ r, t int64 }{}
@@ -490,17 +537,15 @@ func Reconcile(db *gorm.DB, from, to time.Time) ([]Mismatch, error) {
 func (s *Store) maybeRotate() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.w == nil || s.size < rotateAfter || s.ckpt.Load() != s.size {
+	if s.f == nil || s.size < rotateAfter || s.ckpt.Load() != s.size {
 		return
 	}
-	_ = s.w.Flush()
 	if err := s.f.Truncate(0); err != nil {
 		return
 	}
 	if _, err := s.f.Seek(0, io.SeekStart); err != nil {
 		return
 	}
-	s.w.Reset(s.f)
 	s.size = 0
 	s.ckpt.Store(0)
 	_ = os.WriteFile(s.ckptPath, []byte("0"), 0o640)
@@ -549,11 +594,10 @@ func (s *Store) Close(ctx context.Context) {
 	case <-ctx.Done():
 	}
 	s.mu.Lock()
-	if s.w != nil {
-		_ = s.w.Flush()
+	if s.f != nil {
 		_ = s.f.Sync()
 		_ = s.f.Close()
-		s.w, s.f = nil, nil
+		s.f = nil
 	}
 	s.mu.Unlock()
 }
