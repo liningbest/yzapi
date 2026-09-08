@@ -1,13 +1,16 @@
 # ---------- frontend ----------
 FROM node:22-alpine AS web
 WORKDIR /src/web
-# Pin pnpm: newer majors turn "ignored build scripts" into a hard error (ERR_PNPM_IGNORED_BUILDS)
-RUN corepack enable && corepack prepare pnpm@11.22.0 --activate
-# pnpm-workspace.yaml carries allowBuilds (esbuild); without it pnpm refuses the install
-COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
+# pnpm 9 on purpose: pnpm 10+ keeps its store index in SQLite, which fails with
+# "disk I/O error" on some Docker storage drivers (seen on overlay2 hosts), and newer
+# majors also refuse installs over un-approved build scripts. pnpm 9 reads the same
+# lockfile (v9.0) and needs neither. Installed via npm so corepack cannot swap versions.
+RUN npm install -g pnpm@9.15.9
+COPY web/package.json web/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY web/ ./
-RUN pnpm build
+# npm run: pnpm 9 would treat the local pnpm-workspace.yaml (pnpm 11 allowBuilds) as a workspace file
+RUN npm run build
 
 # ---------- backend ----------
 FROM golang:1.26-alpine AS build
