@@ -152,7 +152,23 @@ curl -N https://<域名>/v1/chat/completions -H "Authorization: Bearer sk-..." -
 
 回滚：把 `image` 改回旧标签重建。数据库迁移只增不删，旧版本仍能读取。
 
-### 3.8 常用运维
+### 3.8 流式延迟定位（可选）
+
+发布包的 `tools/` 里带了固定节奏的 mock 上游和时间线探测脚本，用来判断流式延迟出在网关、反向代理还是上游：
+
+```bash
+# 1. 在宿主机启动 mock 上游（每 50 ms 一个 chunk），容器通过 docker0 网卡访问它
+cd /opt/1panel/apps/yzapi/yzapi/tools && nohup ./mockupstream -addr 0.0.0.0:19911 -delay 50ms >/tmp/mock.log 2>&1 &
+ip -4 addr show docker0 | grep inet        # 一般是 172.17.0.1
+# 2. 后台「账号池」新增账号：自定义，地址 http://172.17.0.1:19911/v1，Key 任意，映射 mini -> mock-mini
+# 3. 用一个 API Key 分别打服务端口和域名
+python3 stream-timeline.py http://127.0.0.1:8089/v1 sk-你的Key mini
+python3 stream-timeline.py https://你的域名/v1 sk-你的Key mini
+```
+
+读法：mock 的节奏是 50 ms，`gap p50` 接近 50 且 `bursty` 为 0 说明这一段没有攒块；打端口正常、打域名成批到达，就是反向代理缓冲；两者都正常而真实上游慢，就是上游。后台调用日志里的"客户端写入阻塞"偏大，同样指向反向代理或客户端接收慢。
+
+### 3.9 常用运维
 
 - 查看日志：编排详情 → 容器 → 日志；或 `docker logs -f yzapi`。
 - 忘记管理员密码：在编排里停止容器后执行 `docker run --rm -v /opt/1panel/apps/yzapi/data:/opt/yzapi yzapi/gateway:1.0.0 -reset-password admin -password 'NewStrongPass123'`，再启动容器（SQLite 单写者，主进程运行时不要重置）。

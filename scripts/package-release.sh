@@ -18,6 +18,10 @@ mkdir -p "$TMP/yzapi"
 GOOS=linux GOARCH=$GOARCH CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "$TMP/yzapi/yzapi" ./cmd/yzapi
 cp Dockerfile.prebuilt "$TMP/yzapi/Dockerfile.prebuilt"
 cp -R deploy "$TMP/yzapi/deploy"
+# Diagnostics: fixed-cadence mock upstream + per-chunk timeline probe (see docs/deploy.md).
+mkdir -p "$TMP/yzapi/tools"
+GOOS=linux GOARCH=$GOARCH CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$TMP/yzapi/tools/mockupstream" ./tools/mockupstream
+cp scripts/stream-timeline.py "$TMP/yzapi/tools/stream-timeline.py"
 echo "$VERSION" > "$TMP/yzapi/VERSION"
 tar -C "$TMP" -czf "$OUT" yzapi
 echo "packed $OUT ($(du -h "$OUT" | cut -f1), version $VERSION, linux/$GOARCH)"
