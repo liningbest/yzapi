@@ -85,3 +85,12 @@
 | `demo`、`DEMO` 开透传时请求 `demo-coder` 被误判歧义 | 只有多出的段像版本 / 日期时才参与歧义判断；`coder` 不是版本，视为未匹配，按透传转发原名 | `TestReview106ResolutionComposition/non_version_variant_passthrough` |
 
 评审方 `TestReview106*` 三个用例（含账号槽位在 200 / 404 / 500 后释放、取消释放）收入仓库 `internal/gateway/review106_test.go`。
+
+## 1.0.9：流式转发排查
+
+| 修改 | 说明 |
+|---|---|
+| 流式上游请求声明 `Accept-Encoding: identity` | 上游或其前置代理若对事件流做 gzip，token 会被攒成块延迟到达；非流式请求不受影响 |
+| `YZAPI_UPSTREAM_HTTP2=0` | 强制对上游只用 HTTP/1.1，用于排查个别供应商 HTTP/2 流式输出不畅；默认仍允许 HTTP/2 |
+
+回归：`TestCompatStreamRequestsRefuseCompression`。

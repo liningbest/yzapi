@@ -95,6 +95,10 @@ func (g *Gateway) doUpstream(ctx context.Context, c *upstreamCall) (*http.Respon
 	}
 	if c.stream {
 		req.Header.Set("Accept", "text/event-stream")
+		// Never let an upstream (or a proxy in front of it) gzip an event stream: the
+		// compressor batches tokens into blocks, so they arrive late and in bursts. An
+		// explicit Accept-Encoding also stops Go's transparent gzip negotiation.
+		req.Header.Set("Accept-Encoding", "identity")
 	} else {
 		req.Header.Set("Accept", "application/json")
 	}

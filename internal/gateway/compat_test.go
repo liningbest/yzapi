@@ -381,3 +381,31 @@ func jsonEqual(a, b map[string]any) bool {
 	y, _ := json.Marshal(b)
 	return string(x) == string(y)
 }
+
+// Event streams must never be requested compressed: gzip batches tokens into blocks and
+// delays them. Non-streaming requests keep Go's default negotiation.
+func TestCompatStreamRequestsRefuseCompression(t *testing.T) {
+	up := newRecorder(func(w http.ResponseWriter, r *http.Request, _ []byte) {
+		if r.Header.Get("Accept") == "text/event-stream" {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(200)
+			_, _ = io.WriteString(w, sseOK)
+			return
+		}
+		respondJSON(200, ok200)(w, r, nil)
+	})
+	defer up.srv.Close()
+	e := newE2E(t, up.srv.URL)
+	if w := e.chat(t, context.Background(), true); w.Code != 200 {
+		t.Fatalf("stream status %d", w.Code)
+	}
+	if _, hdr, _ := up.last(); hdr.Get("Accept-Encoding") != "identity" {
+		t.Fatalf("streaming upstream request must send Accept-Encoding: identity, got %q", hdr.Get("Accept-Encoding"))
+	}
+	if w := e.chat(t, context.Background(), false); w.Code != 200 {
+		t.Fatalf("json status %d", w.Code)
+	}
+	if _, hdr, _ := up.last(); hdr.Get("Accept-Encoding") == "identity" {
+		t.Fatal("non-streaming requests should keep compression negotiation")
+	}
+}

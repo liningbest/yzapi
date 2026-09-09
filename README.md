@@ -70,6 +70,7 @@ make run          # 本地启动（数据目录 ./data）
 | `YZAPI_DB_DSN` | | PostgreSQL DSN，如 `host=... user=... password=... dbname=... sslmode=disable` |
 | `YZAPI_INITIAL_ADMIN_PASSWORD` | 随机 | 首次初始化的管理员密码，不写入日志 |
 | `YZAPI_HTTP_PROXY` | | 上游请求代理，如 `http://127.0.0.1:7890` |
+| `YZAPI_UPSTREAM_HTTP2` | `1` | 设为 `0` 时对上游只用 HTTP/1.1，用于排查个别供应商 HTTP/2 流式输出不畅 |
 | `YZAPI_JWT_SECRET` | 自动生成 | 多实例部署时需统一 |
 | `YZAPI_LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `YZAPI_METRICS_TOKEN` | 空 | 设置后 `/metrics` 需要 Bearer 认证 |

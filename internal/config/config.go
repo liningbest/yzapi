@@ -26,6 +26,9 @@ type Config struct {
 
 	// Outbound proxy for upstream requests.
 	HTTPProxy string
+	// UpstreamHTTP2 allows HTTP/2 to upstreams (default true). Set YZAPI_UPSTREAM_HTTP2=0
+	// to force HTTP/1.1 when a provider's HTTP/2 path streams poorly.
+	UpstreamHTTP2 bool
 
 	LogLevel string
 	Dev      bool
@@ -65,6 +68,7 @@ func Load() *Config {
 		InitialAdminPassword: env("YZAPI_INITIAL_ADMIN_PASSWORD", ""),
 		JWTSecret:            env("YZAPI_JWT_SECRET", ""),
 		HTTPProxy:            env("YZAPI_HTTP_PROXY", env("HTTPS_PROXY", env("HTTP_PROXY", ""))),
+		UpstreamHTTP2:        env("YZAPI_UPSTREAM_HTTP2", "1") != "0",
 		LogLevel:             env("YZAPI_LOG_LEVEL", "info"),
 		MetricsToken:         env("YZAPI_METRICS_TOKEN", ""),
 		Dev:                  env("YZAPI_DEV", "") == "1",

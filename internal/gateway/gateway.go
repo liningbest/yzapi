@@ -4,6 +4,7 @@ package gateway
 
 import (
 	"context"
+	"crypto/tls"
 	"log/slog"
 	"net"
 	"net/http"
@@ -162,9 +163,12 @@ func (g *Gateway) buildTransport(perf settings.Performance) {
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 		ResponseHeaderTimeout: time.Duration(max(perf.RequestTimeoutSec, 30)) * time.Second,
-		ForceAttemptHTTP2:     true,
+		ForceAttemptHTTP2:     g.cfg.UpstreamHTTP2,
 		ReadBufferSize:        64 * 1024,
 		WriteBufferSize:       64 * 1024,
+	}
+	if !g.cfg.UpstreamHTTP2 {
+		tr.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{} // HTTP/1.1 only
 	}
 	if g.cfg.HTTPProxy != "" {
 		if pu, err := url.Parse(g.cfg.HTTPProxy); err == nil {
