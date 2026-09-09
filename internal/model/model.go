@@ -223,12 +223,20 @@ type CallLog struct {
 	EstPromptTokens  int64  `json:"est_prompt_tokens"`                 // rough estimate (request bytes / 4) when usage is not confirmed
 	// UsageCorrected marks a request whose request-level usage was re-derived from its
 	// attempt records during an upgrade (older gateways only kept the final attempt).
-	UsageCorrected    bool      `gorm:"not null;default:false" json:"usage_corrected"`
-	Result            string    `gorm:"size:16;index" json:"result"` // success | client_error | upstream_error | blocked
-	StatusCode        int       `gorm:"index" json:"status_code"`
-	LatencyMs         int64     `json:"latency_ms"`
+	UsageCorrected bool   `gorm:"not null;default:false" json:"usage_corrected"`
+	Result         string `gorm:"size:16;index" json:"result"` // success | client_error | upstream_error | blocked
+	StatusCode     int    `gorm:"index" json:"status_code"`
+	LatencyMs      int64  `json:"latency_ms"`
+	// Timing semantics (all from request start unless noted):
+	//   LatencyMs         whole request until the response to the client is complete
+	//   FirstByteMs       upstream response headers received (upstream time to first byte)
+	//   UpstreamLatencyMs from sending to the upstream until the relay finished; for
+	//                     streams this interleaves upstream reads and client writes
+	//   ClientWriteMs     time spent blocked in Write/Flush towards the client (streams);
+	//                     UpstreamLatencyMs - ClientWriteMs approximates pure upstream wait
 	UpstreamLatencyMs int64     `json:"upstream_latency_ms"`
 	FirstByteMs       int64     `json:"first_byte_ms"`
+	ClientWriteMs     int64     `json:"client_write_ms"`
 	Error             string    `gorm:"size:1024" json:"error"`
 	Attempts          JSON      `gorm:"type:text" json:"attempts"`
 	RouteLabel        string    `gorm:"size:16" json:"route_label"`

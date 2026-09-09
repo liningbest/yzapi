@@ -146,6 +146,19 @@ func (g *Gateway) finish(req *request) {
 	}
 }
 
+// timedWriter accumulates the wall time spent inside Write calls to the client.
+type timedWriter struct {
+	w     io.Writer
+	spent time.Duration
+}
+
+func (t *timedWriter) Write(p []byte) (int, error) {
+	s := time.Now()
+	n, err := t.w.Write(p)
+	t.spent += time.Since(s)
+	return n, err
+}
+
 // capWriter passes writes through while keeping a bounded copy.
 type capWriter struct {
 	w         io.Writer
@@ -899,9 +912,15 @@ func (g *Gateway) relay(req *request, resp *http.Response, upProto string, dropU
 		dst = req.capture
 	}
 	flusher, _ := w.(http.Flusher)
+	// Time spent blocked on the client side is measured separately so the log can tell
+	// "upstream was slow" from "client / reverse proxy was slow to accept bytes".
+	tw := &timedWriter{w: dst}
+	dst = tw
 	flush := func() {
 		if flusher != nil {
+			t := time.Now()
 			flusher.Flush()
+			tw.spent += time.Since(t)
 		}
 	}
 	ct := resp.Header.Get("Content-Type")
@@ -960,6 +979,7 @@ func (g *Gateway) relay(req *request, resp *http.Response, upProto string, dropU
 			usage, known = *up, up.TotalTokens > 0 || up.PromptTokens > 0
 		}
 		req.log.UpstreamLatencyMs += time.Since(t0).Milliseconds()
+		req.log.ClientWriteMs = tw.spent.Milliseconds()
 		setUsage(req, usage, known, err == nil)
 		switch {
 		case err == nil:

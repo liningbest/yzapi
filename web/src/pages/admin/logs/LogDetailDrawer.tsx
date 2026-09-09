@@ -127,8 +127,11 @@ export default function LogDetailDrawer({ open, log, onClose }: Props) {
             </Descriptions.Item>
             <Descriptions.Item label={t('common:common.totalLatency')}>{formatMs(log.latency_ms)}</Descriptions.Item>
             <Descriptions.Item label={t('common:common.upstreamLatency')}>{formatMs(log.upstream_latency_ms)}</Descriptions.Item>
-            <Descriptions.Item label={t('logs:detail.firstByte')} span={2}>
-              {formatMs(log.first_byte_ms)}
+            <Descriptions.Item label={t('logs:detail.firstByte')}>{formatMs(log.first_byte_ms)}</Descriptions.Item>
+            <Descriptions.Item label={t('logs:detail.clientWrite')}>
+              <Tooltip title={t('logs:detail.clientWriteHint')}>
+                <span style={{ borderBottom: '1px dotted currentColor', cursor: 'help' }}>{formatMs(log.client_write_ms ?? 0)}</span>
+              </Tooltip>
             </Descriptions.Item>
           </Descriptions>
 

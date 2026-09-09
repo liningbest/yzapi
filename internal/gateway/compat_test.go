@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"yzapi/internal/model"
 )
@@ -407,5 +408,35 @@ func TestCompatStreamRequestsRefuseCompression(t *testing.T) {
 	}
 	if _, hdr, _ := up.last(); hdr.Get("Accept-Encoding") == "identity" {
 		t.Fatal("non-streaming requests should keep compression negotiation")
+	}
+}
+
+// client_write_ms must reflect time blocked on the client, not upstream waiting: a slow
+// upstream with a fast client yields a small value.
+func TestCompatClientWriteTimeIsSeparate(t *testing.T) {
+	up := newRecorder(func(w http.ResponseWriter, r *http.Request, _ []byte) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		fl, _ := w.(http.Flusher)
+		for i := 0; i < 5; i++ {
+			_, _ = io.WriteString(w, "data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"x\"}}]}\n\n")
+			if fl != nil {
+				fl.Flush()
+			}
+			time.Sleep(40 * time.Millisecond)
+		}
+		_, _ = io.WriteString(w, "data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":5,\"total_tokens\":6}}\n\ndata: [DONE]\n\n")
+	})
+	defer up.srv.Close()
+	e := newE2E(t, up.srv.URL)
+	if w := e.chat(t, context.Background(), true); w.Code != 200 {
+		t.Fatalf("status %d", w.Code)
+	}
+	l, _ := e.callLog(t)
+	if l.UpstreamLatencyMs < 150 {
+		t.Fatalf("upstream latency should cover the 5x40ms cadence, got %d ms", l.UpstreamLatencyMs)
+	}
+	if l.ClientWriteMs > 50 {
+		t.Fatalf("client write time must not absorb upstream waiting: %d ms of %d ms", l.ClientWriteMs, l.UpstreamLatencyMs)
 	}
 }

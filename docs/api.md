@@ -116,9 +116,10 @@
 
 ### 调用日志 `/api/admin/logs`
 - `GET ?user_id=&group_id=&account_id=&provider=&api_type=&result=&status_code=&model=&q=&range=&from=&to=&page=`
-- 对象：`{id,request_id,user_id,username,group_id,group_name,api_key_id,api_key_name,account_id,account_name,provider,request_model,upstream_model,model_group,api_type,client_protocol,upstream_protocol,stream,prompt_tokens,completion_tokens,total_tokens,cached_tokens,tokens_known,result:"success"|"client_error"|"upstream_error"|"blocked"|"rate_limited",status_code,latency_ms,upstream_latency_ms,first_byte_ms,error,attempts:[{account_id,account_name,provider,protocol,model,status_code,latency_ms,error}],route_label,client_ip,created_at}`
+- 对象：`{id,request_id,user_id,username,group_id,group_name,api_key_id,api_key_name,account_id,account_name,provider,request_model,upstream_model,model_group,api_type,client_protocol,upstream_protocol,stream,prompt_tokens,completion_tokens,total_tokens,cached_tokens,tokens_known,result:"success"|"client_error"|"upstream_error"|"blocked"|"rate_limited",status_code,latency_ms,upstream_latency_ms,first_byte_ms,client_write_ms,error,attempts:[{account_id,account_name,provider,protocol,model,status_code,latency_ms,error}],route_label,client_ip,created_at}`
 - `GET /:id`
 - `GET /api/admin/logs/filters` → `{users:[{id,username}], accounts:[{id,name,provider}], providers:[...], models:[...]}`
+- 耗时字段口径：`latency_ms` 整个请求；`first_byte_ms` 收到上游响应头；`upstream_latency_ms` 从发往上游到转发结束（流式时包含交错的客户端写入）；`client_write_ms` 流式时向客户端写入与刷新被阻塞的时间。`upstream_latency_ms − client_write_ms` 约等于纯上游等待；`client_write_ms` 偏大说明客户端或反向代理接收慢。这些数与客户端侧测得的总耗时之间还隔着客户端连接与网络传输，不能直接相减归责。
 - 日志对象另含 `usage_status`（`confirmed` 上游返回了完整 usage；`partial` 流中断、只拿到部分 usage；`unknown` 上游处理了请求但未返回 usage；`none` 请求未被任何上游处理）与 `est_prompt_tokens`（非 confirmed 时按请求体字节 / 4 的粗略估算，仅供参考，不是下限；含图片或元数据时偏差大）。`attempts[]` 每次尝试带 `usage_status`、`prompt_tokens`、`completion_tokens`。`usage_corrected` 为 true 表示该请求由旧版本网关写入时只记了最后一次尝试的用量，升级或重建时已按各次尝试记录重新汇总（与当前网关对实时请求的折叠规则相同），原始尝试记录未改动。
 
 ### 用量统计 `/api/admin/usage`

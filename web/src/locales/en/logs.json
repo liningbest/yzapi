@@ -17,6 +17,8 @@
     "firstByte": "Time to first byte",
     "attempts": "Account attempts",
     "attemptsCount": "{{count}} attempts",
-    "noAttempts": "No upstream attempts recorded (the request may have been blocked or rate-limited at the gateway)"
+    "noAttempts": "No upstream attempts recorded (the request may have been blocked or rate-limited at the gateway)",
+    "clientWrite": "Client write blocking",
+    "clientWriteHint": "Time blocked writing/flushing to the client during streaming; upstream latency minus this approximates pure upstream wait. A large value points at the client or reverse proxy"
   }
 }

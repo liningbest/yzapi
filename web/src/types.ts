@@ -550,6 +550,8 @@ export interface CallLog {
   status_code: number;
   latency_ms: number;
   upstream_latency_ms: number;
+  /** Time blocked writing to the client (streams); upstream wait ≈ upstream_latency_ms − client_write_ms. */
+  client_write_ms?: number;
   first_byte_ms: number;
   error: string;
   attempts: LogAttempt[];

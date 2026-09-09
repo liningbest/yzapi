@@ -86,11 +86,20 @@
 
 评审方 `TestReview106*` 三个用例（含账号槽位在 200 / 404 / 500 后释放、取消释放）收入仓库 `internal/gateway/review106_test.go`。
 
-## 1.0.9：流式转发排查
+## 1.0.9：流式转发排查手段（未证实为根因）
 
 | 修改 | 说明 |
 |---|---|
-| 流式上游请求声明 `Accept-Encoding: identity` | 上游或其前置代理若对事件流做 gzip，token 会被攒成块延迟到达；非流式请求不受影响 |
-| `YZAPI_UPSTREAM_HTTP2=0` | 强制对上游只用 HTTP/1.1，用于排查个别供应商 HTTP/2 流式输出不畅；默认仍允许 HTTP/2 |
+| 流式上游请求声明 `Accept-Encoding: identity` | 事件流压缩无收益，压缩端不及时刷新时会延迟送达；这是合理默认，但**尚未证实**是本次 tok/s 差距的原因 |
+| `YZAPI_UPSTREAM_HTTP2=0` | 排查用开关，强制对上游只用 HTTP/1.1；默认仍允许 HTTP/2，不因单次测试结果固化 |
 
-回归：`TestCompatStreamRequestsRefuseCompression`。
+回归：`TestCompatStreamRequestsRefuseCompression`。与 1Panel 网关的 tok/s 差距根因未定，正确的对比方法见 1.0.10。
+
+## 1.0.10：把"时间花在哪一段"变成可测
+
+| 修改 | 说明 |
+|---|---|
+| 调用日志新增 `client_write_ms` | 流式转发时向客户端写入与刷新被阻塞的时间；`upstream_latency_ms − client_write_ms` 约等于纯上游等待。此前 `upstream_latency_ms` 在转发结束后记录，包含交错的客户端写入，不能当作模型生成耗时 |
+| `scripts/stream-timeline.py` | 对任一 Base URL 发一条流式请求，打印响应头、首 token、总耗时、chunk 间隔分位数和"成批到达"比例。配合固定节奏的 mock 上游（`tools/mockupstream -delay 50ms` 作为账号），分别打服务端口与域名反代，可以直接看出延迟出现在哪一段 |
+
+对比方法：固定账号、协议、请求参数与 `max_tokens`，新旧版本或不同开关交替执行、每组不少于 10 次，同时比较首字、完成时间、出字间隔与输出量；单看 tok/s 会被首字时刻的变化误导。
