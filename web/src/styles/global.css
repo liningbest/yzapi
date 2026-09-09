@@ -844,6 +844,30 @@ body {
   color: #a1a1aa;
   margin-top: 2px;
 }
+.yz-login-clients {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  font-size: 12px;
+  color: #71717a;
+}
+.yz-login-clients-label {
+  margin-right: 2px;
+}
+.yz-login-client {
+  border: 1px solid #27272a;
+  border-radius: 4px;
+  padding: 2px 8px;
+  color: #d4d4d8;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.yz-login-clients-note {
+  color: #52525b;
+}
 .yz-login-facts {
   margin-top: 28px;
   padding-top: 20px;

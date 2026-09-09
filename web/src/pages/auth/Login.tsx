@@ -10,6 +10,9 @@ import { LOCALES, useLocaleStore } from '@/stores/locale';
 import { useThemeStore } from '@/stores/theme';
 import { useSiteStore } from '@/stores/site';
 import BrandMark from '@/components/BrandMark';
+
+// Coding clients verified against the gateway's protocol fixtures (see docs/api.md).
+const CLIENTS = ['Claude Code', 'Codex', 'OpenCode', 'Cline', 'Roo Code', 'Cursor'];
 import { homeFor } from '@/layouts/guards';
 
 export default function Login() {
@@ -73,6 +76,16 @@ export default function Login() {
                 {'  '}<span className="c-flag">-d</span> <span className="c-str">{`'{"model": "yz-auto",`}</span>{'\n'}
                 {'       '}<span className="c-str">{`"messages": [{"role": "user", "content": "你好"}]}'`}</span>
               </pre>
+            </div>
+
+            <div className="yz-login-clients">
+              <span className="yz-login-clients-label">{t('auth:login.clientsLabel')}</span>
+              {CLIENTS.map((c) => (
+                <span key={c} className="yz-login-client">
+                  {c}
+                </span>
+              ))}
+              <span className="yz-login-clients-note">{t('auth:login.clientsNote')}</span>
             </div>
 
             <ul className="yz-login-points">
