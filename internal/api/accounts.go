@@ -39,10 +39,12 @@ type accountIn struct {
 	TestModel      string `json:"test_model"`
 	Priority       int    `json:"priority"`
 	MaxConcurrency int    `json:"max_concurrency"`
-	Enabled        *bool  `json:"enabled"`
-	Note           string `json:"note"`
-	SkipTest       bool   `json:"skip_test"`
-	AccountID      uint   `json:"account_id"`
+	// PassthroughModels forwards unmapped model names to this account unchanged.
+	PassthroughModels bool   `json:"passthrough_models"`
+	Enabled           *bool  `json:"enabled"`
+	Note              string `json:"note"`
+	SkipTest          bool   `json:"skip_test"`
+	AccountID         uint   `json:"account_id"`
 }
 
 func (s *Server) accountView(a *model.Account) gin.H {
@@ -54,7 +56,7 @@ func (s *Server) accountView(a *model.Account) gin.H {
 		"id": a.ID, "name": a.Name, "provider": a.Provider, "account_type": a.AccountType, "type": a.Type,
 		"base_url": a.BaseURL, "has_key": key != "", "api_key_masked": maskKey(key),
 		"protocols": a.Protocols, "mappings": a.Mappings, "test_model": a.TestModel,
-		"priority": a.Priority, "max_concurrency": a.MaxConcurrency, "enabled": a.Enabled,
+		"priority": a.Priority, "max_concurrency": a.MaxConcurrency, "passthrough_models": a.PassthroughModels, "enabled": a.Enabled,
 		"health": a.Health, "cooldown_until": a.CooldownUntil, "last_error": a.LastError,
 		"note": a.Note, "created_at": a.CreatedAt, "updated_at": a.UpdatedAt,
 	}
@@ -188,8 +190,8 @@ func (s *Server) validateAccountIn(in *accountIn, existing *model.Account) strin
 		seen[m.RequestModel] = true
 		maps = append(maps, m)
 	}
-	if len(maps) == 0 {
-		return "至少配置一条模型映射"
+	if len(maps) == 0 && !in.PassthroughModels {
+		return "至少配置一条模型映射，或开启\"透传未映射模型\""
 	}
 	if len(maps) > 100 {
 		return "模型映射最多 100 条"
@@ -201,7 +203,7 @@ func (s *Server) validateAccountIn(in *accountIn, existing *model.Account) strin
 	if in.MaxConcurrency < 0 || in.MaxConcurrency > 100000 {
 		return "最大并发范围 0-100000"
 	}
-	if in.TestModel == "" {
+	if in.TestModel == "" && len(maps) > 0 {
 		in.TestModel = maps[0].UpstreamModel
 	}
 	return ""
@@ -233,7 +235,7 @@ func (s *Server) createAccount(c *gin.Context) {
 		return
 	}
 	a := model.Account{Name: in.Name, Provider: in.Provider, AccountType: in.AccountType, Type: in.Type, BaseURL: in.BaseURL,
-		APIKeyEnc: enc, Protocols: in.Protocols, TestModel: in.TestModel, Priority: in.Priority, MaxConcurrency: in.MaxConcurrency,
+		APIKeyEnc: enc, Protocols: in.Protocols, TestModel: in.TestModel, Priority: in.Priority, MaxConcurrency: in.MaxConcurrency, PassthroughModels: in.PassthroughModels,
 		Enabled: in.Enabled == nil || *in.Enabled, Health: model.HealthAvailable, Note: in.Note}
 	for _, m := range in.Mappings {
 		a.Mappings = append(a.Mappings, model.ModelMapping{RequestModel: m.RequestModel, UpstreamModel: m.UpstreamModel})
@@ -292,7 +294,7 @@ func (s *Server) updateAccount(c *gin.Context) {
 			// A plain []string in an Updates map is rendered by gorm as a SQL row value "(?, ?)"
 			// ("row value misused" on SQLite); StringList serialises to its JSON column form.
 			"api_key_enc": enc, "protocols": model.StringList(in.Protocols), "test_model": in.TestModel, "priority": in.Priority,
-			"max_concurrency": in.MaxConcurrency, "note": in.Note}
+			"max_concurrency": in.MaxConcurrency, "passthrough_models": in.PassthroughModels, "note": in.Note}
 		if in.Enabled != nil {
 			upd["enabled"] = *in.Enabled
 		}
@@ -510,6 +512,9 @@ func (s *Server) probeAccount(ctx context.Context, in *accountIn, key string) (b
 	testModel := in.TestModel
 	if testModel == "" && len(in.Mappings) > 0 {
 		testModel = in.Mappings[0].UpstreamModel
+	}
+	if testModel == "" {
+		return true, 0, "未指定测试模型（透传账号），已跳过连接验证"
 	}
 	has := map[string]bool{}
 	for _, p := range in.Protocols {

@@ -169,6 +169,25 @@ try:
         eq(st, 200, "chat status"); eq(js["choices"][0]["message"]["role"], "assistant")
     check("data plane call with bob's key", t_chat)
     check("user cannot see other users' keys", lambda: req("DELETE", f"/api/user/keys/999999", token=BT, expect=404))
+    # ---------- client compatibility surface ----------
+    def t_compat():
+        pt = req("POST", "/api/admin/accounts", {"name": "any-model", "provider": "custom", "type": "text", "base_url": f"http://{MOCK}/v1", "api_key": "sk-mock",
+                                                   "protocols": ["openai-completions"], "mappings": [], "passthrough_models": True, "priority": 50, "skip_test": True}, expect=200)
+        eq(pt["passthrough_models"], True)
+        # bob's group is allow-listed (model group g1b) so pass-through must be refused for him...
+        st, _ = req("POST", "/v1/chat/completions", {"model": "totally-unknown-model", "messages": [{"role": "user", "content": "hi"}]}, token=KEY, raw=True); eq(st, 403, "allow-listed group")
+        # ...but the admin's default group (no allow-list) can use any name through the pass-through account.
+        ak = req("POST", "/api/user/keys", {"name": "admin-key"}, expect=200)["key"]
+        st, js = req("POST", "/v1/chat/completions", {"model": "totally-unknown-model", "messages": [{"role": "user", "content": "hi"}]}, token=ak, raw=True); eq(st, 200, "passthrough chat")
+        st, js = req("POST", "/v1/chat/completions", {"model": "SOLO", "messages": [{"role": "user", "content": "hi"}]}, token=KEY, raw=True); eq(st, 200, "case-insensitive model name")
+        st, js = req("POST", "/v1/messages/count_tokens", {"model": "solo", "messages": [{"role": "user", "content": "hello world"}]}, token=KEY, raw=True); eq(st, 200, "count_tokens"); eq(js["input_tokens"] > 0, True)
+        st, js = req("GET", "/v1/models/solo", token=KEY, raw=True); eq(st, 200, "model by id"); eq(js["id"], "solo"); eq(js["display_name"], "solo")
+        r = urllib.request.Request(BASE + "/v1/models", method="GET"); r.add_header("api-key", KEY)
+        with urllib.request.urlopen(r, timeout=10) as resp: eq(resp.status, 200, "api-key header")
+        r = urllib.request.Request(BASE + "/v1/chat/completions", method="OPTIONS"); r.add_header("Origin", "https://ide.example"); r.add_header("Access-Control-Request-Method", "POST")
+        with urllib.request.urlopen(r, timeout=10) as resp: eq(resp.status, 204, "cors preflight"); eq(resp.headers.get("Access-Control-Allow-Origin"), "*")
+        req("DELETE", f"/api/admin/accounts/{pt['id']}", expect=200)
+    check("client compatibility: passthrough, case-insensitive names, count_tokens, model by id, api-key, CORS", t_compat)
     check("key delete", lambda: req("DELETE", f"/api/user/keys/{KID}", token=BT, expect=200))
 
     # ---------- settings ----------

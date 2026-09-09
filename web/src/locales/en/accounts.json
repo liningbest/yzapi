@@ -94,7 +94,9 @@
     "testModelExtra": "Used for a minimal validation call on save; image accounts are not actually called.",
     "note": "Note",
     "enabled": "Enabled",
-    "enabledExtra": "When disabled the gateway will not dispatch requests to this account."
+    "enabledExtra": "When disabled the gateway will not dispatch requests to this account.",
+    "passthrough": "Pass through unmapped models",
+    "passthroughExtra": "When on, model names that have no mapping are forwarded to this account unchanged. Useful when teammates use assorted coding clients with varying default model names."
   },
   "test": {
     "success": "Connection succeeded",

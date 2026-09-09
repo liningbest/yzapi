@@ -57,11 +57,14 @@ func New(cfg *config.Config, db *gorm.DB, gw *gateway.Gateway, mgmt *api.Server,
 	v1.POST("/chat/completions", gin.WrapF(gw.HandleChat))
 	v1.POST("/responses", gin.WrapF(gw.HandleResponses))
 	v1.POST("/messages", gin.WrapF(gw.HandleMessages))
+	v1.POST("/messages/count_tokens", gin.WrapF(gw.HandleCountTokens))
+	v1.GET("/models/:id", gin.WrapF(gw.HandleModel))
 	v1.POST("/embeddings", gin.WrapF(gw.HandleEmbeddings))
 	v1.POST("/images/generations", gin.WrapF(gw.HandleImages))
 	// Some clients omit /v1 or double it; be forgiving.
 	r.POST("/chat/completions", gin.WrapF(gw.HandleChat))
 	r.POST("/messages", gin.WrapF(gw.HandleMessages))
+	r.POST("/messages/count_tokens", gin.WrapF(gw.HandleCountTokens))
 	r.POST("/v1/v1/chat/completions", gin.WrapF(gw.HandleChat))
 	r.GET("/models", gin.WrapF(gw.HandleModels))
 
@@ -73,7 +76,7 @@ func New(cfg *config.Config, db *gorm.DB, gw *gateway.Gateway, mgmt *api.Server,
 
 	return &http.Server{
 		Addr:              cfg.ListenAddr,
-		Handler:           r,
+		Handler:           gateway.CORS(r), // browser-based clients hit /v1 directly
 		ReadHeaderTimeout: 15 * time.Second,
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    1 << 20,

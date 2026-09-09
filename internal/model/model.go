@@ -151,14 +151,18 @@ type Account struct {
 	TestModel      string         `gorm:"size:128" json:"test_model"`
 	Priority       int            `gorm:"index" json:"priority"`
 	MaxConcurrency int            `json:"max_concurrency"`
-	Enabled        bool           `gorm:"default:true;index" json:"enabled"`
-	Health         string         `gorm:"size:16;default:available" json:"health"`
-	CooldownUntil  *time.Time     `json:"cooldown_until"`
-	LastError      string         `gorm:"size:512" json:"last_error"`
-	Note           string         `gorm:"size:255" json:"note"`
-	Extra          JSON           `gorm:"type:text" json:"extra"`
-	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
+	// PassthroughModels: any model name without an explicit mapping is forwarded to this
+	// account unchanged (typed by the account). Lets unknown coding clients use their
+	// default model names without a mapping per name.
+	PassthroughModels bool       `gorm:"not null;default:false" json:"passthrough_models"`
+	Enabled           bool       `gorm:"default:true;index" json:"enabled"`
+	Health            string     `gorm:"size:16;default:available" json:"health"`
+	CooldownUntil     *time.Time `json:"cooldown_until"`
+	LastError         string     `gorm:"size:512" json:"last_error"`
+	Note              string     `gorm:"size:255" json:"note"`
+	Extra             JSON       `gorm:"type:text" json:"extra"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
 type ModelMapping struct {

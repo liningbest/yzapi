@@ -179,6 +179,9 @@ func (g *Gateway) authenticate(r *http.Request) (*Principal, *GatewayError) {
 	if key == "" {
 		key = strings.TrimSpace(r.Header.Get("x-api-key"))
 	}
+	if key == "" {
+		key = strings.TrimSpace(r.Header.Get("api-key")) // Azure-style clients
+	}
 	if key == "" || !strings.HasPrefix(key, "sk-") {
 		return nil, ErrUnauthorized
 	}
@@ -260,13 +263,16 @@ func (g *Gateway) prepare(req *request) *GatewayError {
 		_ = json.Unmarshal(so, &opts)
 		req.includeUsage = opts.IncludeUsage
 	}
-	req.log.RequestModel = req.model
 	req.log.Stream = req.stream
 
-	mt, ok := req.snap.ModelType(req.model)
+	// Clients send many spellings of the same model; resolve to the configured name
+	// (or to a pass-through account) before authorisation so allow-lists see one name.
+	canonical, mt, ok := req.snap.Resolve(req.model, req.apiType)
 	if !ok {
 		return ErrModelNotFound
 	}
+	req.model = canonical
+	req.log.RequestModel = req.model
 	if mt != req.apiType {
 		return newErr(400, "model_type_mismatch", "Model '"+req.model+"' is a "+mt+" model and cannot be used with this endpoint")
 	}
@@ -416,28 +422,18 @@ func (g *Gateway) HandleModels(w http.ResponseWriter, r *http.Request) {
 	if grp == nil || !grp.Enabled {
 		grp = snap.DefaultGroup
 	}
-	type m struct {
-		ID      string `json:"id"`
-		Object  string `json:"object"`
-		Created int64  `json:"created"`
-		OwnedBy string `json:"owned_by"`
-		Type    string `json:"type"`
-	}
-	out := []m{}
+	out := []map[string]any{}
 	for _, mi := range snap.Models {
 		if grp != nil && grp.Allowed != nil && !grp.Allowed[mi.Name] {
 			if mi.Kind != "group" || !grp.ModelGroupNames[mi.Name] {
 				continue
 			}
 		}
-		owner := mi.Provider
-		if owner == "" {
-			owner = "yzapi"
-		}
-		out = append(out, m{ID: mi.Name, Object: "model", Created: snap.BuiltAt.Unix(), OwnedBy: owner, Type: mi.Type})
+		out = append(out, modelEntry(mi, snap.BuiltAt))
 	}
+	// Both list envelopes: OpenAI reads object/data, the Anthropic SDK reads data/has_more.
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": out})
+	_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": out, "has_more": false})
 }
 
 func (g *Gateway) handleText(w http.ResponseWriter, r *http.Request, proto string) {
@@ -549,8 +545,12 @@ func (g *Gateway) forward(req *request, cands []string) {
 	var lastMsg string
 	var lastStatus int
 
+	var lastRetryAfter time.Duration
 	for _, cand := range cands {
 		ups := req.snap.UpstreamsFor(cand)
+		if len(ups) == 0 {
+			ups = req.snap.PassthroughFor(req.apiType) // unmapped name: accounts that take anything
+		}
 		for _, up := range ups {
 			if tries >= maxTries {
 				break
@@ -648,6 +648,7 @@ func (g *Gateway) forward(req *request, cands []string) {
 						// Credential / billing problem: retrying soon is pointless.
 						g.health.failFor(up.ID, credentialCooldown, "credentials rejected: "+msg)
 					case resp.StatusCode == 429 && retryAfter > 0:
+						lastRetryAfter = retryAfter
 						g.health.failFor(up.ID, retryAfter, "rate limited (Retry-After): "+msg)
 					default:
 						g.health.fail(up.ID, cooldown, msg)
@@ -691,8 +692,15 @@ func (g *Gateway) forward(req *request, cands []string) {
 		return
 	}
 	status := 502
-	if lastStatus == 429 {
+	switch lastStatus {
+	case 429:
 		status = 429
+		if lastRetryAfter > 0 {
+			// Let well-behaved clients (all coding agents back off on this) wait the right time.
+			req.w.Header().Set("Retry-After", strconv.Itoa(int(lastRetryAfter/time.Second)))
+		}
+	case 400:
+		status = 400 // conversion refused the request (e.g. stateful Responses fields)
 	}
 	g.fail(req, newErr(status, "upstream_failed", "All upstream attempts failed: "+truncate(lastMsg, 300)))
 }
@@ -837,6 +845,9 @@ func (g *Gateway) buildBody(req *request, proto, upstreamModel string) (body []b
 		}
 		chat, err = convert.AnthropicToChatRequest(&ar, upstreamModel)
 	case model.ProtoOpenAIResponses:
+		if v, ok := req.raw["previous_response_id"]; ok && string(v) != "null" && string(v) != `""` {
+			return nil, false, errors.New("previous_response_id needs a native Responses upstream; conversion to another protocol is stateless")
+		}
 		var rr convert.ResponsesRequest
 		if e := json.Unmarshal(req.body, &rr); e != nil {
 			return nil, false, e

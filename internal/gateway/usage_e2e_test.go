@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -33,9 +34,36 @@ type e2e struct {
 	key  string
 }
 
+// acctSpec describes one upstream account for the e2e gateway.
+type acctSpec struct {
+	URL         string
+	Provider    string
+	Type        string
+	Protocols   []string
+	Mappings    map[string]string // request model -> upstream model
+	Passthrough bool
+}
+
+func chatSpec(url string) acctSpec {
+	return acctSpec{URL: url, Provider: "openai", Type: "text", Protocols: []string{model.ProtoOpenAIChat}, Mappings: map[string]string{"m": "m"}}
+}
+
 func newE2E(t *testing.T, upstreams ...string) *e2e {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{Logger: logger.Discard})
+	specs := make([]acctSpec, 0, len(upstreams))
+	for _, u := range upstreams {
+		specs = append(specs, chatSpec(u))
+	}
+	return newE2EAccounts(t, specs...)
+}
+
+var e2eSeq atomic.Int64
+
+func newE2EAccounts(t *testing.T, specs ...acctSpec) *e2e {
+	t.Helper()
+	// One in-memory database per gateway instance, even when a test builds several.
+	dbName := fmt.Sprintf("%s_%d", strings.ReplaceAll(t.Name(), "/", "_"), e2eSeq.Add(1))
+	db, err := gorm.Open(sqlite.Open("file:"+dbName+"?mode=memory&cache=shared"), &gorm.Config{Logger: logger.Discard})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,10 +91,12 @@ func newE2E(t *testing.T, upstreams ...string) *e2e {
 	key, hash, _ := crypto.GenerateAPIKey()
 	db.Create(&model.APIKey{UserID: user.ID, Name: "k", KeyHash: hash, Enabled: true})
 	enc, _ := cipher.Encrypt("upstream-secret")
-	for i, u := range upstreams {
-		acc := model.Account{Name: fmt.Sprintf("acc%d", i), Provider: "openai", Type: "text", BaseURL: u, APIKeyEnc: enc,
-			Protocols: model.StringList{model.ProtoOpenAIChat}, Priority: i, Enabled: true, Health: "available",
-			Mappings: []model.ModelMapping{{RequestModel: "m", UpstreamModel: "m"}}}
+	for i, sp := range specs {
+		acc := model.Account{Name: fmt.Sprintf("acc%d", i), Provider: sp.Provider, Type: sp.Type, BaseURL: sp.URL, APIKeyEnc: enc,
+			Protocols: model.StringList(sp.Protocols), Priority: i, Enabled: true, Health: "available", PassthroughModels: sp.Passthrough}
+		for rq, up := range sp.Mappings {
+			acc.Mappings = append(acc.Mappings, model.ModelMapping{RequestModel: rq, UpstreamModel: up})
+		}
 		db.Create(&acc)
 	}
 	g, err := New(&config.Config{DataDir: t.TempDir()}, db, cipher, st, logs)

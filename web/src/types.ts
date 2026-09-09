@@ -162,6 +162,8 @@ export interface Account {
   test_model: string;
   priority: number;
   max_concurrency: number;
+  /** Unmapped model names are forwarded to this account unchanged. */
+  passthrough_models: boolean;
   enabled: boolean;
   health: Health;
   cooldown_until: string | null;
@@ -183,6 +185,7 @@ export interface AccountInput {
   test_model?: string;
   priority: number;
   max_concurrency: number;
+  passthrough_models?: boolean;
   enabled: boolean;
   note?: string;
   skip_test?: boolean;

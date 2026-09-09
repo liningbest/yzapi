@@ -26,6 +26,7 @@ type Upstream struct {
 	Mappings       map[string]string // request model -> upstream model
 	Priority       int
 	MaxConcurrency int
+	Passthrough    bool // accepts unmapped model names as-is
 	Extra          map[string]any
 }
 
@@ -66,6 +67,8 @@ type Snapshot struct {
 	byModel      map[string][]*Upstream // request model -> upstreams sorted by priority
 	Models       []ModelInfo
 	modelType    map[string]string
+	lowerName    map[string]string      // lower-cased request model -> canonical name
+	passthrough  map[string][]*Upstream // model type -> accounts accepting unmapped names
 	Groups       map[uint]*GroupView
 	DefaultGroup *GroupView
 	ModelGroups  map[uint]*ModelGroupView
@@ -75,7 +78,108 @@ type Snapshot struct {
 }
 
 func (s *Snapshot) UpstreamsFor(reqModel string) []*Upstream { return s.byModel[reqModel] }
-func (s *Snapshot) GroupByName(name string) *ModelGroupView  { return s.groupByName[name] }
+
+// PassthroughFor lists accounts of the given type that accept unmapped model names.
+func (s *Snapshot) PassthroughFor(typ string) []*Upstream { return s.passthrough[typ] }
+
+// vendorPrefixes are stripped when a client sends OpenRouter / AI-SDK style ids
+// ("anthropic/claude-sonnet-4-5", "models/gemini-2.5-pro").
+var vendorPrefixes = []string{"anthropic/", "openai/", "deepseek/", "google/", "models/", "x-ai/", "xai/", "moonshotai/", "moonshot/", "zhipu/", "z-ai/", "minimax/", "qwen/", "alibaba/", "meta-llama/", "mistralai/"}
+
+// versionLike reports whether a name suffix is a date / version tag rather than a
+// different model variant.
+func versionLike(rest string) bool {
+	if rest == "" {
+		return false
+	}
+	if rest == "latest" {
+		return true
+	}
+	for _, r := range rest {
+		if (r < '0' || r > '9') && r != '-' && r != '.' {
+			return false
+		}
+	}
+	return rest[0] >= '0' && rest[0] <= '9'
+}
+
+// Resolve maps whatever model name a client sent to a configured request model.
+// Order: exact -> case-insensitive -> vendor prefix stripped -> "-latest" stripped ->
+// unique version-suffix match (client "claude-sonnet-4-5-20250929" vs configured
+// "claude-sonnet-4-5", or the reverse) -> pass-through account of the wanted type.
+// It returns the canonical name, its type and whether anything matched.
+func (s *Snapshot) Resolve(name, wantType string) (canonical string, typ string, ok bool) {
+	try := func(n string) (string, string, bool) {
+		if t, ok := s.modelType[n]; ok {
+			return n, t, true
+		}
+		if c, ok := s.lowerName[strings.ToLower(n)]; ok {
+			return c, s.modelType[c], true
+		}
+		return "", "", false
+	}
+	if c, t, ok := try(name); ok {
+		return c, t, true
+	}
+	n := name
+	lower := strings.ToLower(n)
+	for _, p := range vendorPrefixes {
+		if strings.HasPrefix(lower, p) {
+			n = n[len(p):]
+			break
+		}
+	}
+	if i := strings.LastIndex(n, "/"); i >= 0 && i < len(n)-1 {
+		n = n[i+1:]
+	}
+	if c, t, ok := try(n); ok {
+		return c, t, true
+	}
+	if strings.HasSuffix(strings.ToLower(n), "-latest") {
+		if c, t, ok := try(n[:len(n)-len("-latest")]); ok {
+			return c, t, true
+		}
+	}
+	// Version-suffix tolerance: the longest configured name that is a dash-separated
+	// prefix of the request (or vice versa) wins; a tie between equally long names is
+	// ambiguous and refused.
+	ln := strings.ToLower(n)
+	var best []string
+	bestLen := -1
+	for l, c := range s.lowerName {
+		if wantType != "" && s.modelType[c] != wantType {
+			continue
+		}
+		// The extra segment must look like a version or date ("20250929", "2025-08-07",
+		// "latest"); "claude" must not match "claude-sonnet-4-5", nor "gpt-5-codex" "gpt-5".
+		var rest string
+		switch {
+		case strings.HasPrefix(ln, l+"-"):
+			rest = ln[len(l)+1:]
+		case strings.HasPrefix(l, ln+"-"):
+			rest = l[len(ln)+1:]
+		default:
+			continue
+		}
+		if !versionLike(rest) {
+			continue
+		}
+		switch {
+		case len(l) > bestLen:
+			best, bestLen = []string{c}, len(l)
+		case len(l) == bestLen:
+			best = append(best, c)
+		}
+	}
+	if len(best) == 1 {
+		return best[0], s.modelType[best[0]], true
+	}
+	if len(s.passthrough[wantType]) > 0 {
+		return name, wantType, true
+	}
+	return "", "", false
+}
+func (s *Snapshot) GroupByName(name string) *ModelGroupView { return s.groupByName[name] }
 func (s *Snapshot) ModelType(m string) (string, bool) {
 	t, ok := s.modelType[m]
 	return t, ok
@@ -109,6 +213,8 @@ func (h *snapshotHolder) rebuild(virtualModel string, smartEnabled bool) error {
 		Accounts:    map[uint]*Upstream{},
 		byModel:     map[string][]*Upstream{},
 		modelType:   map[string]string{},
+		lowerName:   map[string]string{},
+		passthrough: map[string][]*Upstream{},
 		Groups:      map[uint]*GroupView{},
 		ModelGroups: map[uint]*ModelGroupView{},
 		groupByName: map[string]*ModelGroupView{},
@@ -135,7 +241,10 @@ func (h *snapshotHolder) rebuild(virtualModel string, smartEnabled bool) error {
 			ID: a.ID, Name: a.Name, Provider: a.Provider, Type: a.Type,
 			BaseURL: strings.TrimRight(a.BaseURL, "/"), APIKey: key, AuthHeader: auth,
 			Protocols: map[string]bool{}, Mappings: map[string]string{},
-			Priority: a.Priority, MaxConcurrency: a.MaxConcurrency,
+			Priority: a.Priority, MaxConcurrency: a.MaxConcurrency, Passthrough: a.PassthroughModels,
+		}
+		if a.PassthroughModels {
+			snap.passthrough[a.Type] = append(snap.passthrough[a.Type], u)
 		}
 		for _, pr := range a.Protocols {
 			u.Protocols[pr] = true
@@ -154,6 +263,11 @@ func (h *snapshotHolder) rebuild(virtualModel string, smartEnabled bool) error {
 	for m, list := range snap.byModel {
 		sort.SliceStable(list, func(i, j int) bool { return list[i].Priority < list[j].Priority })
 		snap.byModel[m] = list
+		snap.lowerName[strings.ToLower(m)] = m
+	}
+	for t, list := range snap.passthrough {
+		sort.SliceStable(list, func(i, j int) bool { return list[i].Priority < list[j].Priority })
+		snap.passthrough[t] = list
 	}
 	names := make([]string, 0, len(snap.byModel))
 	for m := range snap.byModel {

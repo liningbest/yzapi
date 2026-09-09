@@ -53,6 +53,7 @@ interface FormValues {
   mappings: ModelMapping[];
   priority: number;
   max_concurrency: number;
+  passthrough_models?: boolean;
   test_model?: string;
   note?: string;
   enabled: boolean;
@@ -90,6 +91,7 @@ function toPayload(v: FormValues, isEdit: boolean, skipTest: boolean, accountId?
     test_model: v.test_model || undefined,
     priority: v.priority ?? 100,
     max_concurrency: v.max_concurrency ?? 0,
+    passthrough_models: v.passthrough_models ?? false,
     enabled: v.enabled ?? true,
     note: v.note?.trim() || undefined,
     ...(skipTest ? { skip_test: true } : {}),
@@ -134,6 +136,7 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
       mappings: (a.mappings ?? []).map((m) => ({ id: m.id, request_model: m.request_model, upstream_model: m.upstream_model })),
       priority: a.priority,
       max_concurrency: a.max_concurrency,
+      passthrough_models: a.passthrough_models ?? false,
       test_model: a.test_model || undefined,
       note: a.note,
       enabled: a.enabled,
@@ -512,7 +515,8 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
                   {
                     validator: async (_rule, v: ModelMapping[] | undefined) => {
                       const n = v?.length ?? 0;
-                      if (n < 1) throw new Error(t('accounts:form.mappingsMin'));
+                      // With pass-through on, an account may legitimately have no explicit mapping.
+                      if (n < 1 && !form.getFieldValue('passthrough_models')) throw new Error(t('accounts:form.mappingsMin'));
                       if (n > 100) throw new Error(t('accounts:form.mappingsMax'));
                     },
                   },
@@ -642,6 +646,14 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
                 rules={[requiredRule]}
               >
                 <InputNumber min={0} max={100000} precision={0} style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item
+                name="passthrough_models"
+                label={t('accounts:form.passthrough')}
+                extra={t('accounts:form.passthroughExtra')}
+                valuePropName="checked"
+              >
+                <Switch />
               </Form.Item>
               <Form.Item name="test_model" label={t('accounts:form.testModel')} extra={t('accounts:form.testModelExtra')}>
                 <Select
