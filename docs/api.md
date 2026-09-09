@@ -10,10 +10,10 @@
 数据面接口（客户端调用，API Key 认证）：`GET /v1/models`、`GET /v1/models/{id}`、`POST /v1/chat/completions`、`POST /v1/responses`、`POST /v1/messages`、`POST /v1/messages/count_tokens`、`POST /v1/embeddings`、`POST /v1/images/generations`。为兼容各种编程客户端：
 
 - 认证头接受 `Authorization: Bearer`、`x-api-key`、`api-key` 三种；路径省略或重复 `/v1` 也接受；`/v1/*` 支持 CORS 预检，浏览器内的客户端可直连。
-- **模型名解析**：客户端发来的模型名依次按精确、忽略大小写、去掉厂商前缀（`anthropic/`、`openai/`、`models/` 等）、去掉 `-latest`、版本 / 日期后缀容错（`claude-sonnet-4-5-20250929` 命中映射 `claude-sonnet-4-5`，反之亦可；只接受数字或日期形态的后缀，`gpt-5-codex` 不会命中 `gpt-5`，多个同长候选视为歧义）匹配映射；日志与报表记录解析后的名称。
+- **模型名解析**：客户端发来的模型名依次按精确、忽略大小写、去掉厂商前缀（`anthropic/`、`openai/`、`models/` 等）、去掉 `-latest`、版本 / 日期后缀容错（`claude-sonnet-4-5-20250929` 命中映射 `claude-sonnet-4-5`，反之亦可；只接受数字或日期形态的后缀，`gpt-5-codex` 不会命中 `gpt-5`）匹配映射；日志与报表记录解析后的名称。**歧义**（多个同长候选，或仅大小写不同的多个映射）返回 400 `model_ambiguous`，不会调用上游，也不会落入透传。
 - **透传未映射模型**：账号开启 `passthrough_models` 后，没有映射的模型名原样转发给该账号（按账号类型限定文本 / 向量 / 文生图）。显式映射优先；用户组绑定了模型组时不允许透传。
-- `POST /v1/messages/count_tokens`：有 Anthropic 协议账号可服务该模型时原样转发（改写模型名、透传 `anthropic-beta`），否则按请求体大小估算并带 `X-Token-Count-Estimated: true`。
-- `GET /v1/models` 每项同时带 OpenAI 字段（`object/created/owned_by`）与 Anthropic 字段（`display_name/created_at`），列表含 `has_more`。
+- `POST /v1/messages/count_tokens`：与生成请求走同一前半段（鉴权、正文上限与内存预算、模型解析、用户组与模型组授权、全局 / 组 / Key 并发槽），因此受同样的性能设置约束；有 Anthropic 协议账号可服务该模型时原样转发（改写模型名、透传 `anthropic-beta`），否则按请求体大小估算并带 `X-Token-Count-Estimated: true`。估算只用于上下文辅助，不是计量值，不进入用量账本。
+- `GET /v1/models` / `GET /v1/models/{id}` 每项同时带 OpenAI 字段（`object:"model"/created/owned_by`）与 Anthropic ModelInfo 字段（`type:"model"/display_name/created_at`），列表含 `has_more`；网关自身分类放在 `model_type`（text / embedding / image），`kind` 为 model / virtual / group。透传账号可服务的未映射名称在详情查询中同样返回可用。
 - 最终失败为 429 时把上游的 `Retry-After` 透传给客户端。
 
 **跨协议转换的能力边界**（客户端协议与上游协议不同时才会发生；同协议直连时只改写模型名，其余字段原样透传）：

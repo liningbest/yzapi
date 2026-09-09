@@ -267,8 +267,11 @@ func (g *Gateway) prepare(req *request) *GatewayError {
 
 	// Clients send many spellings of the same model; resolve to the configured name
 	// (or to a pass-through account) before authorisation so allow-lists see one name.
-	canonical, mt, ok := req.snap.Resolve(req.model, req.apiType)
-	if !ok {
+	canonical, mt, st := req.snap.ResolveDetail(req.model, req.apiType)
+	switch st {
+	case ResolveAmbiguous:
+		return newErr(400, "model_ambiguous", "Model '"+req.model+"' matches more than one configured model; use the exact configured name")
+	case ResolveUnknown:
 		return ErrModelNotFound
 	}
 	req.model = canonical

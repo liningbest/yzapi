@@ -41,9 +41,21 @@ func (s *Server) guardedAdminWrite(c *gin.Context, fn func(tx *gorm.DB) error) b
 }
 
 // wouldRemoveLastAdmin reports whether disabling / demoting / deleting u leaves no
-// enabled administrator. Must be evaluated inside guardedAdminWrite.
+// enabled administrator. Must be evaluated inside guardedAdminWrite on a user row
+// re-read inside that transaction (see freshUser): the role read before the lock may
+// be stale.
 func (s *Server) wouldRemoveLastAdmin(tx *gorm.DB, u *model.User) bool {
 	return u.Role == model.RoleAdmin && u.Enabled && s.adminCount(tx) <= 1
+}
+
+// freshUser reloads the user inside the guarded transaction so the decision uses the
+// role / enabled state current at write time, not the snapshot taken before the lock.
+func freshUser(tx *gorm.DB, id uint) (*model.User, error) {
+	var u model.User
+	if err := tx.First(&u, id).Error; err != nil {
+		return nil, err
+	}
+	return &u, nil
 }
 
 func (s *Server) listUsers(c *gin.Context) {
@@ -208,9 +220,6 @@ func (s *Server) updateUser(c *gin.Context) {
 			return
 		}
 		upd["role"] = *in.Role
-		if *in.Role != u.Role {
-			upd["session_version"] = u.SessionVersion + 1
-		}
 	}
 	if in.Note != nil {
 		upd["note"] = *in.Note
@@ -218,10 +227,19 @@ func (s *Server) updateUser(c *gin.Context) {
 	if len(upd) > 0 {
 		demote := in.Role != nil && *in.Role != model.RoleAdmin
 		ok := s.guardedAdminWrite(c, func(tx *gorm.DB) error {
-			if demote && s.wouldRemoveLastAdmin(tx, &u) {
+			cur, err := freshUser(tx, u.ID)
+			if err != nil {
+				return err
+			}
+			if demote && s.wouldRemoveLastAdmin(tx, cur) {
 				return errLastAdmin
 			}
-			return tx.Model(&u).Updates(upd).Error
+			if in.Role != nil && *in.Role != cur.Role {
+				upd["session_version"] = gorm.Expr("session_version + 1")
+			} else {
+				delete(upd, "session_version")
+			}
+			return tx.Model(cur).Updates(upd).Error
 		})
 		if !ok {
 			return
@@ -248,13 +266,17 @@ func (s *Server) deleteUser(c *gin.Context) {
 		return
 	}
 	ok = s.guardedAdminWrite(c, func(tx *gorm.DB) error {
-		if s.wouldRemoveLastAdmin(tx, &u) {
+		cur, err := freshUser(tx, u.ID)
+		if err != nil {
+			return err
+		}
+		if s.wouldRemoveLastAdmin(tx, cur) {
 			return errLastAdmin
 		}
 		if err := tx.Where("user_id = ?", id).Delete(&model.APIKey{}).Error; err != nil {
 			return err
 		}
-		return tx.Delete(&u).Error
+		return tx.Delete(cur).Error
 	})
 	if !ok {
 		return
@@ -290,10 +312,14 @@ func (s *Server) setUserEnabled(c *gin.Context) {
 		upd["session_version"] = gorm.Expr("session_version + 1")
 	}
 	ok = s.guardedAdminWrite(c, func(tx *gorm.DB) error {
-		if !in.Enabled && s.wouldRemoveLastAdmin(tx, &u) {
+		cur, err := freshUser(tx, u.ID)
+		if err != nil {
+			return err
+		}
+		if !in.Enabled && s.wouldRemoveLastAdmin(tx, cur) {
 			return errLastAdmin
 		}
-		return tx.Model(&u).Updates(upd).Error
+		return tx.Model(cur).Updates(upd).Error
 	})
 	if !ok {
 		return

@@ -68,6 +68,7 @@ type Snapshot struct {
 	Models       []ModelInfo
 	modelType    map[string]string
 	lowerName    map[string]string      // lower-cased request model -> canonical name
+	lowerDup     map[string]bool        // lower-cased names configured with more than one spelling
 	passthrough  map[string][]*Upstream // model type -> accounts accepting unmapped names
 	Groups       map[uint]*GroupView
 	DefaultGroup *GroupView
@@ -103,23 +104,42 @@ func versionLike(rest string) bool {
 	return rest[0] >= '0' && rest[0] <= '9'
 }
 
+// Resolution outcomes.
+const (
+	ResolveFound     = iota
+	ResolveUnknown   // nothing configured matches and no pass-through account applies
+	ResolveAmbiguous // several configured names match equally well; refused, never forwarded
+)
+
 // Resolve maps whatever model name a client sent to a configured request model.
 // Order: exact -> case-insensitive -> vendor prefix stripped -> "-latest" stripped ->
 // unique version-suffix match (client "claude-sonnet-4-5-20250929" vs configured
-// "claude-sonnet-4-5", or the reverse) -> pass-through account of the wanted type.
-// It returns the canonical name, its type and whether anything matched.
+// "claude-sonnet-4-5", or the reverse) -> pass-through account of the wanted type
+// (any type when wantType is empty, e.g. metadata lookups). Ambiguity is a distinct
+// outcome so it is never papered over by pass-through.
 func (s *Snapshot) Resolve(name, wantType string) (canonical string, typ string, ok bool) {
+	c, t, st := s.ResolveDetail(name, wantType)
+	return c, t, st == ResolveFound
+}
+
+func (s *Snapshot) ResolveDetail(name, wantType string) (canonical string, typ string, status int) {
+	ambiguous := false
 	try := func(n string) (string, string, bool) {
 		if t, ok := s.modelType[n]; ok {
 			return n, t, true
 		}
-		if c, ok := s.lowerName[strings.ToLower(n)]; ok {
+		l := strings.ToLower(n)
+		if s.lowerDup[l] {
+			ambiguous = true // "GPT-5" and "gpt-5" both configured: refuse rather than guess
+			return "", "", false
+		}
+		if c, ok := s.lowerName[l]; ok {
 			return c, s.modelType[c], true
 		}
 		return "", "", false
 	}
 	if c, t, ok := try(name); ok {
-		return c, t, true
+		return c, t, ResolveFound
 	}
 	n := name
 	lower := strings.ToLower(n)
@@ -133,11 +153,11 @@ func (s *Snapshot) Resolve(name, wantType string) (canonical string, typ string,
 		n = n[i+1:]
 	}
 	if c, t, ok := try(n); ok {
-		return c, t, true
+		return c, t, ResolveFound
 	}
 	if strings.HasSuffix(strings.ToLower(n), "-latest") {
 		if c, t, ok := try(n[:len(n)-len("-latest")]); ok {
-			return c, t, true
+			return c, t, ResolveFound
 		}
 	}
 	// Version-suffix tolerance: the longest configured name that is a dash-separated
@@ -172,12 +192,21 @@ func (s *Snapshot) Resolve(name, wantType string) (canonical string, typ string,
 		}
 	}
 	if len(best) == 1 {
-		return best[0], s.modelType[best[0]], true
+		return best[0], s.modelType[best[0]], ResolveFound
 	}
-	if len(s.passthrough[wantType]) > 0 {
-		return name, wantType, true
+	if len(best) > 1 || ambiguous {
+		return "", "", ResolveAmbiguous
 	}
-	return "", "", false
+	types := []string{wantType}
+	if wantType == "" {
+		types = []string{model.TypeText, model.TypeEmbedding, model.TypeImage}
+	}
+	for _, t := range types {
+		if len(s.passthrough[t]) > 0 {
+			return name, t, ResolveFound
+		}
+	}
+	return "", "", ResolveUnknown
 }
 func (s *Snapshot) GroupByName(name string) *ModelGroupView { return s.groupByName[name] }
 func (s *Snapshot) ModelType(m string) (string, bool) {
@@ -214,6 +243,7 @@ func (h *snapshotHolder) rebuild(virtualModel string, smartEnabled bool) error {
 		byModel:     map[string][]*Upstream{},
 		modelType:   map[string]string{},
 		lowerName:   map[string]string{},
+		lowerDup:    map[string]bool{},
 		passthrough: map[string][]*Upstream{},
 		Groups:      map[uint]*GroupView{},
 		ModelGroups: map[uint]*ModelGroupView{},
@@ -263,6 +293,9 @@ func (h *snapshotHolder) rebuild(virtualModel string, smartEnabled bool) error {
 	for m, list := range snap.byModel {
 		sort.SliceStable(list, func(i, j int) bool { return list[i].Priority < list[j].Priority })
 		snap.byModel[m] = list
+		if prev, ok := snap.lowerName[strings.ToLower(m)]; ok && prev != m {
+			snap.lowerDup[strings.ToLower(m)] = true
+		}
 		snap.lowerName[strings.ToLower(m)] = m
 	}
 	for t, list := range snap.passthrough {

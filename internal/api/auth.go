@@ -38,6 +38,7 @@ type authService struct {
 }
 
 type cachedUser struct {
+	gen uint64 // invalidation generation the entry was read under
 	u   model.User
 	exp time.Time
 }
@@ -92,7 +93,9 @@ func (a *authService) parse(tok string) (*claims, error) {
 func (a *authService) user(cl *claims) (*model.User, error) {
 	if v, ok := a.cache.Load(cl.UID); ok {
 		cu := v.(cachedUser)
-		if time.Now().Before(cu.exp) {
+		// An entry written under an older generation may have been filled by a read that
+		// overlapped an invalidation (the check-then-store window); never trust it.
+		if cu.gen == a.gen.Load() && time.Now().Before(cu.exp) {
 			if cu.u.SessionVersion != cl.Ver || !cu.u.Enabled {
 				return nil, errors.New("session expired")
 			}
@@ -106,13 +109,22 @@ func (a *authService) user(cl *claims) (*model.User, error) {
 		return nil, err
 	}
 	if a.gen.Load() == gen {
-		a.cache.Store(cl.UID, cachedUser{u: u, exp: time.Now().Add(15 * time.Second)})
+		if authBeforeStoreHook != nil {
+			authBeforeStoreHook() // test-only scheduling point; nil in production
+		}
+		// The entry carries the generation it was read under, so even a store that slips
+		// in after an invalidation is rejected on the next lookup.
+		a.cache.Store(cl.UID, cachedUser{u: u, exp: time.Now().Add(15 * time.Second), gen: gen})
 	}
 	if u.SessionVersion != cl.Ver || !u.Enabled {
 		return nil, errors.New("session expired")
 	}
 	return &u, nil
 }
+
+// authBeforeStoreHook lets tests pause between the generation check and the cache
+// store to exercise the invalidation race deterministically.
+var authBeforeStoreHook func()
 
 func (a *authService) invalidate(uid uint) {
 	a.gen.Add(1)

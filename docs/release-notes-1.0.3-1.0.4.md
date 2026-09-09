@@ -53,3 +53,17 @@
 ## 升级
 
 镜像标签改为 `1.0.4` 重建即可。数据库自动迁移新增 `accounts.passthrough_models` 列（默认关闭），无需人工操作。
+
+## 1.0.5：复核 `docs/release-review-1.0.3-1.0.4-2026-09-09.md` 的 G01–G07
+
+| 编号 | 修改 | 验收 |
+|---|---|---|
+| G01 P1 | 缓存条目记录读取时的失效代次，命中时校验；退出后即使旧查询写回也不会被采信。保留代次检查，增加测试钩子 `authBeforeStoreHook` | `TestReview104LogoutAfterGenerationCheck`（钩子在比较通过与写回之间插入退出） |
+| G02 P1 | `guardedAdminWrite` 内重新读取目标用户，按当前角色 / 启用状态判断；禁用、降级、删除共用；会话版本以数据库当前值递增 | `TestReview104AdminRoleSnapshot`（提升 B、降级 A 交错于禁用 B 之间，最终仍有管理员） |
+| G03 P1 | `count_tokens` 改走生成请求同一前半段：正文上限（413）、内存预算、模型解析、授权、全局 / 组 / Key 并发槽，失败不调上游、资源归还 | `TestReview104CountTokensLimits`（1 KB 上限 → 413；全局并发占满 → 不到上游） |
+| G04 P2 | 授权规则与生成路径共用，模型组名称在展开前即获准 | `TestReview104CountTokensAuthorizedGroup` |
+| G05 P2 | 模型项 `type` 固定为 `"model"`（Anthropic ModelInfo 契约），网关分类移至 `model_type` | `TestReview104ModelMetadataType` |
+| G06 P2 | 无类型的详情查询按 text / embedding / image 顺序查找透传账号 | `TestReview104PassthroughModelLookup` |
+| G07 P2 | 解析结果区分"未匹配"与"歧义"：歧义（同长多候选、仅大小写不同的多映射）返回 400 `model_ambiguous`，不进透传、不调上游 | `TestReview104AmbiguousNameWithPassthrough` |
+
+评审方 7 个用例已收入仓库（`internal/api/review104_test.go`、`internal/gateway/review104_test.go`），并用评审方自己的 overlay 脚本复跑通过。第 3 节的口径说明已采纳：请求样本测试不等同于真实客户端接入验收；SSE 注释行由网关消费不透传，仅事件透传；`count_tokens` 估算不进入用量账本。
