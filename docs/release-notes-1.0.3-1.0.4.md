@@ -1,0 +1,55 @@
+# 1.0.3 / 1.0.4 变更说明与验收要点
+
+基线：1.0.2 = `9f80afa`。发布包为桌面 `yzapi-release.tar.gz`（`VERSION` 文件标明版本），镜像标签 `yzapi/gateway:<版本>`。
+
+## 1.0.3（`238f713`、`e4495ba`）：后台管理复核 A01–A08 修复
+
+对应 `docs/admin-review-9f80afa-2026-09-09.md`，评审方 7 个独立用例已收入仓库 `internal/api/review_admin_test.go`。
+
+| 编号 | 问题 | 修改 | 验收方式 |
+|---|---|---|---|
+| A01 P1 | 退出后旧查询回填缓存，作废 token 再次获准 | 后台用户缓存加失效代次：回源前记录、回填前比对，失效期间开始的查询不写回；退出 / 禁用 / 改密共用 | `TestAuditLogoutCacheRefill`；手工：退出后用旧 token 调 `/api/auth/me` 必须 401 |
+| A02 P1 | 两个管理员并发互禁，最终无管理员 | 禁用 / 降级 / 删除管理员在 `adminMu` + 事务内重新计数再写入 | `TestAuditConcurrentLastAdmin`：恰好一个 409，至少保留一名管理员 |
+| A03 P1 | 并发登录失败丢计数，不锁定 | 失败计数改数据库原子递增，锁定基于递增后的值 | `TestAuditConcurrentFailedLogins`：3 次历史 + 2 次并发 → 锁定 |
+| A04 P1 | 改账号地址后旧冷却仍阻断 | 更新前快照"地址是否变化"，事务成功后重置健康 | `TestAuditBaseURLChangeResetsCooldown`：只改地址、Key 不变，下一次请求直达新上游 |
+| A05 P1 | 模型组删除部分提交 | 新增 `settings.Store.WithTx` / `SaveIn`：分组、关联表、智能路由引用同一事务并持设置写锁 | `TestAuditDeleteModelGroupSettingFailure`：设置写入失败时分组与引用全部保持原状 |
+| A06 P2 | 编辑路由样本不重建向量 | 更新前快照"文本是否变化"；构建失败经 `build_error` 返回 | `TestAuditRouteSampleEditBuild` |
+| A07 P2 | 空向量配置被"模型必填"阻止 | 模型必填依赖是否选账号；账号为空时选择框显示占位符而非 "0" | 浏览器：向量账号未配置、模型为空时点保存成功 |
+| A08 P2 | 三个性能参数允许负数 | `max_body_memory_mb`、`vector_max_concurrency`、`vector_timeout_sec` 非负校验 | `TestAuditNegativeNewPerformanceFields`：传 -1 返回 400 |
+
+接口变化：`PUT /api/admin/route/samples/:id` 响应可含 `build_error`；`PUT /api/admin/settings/performance` 全字段拒绝负数。
+
+## 1.0.4（`4ce187c`）：多客户端兼容层
+
+目标：Codex、OpenCode、Claude Code、Cline、DeepSeek / MiniMax 等客户端不做逐个适配即可接入。规则和转换边界见 `docs/api.md` 数据面一节。
+
+### 行为变化
+
+| 变化 | 说明 | 验收方式 |
+|---|---|---|
+| 模型名容错解析 | 依次：精确 → 忽略大小写 → 去厂商前缀（`anthropic/`、`openai/`、`models/` 等）→ 去 `-latest` → 版本 / 日期后缀（`claude-sonnet-4-5-20250929` ↔ `claude-sonnet-4-5`，仅数字或日期形态，`gpt-5-codex` 不命中 `gpt-5`，同长多候选视为歧义）。日志与报表记录解析后的名称 | `TestCompatModelNameResolution`；手工：用 `Claude-Sonnet-4-5`、`anthropic/claude-sonnet-4-5` 调用均命中同一映射；`claude` 单词 404 |
+| 账号"透传未映射模型" | 账号新增 `passthrough_models`（UI 开关）。开启后无映射的模型名原样转发到该账号，按账号类型限定；显式映射优先；用户组绑定模型组时不允许透传；此类账号允许没有映射，保存时无测试模型则跳过连接验证 | `TestCompatPassthroughAccount`；api-crud 兼容项 |
+| `POST /v1/messages/count_tokens` | 有 Anthropic 协议账号可服务该模型时原样转发（改模型名、透传 `anthropic-beta`），否则按请求体估算并带 `X-Token-Count-Estimated: true` | `TestCompatCountTokens` |
+| `GET /v1/models/{id}`；模型列表字段 | 列表每项同时含 OpenAI（`object/created/owned_by`）与 Anthropic（`display_name/created_at`）字段，含 `has_more` | `TestCompatModelsCorsApiKey` |
+| CORS、`api-key` 头 | `/v1/*` 支持预检；认证头新增 `api-key` | 同上；api-crud 兼容项 |
+| `Retry-After` 透传 | 最终 429 时携带上游的 `Retry-After` | `TestCompatRetryAfterPropagated` |
+| Responses 有状态字段 | `previous_response_id` 且上游非原生 Responses 时返回 400 并说明，不再静默丢弃 | `TestCompatCodexConversionLimits` |
+
+### 客户端样本（`internal/gateway/compat_test.go`）
+
+- Claude Code：Messages 请求含 `cache_control` 系统块、thinking + `signature`、`tool_use` / `tool_result`、`metadata`、`thinking` 参数、未知扩展字段、`anthropic-beta` 头；同协议直连时上游收到的正文除模型名外逐字段相同，头部与路径正确。
+- Codex：Responses 请求含 `instructions`、`function_call` / `function_call_output`、`reasoning`、`store:false`、`prompt_cache_key`、`include`、`text.verbosity`；原生 Responses 上游逐字段相同；转到 Chat 上游时无状态请求可转换，有状态请求 400。
+- OpenCode / Cline：Chat 工具调用往返转到 Anthropic 上游，`tool_use` / `tool_result` 与调用 ID 保留，厂商前缀模型名被解析。
+- Anthropic 流式透传：`ping` 事件、注释行、300 KB 单行工具参数不截断、不乱序，用量正确入账。
+
+### 已知边界（写入 `docs/api.md`）
+
+跨协议转换会丢失 `cache_control`、供应商 thinking 签名、`metadata` / `service_tier` / `prompt_cache_key` 等扩展字段。建议每个供应商账号开启原生协议让客户端走同协议路径，转换只做兜底。
+
+## 两个版本共同的验证结果
+
+`go test -race -count=1 ./...` 通过；`bash scripts/smoke.sh` 47 项；`python3 scripts/api-crud.py` 84 项；`pnpm typecheck && pnpm build` 通过；评审方 7 个 `TestAudit*` 用例通过。
+
+## 升级
+
+镜像标签改为 `1.0.4` 重建即可。数据库自动迁移新增 `accounts.passthrough_models` 列（默认关闭），无需人工操作。
