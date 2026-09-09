@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Alert, Button, Col, Form, Input, Row, Select, Space, Typography } from 'antd';
 import { ExperimentOutlined } from '@ant-design/icons';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -17,7 +17,13 @@ interface Props {
 export default function VectorTab({ data }: Props) {
   const { t } = useTranslation(['settings', 'common']);
   const [form] = Form.useForm<VectorSettings>();
-  useSyncForm(form, data);
+  // account_id 0 means "no vector service"; seed undefined so the select shows its
+  // placeholder instead of "0" (useSyncForm re-applies data whenever it changes).
+  const seeded = useMemo(
+    () => (data ? { ...data, account_id: data.account_id || undefined } : undefined),
+    [data],
+  );
+  useSyncForm(form, seeded as VectorSettings | undefined);
   const [testResult, setTestResult] = useState<VectorTestResult | null>(null);
 
   const accounts = useQuery({
@@ -57,8 +63,7 @@ export default function VectorTab({ data }: Props) {
     <Form<VectorSettings>
       form={form}
       layout="vertical"
-      // account_id 0 means "no vector service"; seed undefined so the select shows its placeholder, not "0".
-      initialValues={data ? { ...data, account_id: data.account_id || undefined } : undefined}
+      initialValues={seeded}
       // Clearing the select sends account_id 0, which the backend accepts as "no vector service".
       onFinish={(values) => save.mutate({ ...values, account_id: values.account_id ?? 0, model: values.account_id ? values.model : '' })}
       onValuesChange={() => setTestResult(null)}
