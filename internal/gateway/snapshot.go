@@ -160,24 +160,23 @@ func (s *Snapshot) ResolveDetail(name, wantType string) (canonical string, typ s
 			return c, t, ResolveFound
 		}
 	}
-	// Version-suffix tolerance: the longest configured name that is a dash-separated
-	// prefix of the request (or vice versa) wins; a tie between equally long names is
-	// ambiguous and refused.
+	// Version-suffix tolerance: among configured names that differ from the request only
+	// by a dash-separated version / date segment, the longest wins. A tie, or a longest
+	// candidate that stands for several case variants, is ambiguous and refused.
 	ln := strings.ToLower(n)
-	var best []string
+	type cand struct {
+		name string
+		dup  bool
+	}
+	var matches []cand
 	bestLen := -1
 	for l, c := range s.lowerName {
 		if wantType != "" && s.modelType[c] != wantType {
 			continue
 		}
-		// A candidate that stands for several case-variant mappings is by itself
-		// ambiguous: the suffix rule may never pick one of them.
-		if s.lowerDup[l] && (strings.HasPrefix(ln, l+"-") || strings.HasPrefix(l, ln+"-")) {
-			ambiguous = true
-			continue
-		}
 		// The extra segment must look like a version or date ("20250929", "2025-08-07",
-		// "latest"); "claude" must not match "claude-sonnet-4-5", nor "gpt-5-codex" "gpt-5".
+		// "latest"); "claude" must not match "claude-sonnet-4-5", nor "gpt-5-codex" "gpt-5",
+		// and "demo-coder" is a different model, not a version of "demo".
 		var rest string
 		switch {
 		case strings.HasPrefix(ln, l+"-"):
@@ -192,15 +191,15 @@ func (s *Snapshot) ResolveDetail(name, wantType string) (canonical string, typ s
 		}
 		switch {
 		case len(l) > bestLen:
-			best, bestLen = []string{c}, len(l)
+			matches, bestLen = []cand{{c, s.lowerDup[l]}}, len(l)
 		case len(l) == bestLen:
-			best = append(best, c)
+			matches = append(matches, cand{c, s.lowerDup[l]})
 		}
 	}
-	if len(best) == 1 {
-		return best[0], s.modelType[best[0]], ResolveFound
+	if len(matches) == 1 && !matches[0].dup && !ambiguous {
+		return matches[0].name, s.modelType[matches[0].name], ResolveFound
 	}
-	if len(best) > 1 || ambiguous {
+	if len(matches) > 0 || ambiguous {
 		return "", "", ResolveAmbiguous
 	}
 	types := []string{wantType}

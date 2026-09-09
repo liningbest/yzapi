@@ -76,3 +76,12 @@
 | H02 P2 | 版本 / 日期后缀匹配阶段把代表多个大小写变体的候选直接视为歧义，返回 400 `model_ambiguous`，不调上游、不进透传 | `TestReview105CaseCollisionWithVersionSuffix` |
 
 评审方 3 个 `TestReview105*` 用例收入仓库（`internal/gateway/review105_test.go`），含取消后资源归还与计数不进用量账本的通过项。
+
+## 1.0.7：复核 `docs/release-review-1.0.6-2026-09-09.md` 的 H02 遗留
+
+| 表现 | 修改 | 验收 |
+|---|---|---|
+| `demo`、`demo-1`、`DEMO-1` 下请求 `Demo-1-20260101` 选中了 `demo` | 后缀匹配先按最长候选决定；最长候选若代表多个大小写变体则歧义，不再回落到更短候选 | `TestReview106ResolutionComposition/duplicate_longer_candidate` |
+| `demo`、`DEMO` 开透传时请求 `demo-coder` 被误判歧义 | 只有多出的段像版本 / 日期时才参与歧义判断；`coder` 不是版本，视为未匹配，按透传转发原名 | `TestReview106ResolutionComposition/non_version_variant_passthrough` |
+
+评审方 `TestReview106*` 三个用例（含账号槽位在 200 / 404 / 500 后释放、取消释放）收入仓库 `internal/gateway/review106_test.go`。
