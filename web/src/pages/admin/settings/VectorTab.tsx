@@ -57,7 +57,8 @@ export default function VectorTab({ data }: Props) {
     <Form<VectorSettings>
       form={form}
       layout="vertical"
-      initialValues={data}
+      // account_id 0 means "no vector service"; seed undefined so the select shows its placeholder, not "0".
+      initialValues={data ? { ...data, account_id: data.account_id || undefined } : undefined}
       // Clearing the select sends account_id 0, which the backend accepts as "no vector service".
       onFinish={(values) => save.mutate({ ...values, account_id: values.account_id ?? 0, model: values.account_id ? values.model : '' })}
       onValuesChange={() => setTestResult(null)}
@@ -86,7 +87,8 @@ export default function VectorTab({ data }: Props) {
             name="model"
             label={t('settings:vector.model.label')}
             extra={t('settings:vector.model.extra')}
-            rules={[{ required: true, message: t('common:common.required') }]}
+            dependencies={['account_id']}
+            rules={[({ getFieldValue }) => ({ required: !!getFieldValue('account_id'), message: t('common:common.required') })]}
           >
             <Input placeholder="text-embedding-3-small" className="yz-mono" />
           </Form.Item>

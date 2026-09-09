@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -57,6 +58,10 @@ type ESSink interface {
 }
 
 type Server struct {
+	// adminMu serialises every operation that can reduce the number of enabled
+	// administrators (disable / demote / delete), so the count check and the write
+	// form one critical section instead of two racing requests both seeing "2 admins".
+	adminMu sync.Mutex
 	cfg     *config.Config
 	db      *gorm.DB
 	gw      *gateway.Gateway

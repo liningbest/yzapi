@@ -78,7 +78,7 @@
 
 ### 智能路由 `/api/admin/route`
 - 样本：`GET /samples?label=&q=&vectorized=true|false&page=`；对象 `{id,label:"simple"|"complex",text,threshold,note,vector_dim,vectorized:bool,created_at}`
-- `POST /samples {label,text,threshold,note,build_vector:true}`；`PUT /samples/:id`；`DELETE /samples/:id`
+- `POST /samples {label,text,threshold,note,build_vector:true}`；`PUT /samples/:id`（文本变化且 `build_vector` 为 true 时同步重建向量，失败时响应附 `build_error`）；`DELETE /samples/:id`
 - `POST /samples/batch {items:[{label,text,note}], build_vector:true}` → `{created:N}`
 - `POST /samples/build {ids:[1,2]}` 或 `{all:true}` → `{built:N, failed:N, error}`
 - `POST /preview {text}` → `{label, source, confidence, group_id, group_name, models:[...], top_k:[{id,label,text,score}], normalized, latency_ms}`
@@ -126,7 +126,7 @@
 ### 设置 `/api/admin/settings`
 - `GET` → `{basic, performance, vector, smart_route, compliance, elasticsearch}`（密钥字段脱敏为 `"******"`）
 - `PUT /basic {base_url, log_retention_days, protocol_conversion, site_name}`
-- `PUT /performance {max_concurrency, queue_size, queue_timeout_sec, request_timeout_sec, stream_idle_timeout_sec, max_body_kb, cooldown_sec, max_retries, upstream_connect_timeout_sec, max_body_memory_mb, vector_max_concurrency, vector_timeout_sec}`
+- `PUT /performance {max_concurrency, queue_size, queue_timeout_sec, request_timeout_sec, stream_idle_timeout_sec, max_body_kb, cooldown_sec, max_retries, upstream_connect_timeout_sec, max_body_memory_mb, vector_max_concurrency, vector_timeout_sec}`；所有字段不得为负（400），`max_retries / max_body_kb / max_body_memory_mb / vector_max_concurrency / vector_timeout_sec` 传 0 恢复默认值
 - `PUT /vector {account_id, model}`；`POST /vector/test {account_id, model}` → `{ok, dim, latency_ms, message}`
 - `PUT /smart_route {enabled, virtual_model, simple_group_id, complex_group_id, threshold, confidence_gap, top_k}`
 - `PUT /compliance {enabled, semantic_threshold, check_system_prompt, on_failure:"allow"|"block"}`

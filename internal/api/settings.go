@@ -67,7 +67,8 @@ func (s *Server) putPerformance(c *gin.Context) {
 		return
 	}
 	if in.MaxConcurrency < 0 || in.QueueSize < 0 || in.QueueTimeoutSec < 0 || in.RequestTimeoutSec < 0 ||
-		in.StreamIdleTimeout < 0 || in.MaxBodyKB < 0 || in.CooldownSec < 0 || in.MaxRetries < 0 || in.UpstreamConnTimeout < 0 {
+		in.StreamIdleTimeout < 0 || in.MaxBodyKB < 0 || in.CooldownSec < 0 || in.MaxRetries < 0 || in.UpstreamConnTimeout < 0 ||
+		in.MaxBodyMemoryMB < 0 || in.VectorMaxConcurrency < 0 || in.VectorTimeoutSec < 0 {
 		badRequest(c, "数值不能为负数")
 		return
 	}

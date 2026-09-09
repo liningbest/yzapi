@@ -178,14 +178,38 @@ func (s *Store) Reload() error {
 func (s *Store) save(key string, v any) error {
 	s.saveMu.Lock()
 	defer s.saveMu.Unlock()
+	if err := SaveIn(s.db, key, v); err != nil {
+		return err
+	}
+	return s.applyLocked()
+}
+
+// SaveIn persists one settings section through db, which may be a transaction, so a
+// caller can commit a settings change atomically with its own rows. It does not touch
+// the in-memory settings; use WithTx for that.
+func SaveIn(db *gorm.DB, key string, v any) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
-	row := model.Setting{Key: key, Value: string(b), UpdatedAt: time.Now()}
-	if err := s.db.Save(&row).Error; err != nil {
+	return db.Save(&model.Setting{Key: key, Value: string(b), UpdatedAt: time.Now()}).Error
+}
+
+// WithTx runs fn in a database transaction while holding the settings write lock, so no
+// concurrent settings save can interleave with it. fn receives the current settings and
+// may persist changes with SaveIn(tx, ...). After a successful commit the in-memory
+// settings are reloaded and OnApply callbacks fire; on error nothing is applied.
+func (s *Store) WithTx(fn func(tx *gorm.DB, cur All) error) error {
+	s.saveMu.Lock()
+	defer s.saveMu.Unlock()
+	cur := s.Get()
+	if err := s.db.Transaction(func(tx *gorm.DB) error { return fn(tx, cur) }); err != nil {
 		return err
 	}
+	return s.applyLocked()
+}
+
+func (s *Store) applyLocked() error {
 	if err := s.Reload(); err != nil {
 		return err
 	}

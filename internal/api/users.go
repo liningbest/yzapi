@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"regexp"
 	"strings"
 
@@ -17,6 +18,32 @@ func (s *Server) adminCount(tx *gorm.DB) int64 {
 	var n int64
 	tx.Model(&model.User{}).Where("role = ? AND enabled = ?", model.RoleAdmin, true).Count(&n)
 	return n
+}
+
+var errLastAdmin = errors.New("last admin")
+
+// guardedAdminWrite runs fn in a transaction while holding adminMu. fn re-checks the
+// admin count on the transaction and returns errLastAdmin to refuse. Single-process
+// guarantee; multi-instance deployments need a database-level lock here.
+func (s *Server) guardedAdminWrite(c *gin.Context, fn func(tx *gorm.DB) error) bool {
+	s.adminMu.Lock()
+	defer s.adminMu.Unlock()
+	err := s.db.Transaction(fn)
+	if errors.Is(err, errLastAdmin) {
+		fail(c, 409, "last_admin", "系统至少需要保留一名管理员")
+		return false
+	}
+	if err != nil {
+		serverError(c, err)
+		return false
+	}
+	return true
+}
+
+// wouldRemoveLastAdmin reports whether disabling / demoting / deleting u leaves no
+// enabled administrator. Must be evaluated inside guardedAdminWrite.
+func (s *Server) wouldRemoveLastAdmin(tx *gorm.DB, u *model.User) bool {
+	return u.Role == model.RoleAdmin && u.Enabled && s.adminCount(tx) <= 1
 }
 
 func (s *Server) listUsers(c *gin.Context) {
@@ -180,10 +207,6 @@ func (s *Server) updateUser(c *gin.Context) {
 			badRequest(c, "角色无效")
 			return
 		}
-		if u.Role == model.RoleAdmin && *in.Role != model.RoleAdmin && u.Enabled && s.adminCount(s.db) <= 1 {
-			fail(c, 409, "last_admin", "系统至少需要保留一名管理员")
-			return
-		}
 		upd["role"] = *in.Role
 		if *in.Role != u.Role {
 			upd["session_version"] = u.SessionVersion + 1
@@ -193,8 +216,14 @@ func (s *Server) updateUser(c *gin.Context) {
 		upd["note"] = *in.Note
 	}
 	if len(upd) > 0 {
-		if err := s.db.Model(&u).Updates(upd).Error; err != nil {
-			serverError(c, err)
+		demote := in.Role != nil && *in.Role != model.RoleAdmin
+		ok := s.guardedAdminWrite(c, func(tx *gorm.DB) error {
+			if demote && s.wouldRemoveLastAdmin(tx, &u) {
+				return errLastAdmin
+			}
+			return tx.Model(&u).Updates(upd).Error
+		})
+		if !ok {
 			return
 		}
 	}
@@ -218,18 +247,16 @@ func (s *Server) deleteUser(c *gin.Context) {
 		fail(c, 409, "self", "不能删除当前登录账号")
 		return
 	}
-	if u.Role == model.RoleAdmin && u.Enabled && s.adminCount(s.db) <= 1 {
-		fail(c, 409, "last_admin", "系统至少需要保留一名管理员")
-		return
-	}
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	ok = s.guardedAdminWrite(c, func(tx *gorm.DB) error {
+		if s.wouldRemoveLastAdmin(tx, &u) {
+			return errLastAdmin
+		}
 		if err := tx.Where("user_id = ?", id).Delete(&model.APIKey{}).Error; err != nil {
 			return err
 		}
 		return tx.Delete(&u).Error
 	})
-	if err != nil {
-		serverError(c, err)
+	if !ok {
 		return
 	}
 	s.auth.invalidate(id)
@@ -254,20 +281,21 @@ func (s *Server) setUserEnabled(c *gin.Context) {
 		notFound(c)
 		return
 	}
-	if !in.Enabled && u.Role == model.RoleAdmin && u.Enabled && s.adminCount(s.db) <= 1 {
-		fail(c, 409, "last_admin", "系统至少需要保留一名管理员")
-		return
-	}
 	if !in.Enabled && u.ID == cur(c).ID {
 		fail(c, 409, "self", "不能禁用当前登录账号")
 		return
 	}
 	upd := map[string]any{"enabled": in.Enabled}
 	if !in.Enabled {
-		upd["session_version"] = u.SessionVersion + 1
+		upd["session_version"] = gorm.Expr("session_version + 1")
 	}
-	if err := s.db.Model(&u).Updates(upd).Error; err != nil {
-		serverError(c, err)
+	ok = s.guardedAdminWrite(c, func(tx *gorm.DB) error {
+		if !in.Enabled && s.wouldRemoveLastAdmin(tx, &u) {
+			return errLastAdmin
+		}
+		return tx.Model(&u).Updates(upd).Error
+	})
+	if !ok {
 		return
 	}
 	s.auth.invalidate(id)

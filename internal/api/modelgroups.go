@@ -1,8 +1,10 @@
 package api
 
 import (
+	"errors"
 	"gorm.io/gorm"
 	"strings"
+	"yzapi/internal/settings"
 
 	"github.com/gin-gonic/gin"
 
@@ -153,14 +155,15 @@ func (s *Server) deleteModelGroup(c *gin.Context) {
 	if !ok {
 		return
 	}
-	sr := s.st.Get().SmartRoute
-	referenced := sr.SimpleGroupID == id || sr.ComplexGroupID == id
-	if referenced && sr.Enabled {
-		fail(c, 409, "in_use", "该分组正被智能路由引用，请先在设置中更换")
-		return
-	}
-	// Row + join rows go in one transaction; a missing id is a 404, not a silent 200.
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	errInUse := errors.New("in use")
+	// Group row, join rows and the smart-route reference commit or roll back together,
+	// under the settings write lock so a concurrent smart-route edit cannot interleave.
+	err := s.st.WithTx(func(tx *gorm.DB, cur settings.All) error {
+		sr := cur.SmartRoute
+		referenced := sr.SimpleGroupID == id || sr.ComplexGroupID == id
+		if referenced && sr.Enabled {
+			return errInUse
+		}
 		res := tx.Delete(&model.ModelGroup{}, id)
 		if res.Error != nil {
 			return res.Error
@@ -168,29 +171,31 @@ func (s *Server) deleteModelGroup(c *gin.Context) {
 		if res.RowsAffected == 0 {
 			return gorm.ErrRecordNotFound
 		}
-		return tx.Exec("DELETE FROM user_group_model_groups WHERE model_group_id = ?", id).Error
+		if err := tx.Exec("DELETE FROM user_group_model_groups WHERE model_group_id = ?", id).Error; err != nil {
+			return err
+		}
+		if referenced {
+			// Smart routing is off: drop the stale reference in the same transaction.
+			if sr.SimpleGroupID == id {
+				sr.SimpleGroupID = 0
+			}
+			if sr.ComplexGroupID == id {
+				sr.ComplexGroupID = 0
+			}
+			return settings.SaveIn(tx, "smart_route", sr)
+		}
+		return nil
 	})
-	if isNotFound(err) {
+	switch {
+	case errors.Is(err, errInUse):
+		fail(c, 409, "in_use", "该分组正被智能路由引用，请先在设置中更换")
+		return
+	case isNotFound(err):
 		notFound(c)
 		return
-	}
-	if err != nil {
+	case err != nil:
 		serverError(c, err)
 		return
-	}
-	if referenced {
-		// Smart routing is off: drop the stale reference so settings stay consistent
-		// (after the delete committed, so a failed delete leaves settings untouched).
-		if sr.SimpleGroupID == id {
-			sr.SimpleGroupID = 0
-		}
-		if sr.ComplexGroupID == id {
-			sr.ComplexGroupID = 0
-		}
-		if err := s.st.SetSmartRoute(sr); err != nil {
-			serverError(c, err)
-			return
-		}
 	}
 	_ = s.gw.Reload()
 	c.JSON(200, gin.H{})

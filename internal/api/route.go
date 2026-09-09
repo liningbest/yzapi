@@ -123,8 +123,9 @@ func (s *Server) updateRouteSample(c *gin.Context) {
 		badRequest(c, "标签必须为 simple/complex，样本文本不能为空")
 		return
 	}
+	textChanged := in.Text != x.Text // before Updates(&x) overwrites x.Text
 	upd := map[string]any{"label": in.Label, "text": in.Text, "threshold": in.Threshold, "note": in.Note}
-	if in.Text != x.Text {
+	if textChanged {
 		upd["vector"] = nil
 		upd["vector_dim"] = 0
 	}
@@ -132,15 +133,25 @@ func (s *Server) updateRouteSample(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
+	var buildErr string
 	if s.eng.Route != nil {
-		if in.BuildVector && in.Text != x.Text {
-			_, _, _ = s.eng.Route.BuildVectors(c.Request.Context(), []uint{x.ID})
+		if in.BuildVector && textChanged {
+			_, failed, err := s.eng.Route.BuildVectors(c.Request.Context(), []uint{x.ID})
+			if err != nil {
+				buildErr = err.Error()
+			} else if failed > 0 {
+				buildErr = "向量构建失败，请检查向量服务"
+			}
 		} else {
 			_ = s.eng.Route.Reload()
 		}
 	}
 	s.db.First(&x, id)
-	c.JSON(200, routeSampleView(&x))
+	out := routeSampleView(&x)
+	if buildErr != "" {
+		out["build_error"] = buildErr
+	}
+	c.JSON(200, out)
 }
 
 func (s *Server) deleteRouteSample(c *gin.Context) {

@@ -273,7 +273,10 @@ func (s *Server) updateAccount(c *gin.Context) {
 		key, _ = s.cipher.Decrypt(a.APIKeyEnc)
 	}
 	keyChanged := key != mustDecrypt(s, a.APIKeyEnc)
-	if !in.SkipTest && (keyChanged || in.BaseURL != a.BaseURL) {
+	// Snapshot before Updates(&a): gorm writes the new values back into a, so a
+	// comparison made afterwards would always say "unchanged".
+	baseChanged := in.BaseURL != a.BaseURL
+	if !in.SkipTest && (keyChanged || baseChanged) {
 		if ok, _, msg := s.probeAccount(c.Request.Context(), &in, key); !ok {
 			fail(c, 400, "validation_failed", "连接验证失败: "+msg)
 			return
@@ -312,8 +315,8 @@ func (s *Server) updateAccount(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
-	if keyChanged || in.BaseURL != a.BaseURL {
-		s.gw.ResetHealth(a.ID)
+	if keyChanged || baseChanged {
+		s.gw.ResetHealth(a.ID) // the old cooldown belonged to the old endpoint / credentials
 	}
 	s.vectorChanged()
 	_ = s.gw.Reload()

@@ -2,11 +2,13 @@ package api
 
 import (
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -28,6 +30,11 @@ type authService struct {
 	db     *gorm.DB
 	secret []byte
 	cache  sync.Map // uid -> cachedUser
+	// gen is bumped by every invalidation. A lookup records it before reading the
+	// database and only fills the cache if nothing was invalidated meanwhile, so a
+	// read that started before a logout / disable / password change cannot write a
+	// stale session_version back after the invalidation ran.
+	gen atomic.Uint64
 }
 
 type cachedUser struct {
@@ -93,18 +100,24 @@ func (a *authService) user(cl *claims) (*model.User, error) {
 			return &u, nil
 		}
 	}
+	gen := a.gen.Load()
 	var u model.User
 	if err := a.db.Preload("Group").First(&u, cl.UID).Error; err != nil {
 		return nil, err
 	}
-	a.cache.Store(cl.UID, cachedUser{u: u, exp: time.Now().Add(15 * time.Second)})
+	if a.gen.Load() == gen {
+		a.cache.Store(cl.UID, cachedUser{u: u, exp: time.Now().Add(15 * time.Second)})
+	}
 	if u.SessionVersion != cl.Ver || !u.Enabled {
 		return nil, errors.New("session expired")
 	}
 	return &u, nil
 }
 
-func (a *authService) invalidate(uid uint) { a.cache.Delete(uid) }
+func (a *authService) invalidate(uid uint) {
+	a.gen.Add(1)
+	a.cache.Delete(uid)
+}
 
 func (s *Server) requireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -180,11 +193,17 @@ func (s *Server) login(c *gin.Context) {
 		return
 	}
 	if !crypto.VerifyPassword(in.Password, u.PasswordHash) {
-		upd := map[string]any{"failed_logins": u.FailedLogins + 1}
-		if u.FailedLogins+1 >= maxFailedLogin {
-			upd["locked"] = true
+		// Count in the database, not from the value read above: concurrent failures
+		// would otherwise overwrite each other and never reach the lock threshold.
+		err := s.db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&model.User{}).Where("id = ?", u.ID).Update("failed_logins", gorm.Expr("failed_logins + 1")).Error; err != nil {
+				return err
+			}
+			return tx.Model(&model.User{}).Where("id = ? AND failed_logins >= ?", u.ID, maxFailedLogin).Update("locked", true).Error
+		})
+		if err != nil {
+			slog.Error("recording failed login", "user", u.Username, "err", err)
 		}
-		s.db.Model(&u).Updates(upd)
 		fail(c, 401, "invalid_credentials", "用户名或密码错误")
 		return
 	}
