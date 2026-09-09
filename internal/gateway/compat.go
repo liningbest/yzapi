@@ -53,6 +53,12 @@ func (g *Gateway) HandleCountTokens(w http.ResponseWriter, r *http.Request) {
 			if !up.HasProtocol(model.ProtoAnthropicMessages) || !g.health.available(up.ID) {
 				continue
 			}
+			// Same per-account slot as a generation request: a full account is skipped,
+			// never sent one more request.
+			ctr := g.accounts.get(up.ID)
+			if !ctr.tryAcquire(int64(up.MaxConcurrency)) {
+				continue
+			}
 			raw := make(map[string]json.RawMessage, len(req.raw))
 			for k, v := range req.raw {
 				raw[k] = v
@@ -60,7 +66,9 @@ func (g *Gateway) HandleCountTokens(w http.ResponseWriter, r *http.Request) {
 			mb, _ := json.Marshal(up.mapModel(cand))
 			raw["model"] = mb
 			out, _ := json.Marshal(raw)
-			if g.proxyCountTokens(w, r, up, out) {
+			served := g.proxyCountTokens(w, r, up, out)
+			ctr.release()
+			if served {
 				return
 			}
 		}

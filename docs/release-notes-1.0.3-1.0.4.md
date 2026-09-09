@@ -67,3 +67,12 @@
 | G07 P2 | 解析结果区分"未匹配"与"歧义"：歧义（同长多候选、仅大小写不同的多映射）返回 400 `model_ambiguous`，不进透传、不调上游 | `TestReview104AmbiguousNameWithPassthrough` |
 
 评审方 7 个用例已收入仓库（`internal/api/review104_test.go`、`internal/gateway/review104_test.go`），并用评审方自己的 overlay 脚本复跑通过。第 3 节的口径说明已采纳：请求样本测试不等同于真实客户端接入验收；SSE 注释行由网关消费不透传，仅事件透传；`count_tokens` 估算不进入用量账本。
+
+## 1.0.6：复核 `docs/release-review-1.0.5-2026-09-09.md` 的 H01、H02
+
+| 编号 | 修改 | 验收 |
+|---|---|---|
+| H01 P1 | `count_tokens` 选定上游后领取与生成请求相同的账号并发槽（`max_concurrency`），已满账号跳过、不发请求；正常、失败、换账号都释放 | `TestReview105CountTokensAccountLimit`（账号上限 1 且已占满 → 上游收到 0 个请求） |
+| H02 P2 | 版本 / 日期后缀匹配阶段把代表多个大小写变体的候选直接视为歧义，返回 400 `model_ambiguous`，不调上游、不进透传 | `TestReview105CaseCollisionWithVersionSuffix` |
+
+评审方 3 个 `TestReview105*` 用例收入仓库（`internal/gateway/review105_test.go`），含取消后资源归还与计数不进用量账本的通过项。

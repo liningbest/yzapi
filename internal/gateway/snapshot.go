@@ -170,6 +170,12 @@ func (s *Snapshot) ResolveDetail(name, wantType string) (canonical string, typ s
 		if wantType != "" && s.modelType[c] != wantType {
 			continue
 		}
+		// A candidate that stands for several case-variant mappings is by itself
+		// ambiguous: the suffix rule may never pick one of them.
+		if s.lowerDup[l] && (strings.HasPrefix(ln, l+"-") || strings.HasPrefix(l, ln+"-")) {
+			ambiguous = true
+			continue
+		}
 		// The extra segment must look like a version or date ("20250929", "2025-08-07",
 		// "latest"); "claude" must not match "claude-sonnet-4-5", nor "gpt-5-codex" "gpt-5".
 		var rest string
