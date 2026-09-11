@@ -140,3 +140,15 @@
 验收清单：`docs/acceptance-1.0.11-1.0.12.md`。
 
 升级：直接替换镜像；首次启动写入内置价目表与 `usage_hourlies.cost_micros` 等新列，不重算历史成本（历史日志 `cost_known=false`）。
+
+## 1.0.13：独立验收复核 R112-01…05（`docs/acceptance-review-1.0.12-2026-09-11.md`）
+
+| 编号 | 问题 | 修改 | 验收方式 |
+|---|---|---|---|
+| R112-01 P1 | 配置回滚清空账号密钥（`Account.APIKeyEnc` 是 `json:"-"`，快照根本没存） | 快照改用独立持久化结构 `snapshotAccount`（公共 Account 不变，浏览器摘要仍不含密钥）；载荷 `version:2` + sha256 校验，校验不符 409 且不动数据；v1 旧快照恢复时沿用同 id 账号当前密钥，无处可取的账号停用恢复并在 `missing_keys` / 界面提示中列出 | `TestR112RestoreKeepsCredential`（含网关看到解密后的 key）、`TestR112RestoreV1SnapshotWithoutKeys`、`TestR112RestoreRejectsCorruptSnapshot`；api-crud 恢复后真实探测 |
+| R112-02 P1 | 切换币种给历史金额换标签、混币种累加 | 账本固定美元：计价时把人民币单价折成美元入账，展示时按显示币种换算；`cost_micros` 语义改为美元微单位，所有出口经 `Display` 换算；管理端日志新增换算后的 `cost`；升级时一次性把早期构建的金额折成美元（`cost_ledger` 标记） | `TestR112CurrencyDoesNotRelabelHistory`（1 USD → 7.2 CNY，新旧行同口径求和）、`TestCostAndCurrency`；api-crud 币种切换用例 |
+| R112-03 P1 | 缓存写入单价未参与计算 | `convert.Usage` 新增内部字段 `CacheWriteTokens`，Anthropic 非流式 / 流式 / 直连 / 转换 / 串联流全部保留；尝试记录与日志新增 `cache_write_tokens`；`Cost` 增加 cacheWrite 参数，按 `cache_write_per_m` 计价（未填按输入价），读 / 写 / 普通输入互不重叠 | `TestCacheWritePricing`、`TestR112CacheWritePricing`（五条路径均为 3750 微美元） |
+| R112-04 P2 | 未知用量尝试被忽略仍标"费用已知" | 任一尝试 usage 为 unknown / partial 即 `cost_known=false`，金额保留为已知部分 | `TestR112UnknownAttemptCost` |
+| R112-05 P2 | 空价目表不能正确回滚 | 快照 `prices` 改为指针：字段存在即整体恢复（空集合也恢复为空），只有 v1 快照缺字段才不动 | `TestR112RestoreEmptyPrices`；api-crud 空价目表恢复用例 |
+
+评审方 `docs/review-repros/accept112/run.py` 六个断言全部通过（`TestReview112SnapshotContainsEncryptedKey` 的夹具因持久化结构改名改为经 `captureConfig` 断言）。全量 race、smoke 56 项、api-crud 90 项通过。「设置 → 计价」的文案改为"显示币种"，并说明账本固定为美元。

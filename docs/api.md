@@ -163,15 +163,15 @@
 - 密钥字段传 `"******"` 表示保持不变。
 
 ### 配置版本 `/api/admin/config/snapshots`
-- 修改账号池、模型组、单价表、设置的任何写接口（探测类除外）执行前自动保存一份快照：账号（含加密密钥）与映射、模型组、用户组的模型组授权、单价表、全部设置节；最多保留 50 份。
-- `GET` → `{items:[{id,actor,reason,created_at}], total}`；`POST {reason}` 手动快照；`GET /:id` → 摘要（账号不含密钥）；`POST /:id/restore` 在一个事务里用快照覆盖当前配置（先自动保存当前状态），随后重载设置、单价、网关快照、路由与合规引擎。用户、用户组、Key、日志不在范围内。
+- 修改账号池、模型组、单价表、设置的任何写接口（探测类除外）执行前自动保存一份快照：账号（含加密密钥，以独立的持久化结构保存）与映射、模型组、用户组的模型组授权、完整单价表（空表也是一种状态）、全部设置节；载荷带 `version:2` 与 sha256 `checksum`；最多保留 50 份。
+- `GET` → `{items:[{id,actor,reason,created_at}], total}`；`POST {reason}` 手动快照；`GET /:id` → 摘要（账号不含密钥，带 `version` 与 `corrupt`）；`POST /:id/restore` → `{restored, missing_keys[]}`：先校验 checksum（不符返回 409 `snapshot_corrupt`，不动任何数据），再在一个事务里用快照覆盖当前配置（先自动保存当前状态），随后重载设置、单价、网关快照、路由与合规引擎。1.0.12 早期写入的 v1 快照不含密钥：恢复时沿用同 id 账号当前的密钥；无处可取的账号以停用状态恢复、备注标记并列入 `missing_keys`。用户、用户组、Key、日志不在范围内。
 
 ### 计价 `/api/admin/prices`
 - 对象：`{id, pattern, provider, input_per_m, output_per_m, cached_input_per_m, cache_write_per_m, currency:"USD"|"CNY", builtin, enabled, note, updated_at}`，单价均为每百万 Token。`pattern` 精确匹配模型名或作为前缀匹配（分隔符 `-`、`:`、`@`），越长越优先；`provider` 为空表示任意供应商。匹配顺序：账号供应商专属行 → 任意供应商行 → 其他供应商的行（自定义中转站转发的 claude/gpt 模型也能计价）。
 - `GET ?q=` → `{items, total, builtin_updated, currency}`；`POST`、`PUT /:id`、`DELETE /:id`；`POST /reset-builtin` 恢复内置参考价（自定义行保留）；`GET /lookup?provider=&model=` → `{found, price}`。
 - 内置表随版本更新，启动时只补充缺失的内置行，不覆盖已编辑的行。
-- `PUT /api/admin/settings/pricing {currency:"CNY"|"USD", usd_to_cny}`：报表计价货币与换算汇率；`GET /api/public/info` 同时返回 `currency`。
-- 费用在每次尝试结束时按当时单价估算并冻结：`call_logs.cost_micros`（计价货币的百万分之一单位）、`cost_known`（任一有 Token 的尝试无单价则为 false，费用不计入）；小时聚合 `cost_micros` 按尝试账号归属。用量报表 `summary.cost`、各分布项 `cost`、趋势点 `cost` 以及 `currency`；概览 `cost.total`。缓存读 Token 按缓存价，其余输入按输入价；Anthropic 的缓存写目前按输入价计入。单价修改后不回溯历史记录。
+- `PUT /api/admin/settings/pricing {currency:"CNY"|"USD", usd_to_cny}`：**显示币种**与汇率。账本固定为美元：人民币单价行按汇率折成美元入账，展示时再按显示币种换算；切换显示币种或汇率只改变展示，历史金额随之整体换算，不会被换标签或混币种累加。`GET /api/public/info`、价目表与用量报表都返回当前 `currency`，价目表另带 `ledger:"USD"`。
+- 费用在每次尝试结束时按当时单价估算并冻结：`call_logs.cost_micros`（美元账本的百万分之一单位）、`cost_known`（任一有 Token 的尝试无单价、或任一尝试用量为 unknown / partial，则为 false：此时金额只是已知部分的下限）；小时聚合 `cost_micros` 按尝试账号归属。管理端日志列表 / 详情与用户日志都带按显示币种换算后的 `cost`；用量报表 `summary.cost`、各分布项 `cost`、趋势点 `cost` 以及 `currency`；概览 `cost.total`。输入 Token 分三段计价：缓存读（`cached_tokens`，缓存价）、缓存写（`cache_write_tokens`，来自 Anthropic `cache_creation_input_tokens`，按 `cache_write_per_m`，该行没填则按输入价）、其余按输入价。单价修改后不回溯历史记录。
 
 ### 系统
 - `GET /api/admin/system/info` → `{version, go_version, db_driver, uptime_sec, started_at, data_dir}`

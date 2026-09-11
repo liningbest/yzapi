@@ -133,7 +133,7 @@ export default function LogDetailDrawer({ open, log, onClose }: Props) {
                   <NeutralTag>{t('logs:unpriced')}</NeutralTag>
                 </Tooltip>
               ) : (
-                formatMoney((log.cost_micros ?? 0) / 1e6, currency)
+                formatMoney(log.cost ?? 0, currency)
               )}
             </Descriptions.Item>
             <Descriptions.Item label={t('common:common.totalLatency')}>{formatMs(log.latency_ms)}</Descriptions.Item>

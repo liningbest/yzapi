@@ -164,7 +164,7 @@ func (s *Server) usageReport(c *gin.Context, scopedUser uint) gin.H {
 		d.CompletionTokens += r.CompletionTokens
 		d.UnknownUsage += r.UnknownUsage
 		d.costMicros += r.CostMicros
-		d.Cost = costOut(d.costMicros)
+		d.Cost = s.costOut(d.costMicros)
 	}
 	for i := range rows {
 		r := &rows[i]
@@ -193,7 +193,7 @@ func (s *Server) usageReport(c *gin.Context, scopedUser uint) gin.H {
 		tp.PromptTokens += r.PromptTokens
 		tp.CompletionTokens += r.CompletionTokens
 		tp.CachedTokens += r.CachedTokens
-		tp.Cost += costOut(r.CostMicros)
+		tp.Cost += s.costOut(r.CostMicros)
 		sk := r.RequestModel
 		if groupBy == "api_key" {
 			sk = nameOr(nm.keys, r.APIKeyID, "(已删除)")
@@ -251,8 +251,8 @@ func (s *Server) usageReport(c *gin.Context, scopedUser uint) gin.H {
 	return gin.H{
 		"summary": gin.H{"requests": summary.Requests, "success": success, "failed": failed, "prompt_tokens": summary.PromptTokens,
 			"completion_tokens": summary.CompletionTokens, "total_tokens": summary.TotalTokens, "cached_tokens": summary.CachedTokens,
-			"unknown_usage": summary.UnknownUsage, "cost": costOut(summary.costMicros)},
-		"currency":       s.st.Get().Pricing.Currency,
+			"unknown_usage": summary.UnknownUsage, "cost": s.costOut(summary.costMicros)},
+		"currency":       s.pricer.Currency(),
 		"trend":          tl,
 		"by_provider":    toList("provider"),
 		"by_model":       toList("model"),

@@ -60,26 +60,61 @@ func TestLookupPrecedence(t *testing.T) {
 // currency with the configured rate; a CNY base with a CNY row needs no conversion.
 func TestCostAndCurrency(t *testing.T) {
 	svc, _, st := testSvc(t)
-	// gpt-5: $1.25 in, $10 out, $0.125 cached; base CNY at 7.2
-	micros, ok := svc.Cost("openai", "gpt-5", 1_000_000, 100_000, 200_000)
+	// gpt-5: $1.25 in, $10 out, $0.125 cached. The ledger is USD whatever the display
+	// currency is (default display CNY at 7.2).
+	micros, ok := svc.Cost("openai", "gpt-5", 1_000_000, 100_000, 200_000, 0)
 	if !ok {
 		t.Fatal("priced")
 	}
 	usd := 0.8*1.25 + 0.2*0.125 + 0.1*10 // 1.0 + 0.025 + 1.0
-	if want := int64(usd * 7.2 * 1e6); micros < want-5 || micros > want+5 {
-		t.Fatalf("cost=%d want ~%d", micros, want)
+	if want := int64(usd * 1e6); micros < want-5 || micros > want+5 {
+		t.Fatalf("cost=%d want ~%d (ledger must be USD)", micros, want)
+	}
+	if got := svc.Display(micros); got < usd*7.2-1e-6 || got > usd*7.2+1e-6 || svc.Currency() != "CNY" {
+		t.Fatalf("display in CNY: %v (%s)", got, svc.Currency())
 	}
 	if err := st.SetPricing(settings.Pricing{Currency: "USD", USDToCNY: 7.2}); err != nil {
 		t.Fatal(err)
 	}
-	micros, _ = svc.Cost("openai", "gpt-5", 1_000_000, 100_000, 200_000)
-	if want := int64(usd * 1e6); micros < want-5 || micros > want+5 {
-		t.Fatalf("usd cost=%d want ~%d", micros, want)
+	if got := svc.Display(micros); got < usd-1e-6 || got > usd+1e-6 {
+		t.Fatalf("display in USD: %v", got)
 	}
-	cny, _ := svc.Cost("zhipu", "glm-4.5", 1_000_000, 0, 0) // ¥2 -> USD at 7.2
-	rate := 7.2
-	if want := int64(2.0 / rate * 1e6); cny < want-5 || cny > want+5 {
-		t.Fatalf("cny row in usd base=%d want ~%d", cny, want)
+	if again, _ := svc.Cost("openai", "gpt-5", 1_000_000, 100_000, 200_000, 0); again != micros {
+		t.Fatalf("stored amount must not depend on the display currency: %d vs %d", again, micros)
+	}
+	cny, _ := svc.Cost("zhipu", "glm-4.5", 1_000_000, 0, 0, 0) // ¥2 -> ledger USD at 7.2
+	cnyWant := 2.0 / 7.2 * 1e6
+	if want := int64(cnyWant); cny < want-5 || cny > want+5 {
+		t.Fatalf("cny row in usd ledger=%d want ~%d", cny, want)
+	}
+}
+
+// Cache writes are billed at their own rate; a row without one falls back to the input
+// price. cached + cacheWrite never exceed prompt.
+func TestCacheWritePricing(t *testing.T) {
+	svc, db, st := testSvc(t)
+	if err := st.SetPricing(settings.Pricing{Currency: "USD", USDToCNY: 7.2}); err != nil {
+		t.Fatal(err)
+	}
+	db.Create(&model.ModelPrice{Pattern: "cw", Provider: "anthropic", Currency: "USD", InputPerM: 3, OutputPerM: 15, CachedInputPerM: 0.3, CacheWritePerM: 3.75, Enabled: true})
+	db.Create(&model.ModelPrice{Pattern: "nocw", Provider: "anthropic", Currency: "USD", InputPerM: 3, OutputPerM: 15, Enabled: true})
+	if err := svc.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	// 1000 written, 0 plain, 0 out -> 3750 micro-USD
+	if got, _ := svc.Cost("anthropic", "cw", 1000, 0, 0, 1000); got != 3750 {
+		t.Fatalf("cache write only: %d", got)
+	}
+	// 4000 prompt = 1000 plain + 2000 read + 1000 written, 100 out
+	want := int64(1000*3 + 2000*0.3 + 1000*3.75 + 100*15)
+	if got, _ := svc.Cost("anthropic", "cw", 4000, 100, 2000, 1000); got != want {
+		t.Fatalf("mixed: %d want %d", got, want)
+	}
+	if got, _ := svc.Cost("anthropic", "nocw", 1000, 0, 0, 1000); got != 3000 {
+		t.Fatalf("fallback to input price: %d", got)
+	}
+	if got, _ := svc.Cost("anthropic", "cw", 1000, 0, 800, 800); got != int64(800*0.3+200*3.75) {
+		t.Fatalf("clamped write: %d", got)
 	}
 }
 

@@ -278,7 +278,15 @@ try:
         time.sleep(1.5)
         lg = req("GET", "/api/admin/logs?range=24h", expect=200)["items"][0]
         eq(lg["cost_known"], True, "cost known"); eq(lg["cost_micros"] > 0, True, "cost > 0")
-        eq(req("GET", "/api/admin/usage?range=24h", expect=200)["summary"]["cost"] > 0, True, "report cost")
+        eq(abs(lg["cost"] - lg["cost_micros"] / 1e6) < 1e-9, True, "admin log cost is the USD display of the USD ledger")
+        usd = req("GET", "/api/admin/usage?range=24h", expect=200)["summary"]["cost"]
+        eq(usd > 0, True, "report cost")
+        # R112-02: switching the display currency converts history, never relabels it
+        req("PUT", "/api/admin/settings/pricing", {"currency": "CNY", "usd_to_cny": 7.1}, expect=200)
+        rep = req("GET", "/api/admin/usage?range=24h", expect=200)
+        eq(rep["currency"], "CNY"); eq(abs(rep["summary"]["cost"] - usd * 7.1) < 1e-6, True, "1 USD of history displays as 7.1 CNY")
+        eq(abs(req("GET", "/api/admin/logs?range=24h", expect=200)["items"][0]["cost"] - lg["cost"] * 7.1) < 1e-6, True, "log cost converts too")
+        req("PUT", "/api/admin/settings/pricing", {"currency": "USD", "usd_to_cny": 7.1}, expect=200)
         req("POST", "/api/admin/prices/reset-builtin", {}, expect=200)
         eq(req("GET", "/api/admin/prices/lookup?provider=custom&model=mock-mini", expect=200)["found"], True, "custom row survives reset")
         req("DELETE", f"/api/admin/prices/{p['id']}", expect=200)
@@ -296,8 +304,23 @@ try:
         # a mutating change auto-snapshots first
         req("PUT", "/api/admin/settings/basic", dict(st0["basic"], site_name="Snap GW", base_url=f"http://127.0.0.1:{PORT}/v1"), expect=200)
         eq(req("GET", "/api/admin/config/snapshots", expect=200)["total"], before + 2, "auto snapshot before change")
-        req("POST", f"/api/admin/config/snapshots/{sid}/restore", {}, expect=200)
+        res = req("POST", f"/api/admin/config/snapshots/{sid}/restore", {}, expect=200)
+        eq(res.get("missing_keys") or [], [], "restored accounts keep their keys")
         eq(req("GET", "/api/admin/settings", expect=200)["basic"]["site_name"], "My GW", "settings restored")
+        # R112-01: a restored account still authenticates against the upstream
+        acc_after = next(a for a in req("GET", "/api/admin/accounts", expect=200)["items"] if a["name"] in ("mock-a", "mock-a2"))
+        probe = {k: acc_after[k] for k in ("name", "provider", "account_type", "type", "base_url", "protocols", "mappings") if k in acc_after}
+        probe.update({"account_id": acc_after["id"], "api_key": "******"})
+        eq(req("POST", "/api/admin/accounts/test", probe, expect=200)["ok"], True, "restored account passes the live probe with its stored key")
+        # R112-05: an empty price set is restored as empty
+        for row in req("GET", "/api/admin/prices", expect=200)["items"]:
+            req("DELETE", f"/api/admin/prices/{row['id']}", expect=200)
+        req("POST", "/api/admin/config/snapshots", {"reason": "empty-prices"}, expect=200)
+        sid_empty = req("GET", "/api/admin/config/snapshots", expect=200)["items"][0]["id"]
+        req("POST", "/api/admin/prices", {"pattern": "later", "provider": "custom", "input_per_m": 1, "output_per_m": 1, "currency": "USD"}, expect=200)
+        req("POST", f"/api/admin/config/snapshots/{sid_empty}/restore", {}, expect=200)
+        eq(req("GET", "/api/admin/prices", expect=200)["total"], 0, "empty price set restored")
+        req("POST", "/api/admin/prices/reset-builtin", {}, expect=200)
         req("POST", "/api/admin/config/snapshots/999999/restore", {}, expect=404)
     check("config snapshots: manual, auto-before-change, restore", t_snapshots)
 

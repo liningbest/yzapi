@@ -1,7 +1,10 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -18,14 +21,69 @@ import (
 
 const maxConfigSnapshots = 50
 
+// configPayloadVersion 2: accounts carry their encrypted key (v1 lost it because
+// Account.APIKeyEnc is json:"-"), prices are a complete set (an empty set is restored
+// as empty), and the payload carries a checksum.
+const configPayloadVersion = 2
+
+// snapshotAccount is the persisted form of an account: the public Account plus the
+// encrypted key, which the public JSON shape deliberately omits. Never returned to the
+// browser; getConfigSnapshot builds a summary instead.
+type snapshotAccount struct {
+	model.Account
+	APIKeyEnc string `json:"api_key_enc,omitempty"`
+}
+
 type configPayload struct {
-	Accounts    []model.Account       `json:"accounts"` // includes Mappings and the encrypted key
+	Version     int                   `json:"version"`
+	Accounts    []snapshotAccount     `json:"accounts"`
 	ModelGroups []model.ModelGroup    `json:"model_groups"`
 	GroupLinks  []userGroupModelGroup `json:"group_links"`
 	Settings    map[string]string     `json:"settings"` // key -> raw JSON value
-	Prices      []model.ModelPrice    `json:"prices"`
+	Prices      *[]model.ModelPrice   `json:"prices"`   // nil only in v1 snapshots written before prices existed
 	Meta        map[string]int        `json:"meta"`
+	Checksum    string                `json:"checksum,omitempty"` // sha256 of the payload with Checksum empty
 }
+
+// sealPayload marshals the payload with its checksum filled in.
+func sealPayload(p *configPayload) ([]byte, error) {
+	p.Checksum = ""
+	raw, err := json.Marshal(p)
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256(raw)
+	p.Checksum = hex.EncodeToString(sum[:])
+	return json.Marshal(p)
+}
+
+// openPayload parses a snapshot and verifies its checksum when it has one.
+func openPayload(data []byte) (*configPayload, error) {
+	var p configPayload
+	if err := json.Unmarshal(data, &p); err != nil {
+		return nil, err
+	}
+	if p.Checksum != "" {
+		want := p.Checksum
+		p.Checksum = ""
+		raw, err := json.Marshal(&p)
+		if err != nil {
+			return nil, err
+		}
+		sum := sha256.Sum256(raw)
+		if hex.EncodeToString(sum[:]) != want {
+			return nil, errSnapshotCorrupt
+		}
+		p.Checksum = want
+	}
+	return &p, nil
+}
+
+type snapshotError string
+
+func (e snapshotError) Error() string { return string(e) }
+
+const errSnapshotCorrupt = snapshotError("snapshot checksum mismatch")
 
 type userGroupModelGroup struct {
 	UserGroupID  uint `json:"user_group_id"`
@@ -36,9 +94,14 @@ func (userGroupModelGroup) TableName() string { return "user_group_model_groups"
 
 // captureConfig serialises the current routing configuration and settings.
 func (s *Server) captureConfig(tx *gorm.DB) ([]byte, error) {
-	var p configPayload
-	if err := tx.Preload("Mappings").Order("id").Find(&p.Accounts).Error; err != nil {
+	p := configPayload{Version: configPayloadVersion}
+	var accounts []model.Account
+	if err := tx.Preload("Mappings").Order("id").Find(&accounts).Error; err != nil {
 		return nil, err
+	}
+	p.Accounts = make([]snapshotAccount, 0, len(accounts))
+	for _, a := range accounts {
+		p.Accounts = append(p.Accounts, snapshotAccount{Account: a, APIKeyEnc: a.APIKeyEnc})
 	}
 	if err := tx.Order("id").Find(&p.ModelGroups).Error; err != nil {
 		return nil, err
@@ -57,11 +120,13 @@ func (s *Server) captureConfig(tx *gorm.DB) ([]byte, error) {
 			p.Settings[r.Key] = r.Value
 		}
 	}
-	if err := tx.Order("id").Find(&p.Prices).Error; err != nil {
+	prices := []model.ModelPrice{}
+	if err := tx.Order("id").Find(&prices).Error; err != nil {
 		return nil, err
 	}
-	p.Meta = map[string]int{"accounts": len(p.Accounts), "model_groups": len(p.ModelGroups), "prices": len(p.Prices)}
-	return json.Marshal(p)
+	p.Prices = &prices
+	p.Meta = map[string]int{"accounts": len(p.Accounts), "model_groups": len(p.ModelGroups), "prices": len(prices)}
+	return sealPayload(&p)
 }
 
 // snapshotConfig stores a snapshot and trims the history. Failures are logged by the
@@ -145,8 +210,10 @@ func (s *Server) getConfigSnapshot(c *gin.Context) {
 		notFound(c)
 		return
 	}
-	var p configPayload
-	_ = json.Unmarshal([]byte(snap.Data), &p)
+	p, err := openPayload([]byte(snap.Data))
+	if err != nil {
+		p = &configPayload{}
+	}
 	// Summary only; the encrypted keys are never returned to the browser.
 	accounts := make([]gin.H, 0, len(p.Accounts))
 	for _, a := range p.Accounts {
@@ -156,8 +223,8 @@ func (s *Server) getConfigSnapshot(c *gin.Context) {
 	for _, g := range p.ModelGroups {
 		groups = append(groups, gin.H{"id": g.ID, "name": g.Name, "type": g.Type, "models": g.Models})
 	}
-	c.JSON(200, gin.H{"id": snap.ID, "actor": snap.Actor, "reason": snap.Reason, "created_at": snap.CreatedAt,
-		"accounts": accounts, "model_groups": groups, "settings": p.Settings, "meta": p.Meta})
+	c.JSON(200, gin.H{"id": snap.ID, "actor": snap.Actor, "reason": snap.Reason, "created_at": snap.CreatedAt, "version": p.Version,
+		"accounts": accounts, "model_groups": groups, "settings": p.Settings, "meta": p.Meta, "corrupt": err != nil})
 }
 
 // restoreConfigSnapshot replaces the live routing configuration and settings with the
@@ -173,16 +240,28 @@ func (s *Server) restoreConfigSnapshot(c *gin.Context) {
 		notFound(c)
 		return
 	}
-	var p configPayload
-	if err := json.Unmarshal([]byte(snap.Data), &p); err != nil {
-		serverError(c, err)
+	p, err := openPayload([]byte(snap.Data))
+	if err != nil {
+		fail(c, 409, "snapshot_corrupt", "快照校验失败，拒绝恢复："+err.Error())
 		return
 	}
 	if err := s.snapshotConfig(cur(c).Username, "before restore of #"+strings.TrimSpace(c.Param("id"))); err != nil {
 		serverError(c, err)
 		return
 	}
-	err := s.st.WithTx(func(tx *gorm.DB, _ settings.All) error {
+	var missingKeys []string
+	err = s.st.WithTx(func(tx *gorm.DB, _ settings.All) error {
+		// v1 snapshots carry no keys: keep the key the same account (by id) has now, and
+		// restore an account whose key is nowhere to be found disabled rather than with an
+		// empty credential that would fail against the upstream.
+		current := map[uint]string{}
+		var live []model.Account
+		if err := tx.Select("id", "api_key_enc").Find(&live).Error; err != nil {
+			return err
+		}
+		for _, a := range live {
+			current[a.ID] = a.APIKeyEnc
+		}
 		for _, stmt := range []string{"DELETE FROM model_mappings", "DELETE FROM accounts", "DELETE FROM user_group_model_groups", "DELETE FROM model_groups"} {
 			if err := tx.Exec(stmt).Error; err != nil {
 				return err
@@ -195,11 +274,27 @@ func (s *Server) restoreConfigSnapshot(c *gin.Context) {
 			}
 		}
 		for i := range p.Accounts {
-			a := p.Accounts[i]
+			a := p.Accounts[i].Account
+			a.APIKeyEnc = p.Accounts[i].APIKeyEnc
+			if a.APIKeyEnc == "" {
+				if k := current[a.ID]; k != "" {
+					a.APIKeyEnc = k
+				} else {
+					a.Enabled = false
+					a.Note = strings.TrimSpace("[恢复时密钥缺失，请重新填写] " + a.Note)
+					missingKeys = append(missingKeys, a.Name)
+				}
+			}
 			maps := a.Mappings
 			a.Mappings = nil
+			disabled := !a.Enabled
 			if err := tx.Create(&a).Error; err != nil {
 				return err
+			}
+			if disabled { // gorm's default:true tag turns a false Enabled into true on Create
+				if err := tx.Model(&model.Account{}).Where("id = ?", a.ID).Update("enabled", false).Error; err != nil {
+					return err
+				}
 			}
 			for j := range maps {
 				m := maps[j]
@@ -214,12 +309,14 @@ func (s *Server) restoreConfigSnapshot(c *gin.Context) {
 				return err
 			}
 		}
-		if len(p.Prices) > 0 {
+		// The price table is restored as a whole set, an empty set included; only a v1
+		// snapshot written before the table existed (field absent) leaves it untouched.
+		if p.Prices != nil {
 			if err := tx.Exec("DELETE FROM model_prices").Error; err != nil {
 				return err
 			}
-			for i := range p.Prices {
-				pr := p.Prices[i]
+			for i := range *p.Prices {
+				pr := (*p.Prices)[i]
 				if err := tx.Create(&pr).Error; err != nil {
 					return err
 				}
@@ -254,5 +351,8 @@ func (s *Server) restoreConfigSnapshot(c *gin.Context) {
 	if s.eng.Route != nil {
 		_ = s.eng.Route.Reload()
 	}
-	c.JSON(200, gin.H{"restored": snap.ID})
+	if len(missingKeys) > 0 {
+		slog.Warn("config restore: accounts restored disabled because the snapshot carries no key", "snapshot", snap.ID, "accounts", missingKeys)
+	}
+	c.JSON(200, gin.H{"restored": snap.ID, "missing_keys": missingKeys})
 }

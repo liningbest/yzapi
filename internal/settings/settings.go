@@ -81,8 +81,8 @@ type Elasticsearch struct {
 
 // Pricing controls how token usage is turned into money in reports.
 type Pricing struct {
-	Currency string  `json:"currency"`   // base currency for all reported costs: CNY | USD
-	USDToCNY float64 `json:"usd_to_cny"` // exchange rate used when a price row is in the other currency
+	Currency string  `json:"currency"`   // display currency for reported costs: CNY | USD (the ledger itself is always USD)
+	USDToCNY float64 `json:"usd_to_cny"` // rate used to convert CNY price rows into the ledger and the ledger into a CNY display
 }
 
 type All struct {

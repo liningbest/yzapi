@@ -33,9 +33,10 @@ export default function ConfigTab() {
     },
   });
   const restore = useMutation({
-    mutationFn: (id: number) => configSnapshotsApi.restore(id),
-    onSuccess: () => {
+    mutationFn: (id: number) => configSnapshotsApi.restore(id) as Promise<{ restored: number; missing_keys?: string[] }>,
+    onSuccess: (res) => {
       message.success(t('settings:config.restored'));
+      if (res?.missing_keys?.length) message.warning(t('settings:config.missingKeys', { names: res.missing_keys.join(', ') }), 8);
       setViewing(null);
       invalidateAll();
     },

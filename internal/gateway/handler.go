@@ -794,13 +794,19 @@ func (g *Gateway) priceAttempts(req *request) {
 	var total int64
 	for i := range req.attempts {
 		a := &req.attempts[i]
+		// An attempt whose consumption is unknown or cut short may have been billed for
+		// more than we can price: the request's figure is then a lower bound, not "known".
+		if a.UsageStatus == model.UsageUnknown || a.UsageStatus == model.UsagePartial {
+			known = false
+		}
 		if a.PromptTokens+a.CompletionTokens == 0 {
 			continue
 		}
 		if i == last {
 			a.CachedTokens = l.CachedTokens
+			a.CacheWriteTokens = l.CacheWriteTokens
 		}
-		micros, ok := (*pp).Cost(a.Provider, a.Model, a.PromptTokens, a.CompletionTokens, a.CachedTokens)
+		micros, ok := (*pp).Cost(a.Provider, a.Model, a.PromptTokens, a.CompletionTokens, a.CachedTokens, a.CacheWriteTokens)
 		a.CostMicros, a.CostKnown = micros, ok
 		if !ok {
 			known = false
@@ -1224,6 +1230,8 @@ func chainStream(body io.Reader, w io.Writer, flush func(), model string,
 	}
 	if u == nil || u.TotalTokens == 0 {
 		u = firstUsage
+	} else if firstUsage != nil && u.CacheWriteTokens == 0 {
+		u.CacheWriteTokens = firstUsage.CacheWriteTokens // internal field, not carried by the intermediate JSON
 	}
 	return u, err
 }
@@ -1284,6 +1292,9 @@ func setUsage(req *request, u convert.Usage, known bool, complete bool) {
 	a.CompletionTokens = int64(u.CompletionTokens)
 	if u.PromptTokensDetails != nil {
 		req.log.CachedTokens = int64(u.PromptTokensDetails.CachedTokens)
+	}
+	if u.CacheWriteTokens > 0 {
+		req.log.CacheWriteTokens = int64(u.CacheWriteTokens)
 	}
 	total := a.PromptTokens + a.CompletionTokens
 	if total == 0 && u.TotalTokens > 0 {

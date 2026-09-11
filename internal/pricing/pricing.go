@@ -196,9 +196,16 @@ func (s *Service) Lookup(provider, modelName string) (model.ModelPrice, bool) {
 	return model.ModelPrice{}, false
 }
 
-// Cost returns the estimated cost in the configured base currency, in micro-units
-// (1e-6), and whether a price was found. cached tokens are a subset of prompt tokens.
-func (s *Service) Cost(provider, modelName string, prompt, completion, cached int64) (int64, bool) {
+// Ledger is the immutable currency every stored cost is denominated in. Costs are
+// converted into it when a request is priced and out of it into the display currency
+// when reported, so changing the display currency or the rate never relabels history.
+const Ledger = "USD"
+
+// Cost returns the estimated cost in ledger micro-units (1e-6 USD) and whether a price
+// was found. cached and cacheWrite are disjoint parts of prompt: read from the prompt
+// cache (cheaper) and written into it (Anthropic bills a premium; a row without a
+// cache-write price falls back to the ordinary input price).
+func (s *Service) Cost(provider, modelName string, prompt, completion, cached, cacheWrite int64) (int64, bool) {
 	p, ok := s.Lookup(provider, modelName)
 	if !ok {
 		return 0, false
@@ -206,30 +213,74 @@ func (s *Service) Cost(provider, modelName string, prompt, completion, cached in
 	if cached > prompt {
 		cached = prompt
 	}
-	amount := (float64(prompt-cached)*p.InputPerM + float64(cached)*p.CachedInputPerM + float64(completion)*p.OutputPerM) / 1e6
-	return int64(math.Round(s.convert(amount, p.Currency) * 1e6)), true
+	if cacheWrite > prompt-cached {
+		cacheWrite = prompt - cached
+	}
+	writePrice := p.CacheWritePerM
+	if writePrice <= 0 {
+		writePrice = p.InputPerM
+	}
+	plain := prompt - cached - cacheWrite
+	amount := (float64(plain)*p.InputPerM + float64(cached)*p.CachedInputPerM + float64(cacheWrite)*writePrice + float64(completion)*p.OutputPerM) / 1e6
+	return int64(math.Round(s.toLedger(amount, p.Currency) * 1e6)), true
 }
 
-// convert moves an amount from the row's currency into the base currency.
-func (s *Service) convert(amount float64, from string) float64 {
-	pr := s.st.Get().Pricing
-	base := strings.ToUpper(pr.Currency)
-	from = strings.ToUpper(from)
-	if from == base || from == "" {
-		return amount
+func (s *Service) rate() float64 {
+	if r := s.st.Get().Pricing.USDToCNY; r > 0 {
+		return r
 	}
-	rate := pr.USDToCNY
-	if rate <= 0 {
-		rate = 7.2
-	}
-	switch {
-	case from == "USD" && base == "CNY":
-		return amount * rate
-	case from == "CNY" && base == "USD":
-		return amount / rate
+	return 7.2
+}
+
+// toLedger moves an amount from a price row's currency into the ledger currency.
+func (s *Service) toLedger(amount float64, from string) float64 {
+	if strings.ToUpper(from) == "CNY" {
+		return amount / s.rate()
 	}
 	return amount
 }
 
-// Currency is the base currency costs are reported in.
-func (s *Service) Currency() string { return strings.ToUpper(s.st.Get().Pricing.Currency) }
+// Display converts ledger micro-units into the display currency as a float amount.
+func (s *Service) Display(micros int64) float64 {
+	amount := float64(micros) / 1e6
+	if s.Currency() == "CNY" {
+		return amount * s.rate()
+	}
+	return amount
+}
+
+// Currency is the display currency costs are reported in (CNY or USD).
+func (s *Service) Currency() string {
+	c := strings.ToUpper(s.st.Get().Pricing.Currency)
+	if c == "" {
+		return Ledger
+	}
+	return c
+}
+
+// ledgerMarker records that stored costs are denominated in the ledger currency.
+const ledgerMarker = "cost_ledger"
+
+// MigrateLedger converts costs written by 1.0.12 builds that stored amounts in the
+// then-configured base currency into the fixed USD ledger. It runs once: the marker
+// row is written afterwards, so later changes of the display currency never touch
+// stored values. Attempt-level amounts inside call_logs.attempts are left as written.
+func MigrateLedger(db *gorm.DB, st *settings.Store) error {
+	var row model.Setting
+	if err := db.Where("key = ?", ledgerMarker).First(&row).Error; err == nil {
+		return nil
+	}
+	pr := st.Get().Pricing
+	if strings.ToUpper(pr.Currency) == "CNY" {
+		rate := pr.USDToCNY
+		if rate <= 0 {
+			rate = 7.2
+		}
+		for _, table := range []string{"call_logs", "usage_hourlies"} {
+			if err := db.Exec("UPDATE "+table+" SET cost_micros = CAST(ROUND(cost_micros / ?) AS INTEGER) WHERE cost_micros <> 0", rate).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return db.Save(&model.Setting{Key: ledgerMarker, Value: Ledger, UpdatedAt: time.Now()}).Error
+}

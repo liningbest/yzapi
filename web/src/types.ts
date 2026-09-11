@@ -557,9 +557,11 @@ export interface CallLog {
   tokens_known: boolean;
   /** Request-level usage was re-derived from attempt records during an upgrade. */
   usage_corrected?: boolean;
-  /** Estimated cost in the base currency (micro-units); cost_known=false means some attempt had no price. */
+  /** Stored cost in ledger micro-units (USD); use `cost` for display. */
   cost_micros?: number;
+  /** false when an attempt had no price or its usage is unknown / partial: the figure is a lower bound. */
   cost_known?: boolean;
+  /** Estimated cost in the display currency. */
   cost?: number;
   usage_status?: UsageStatus;
   est_prompt_tokens?: number;

@@ -66,6 +66,9 @@ type Usage struct {
 	PromptTokensDetails *struct {
 		CachedTokens int `json:"cached_tokens"`
 	} `json:"prompt_tokens_details,omitempty"`
+	// CacheWriteTokens is the part of PromptTokens written into a prompt cache (Anthropic
+	// cache_creation_input_tokens); billed at its own rate, never sent to clients.
+	CacheWriteTokens int `json:"-"`
 }
 
 type ChatResponse struct {

@@ -23,7 +23,7 @@ func (s *Server) listPrices(c *gin.Context) {
 		return
 	}
 	c.JSON(200, gin.H{"items": rows, "total": len(rows), "builtin_updated": pricing.BuiltinUpdated,
-		"currency": s.st.Get().Pricing.Currency})
+		"currency": s.pricer.Currency(), "ledger": pricing.Ledger})
 }
 
 type priceIn struct {
@@ -174,5 +174,5 @@ func (s *Server) putPricing(c *gin.Context) {
 	c.JSON(200, in)
 }
 
-// costOut renders micro-units as a float in the base currency.
-func costOut(micros int64) float64 { return float64(micros) / 1e6 }
+// costOut renders ledger micro-units (USD) as a float in the display currency.
+func (s *Server) costOut(micros int64) float64 { return s.pricer.Display(micros) }

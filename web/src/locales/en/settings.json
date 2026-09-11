@@ -242,7 +242,7 @@
     "cacheWriteExtra": "Anthropic only; not metered separately yet, billed at input price",
     "rowCurrency": "Row currency",
     "unit": "All prices are per 1M tokens",
-    "unitHint": "Reports convert to the base currency",
+    "unitHint": "Amounts are kept in USD and converted for display with the currency and rate below (history converts too; it is never relabeled)",
     "table": "Model price table",
     "search": "Search model or provider",
     "reset": "Restore built-in",
@@ -251,12 +251,12 @@
     "add": "Add price",
     "edit": "Edit price",
     "currency": {
-      "label": "Base currency",
-      "extra": "Reports and logs show all costs in this currency"
+      "label": "Display currency",
+      "extra": "Reports and logs show all costs in this currency; the ledger stays in USD, switching only changes the display"
     },
     "rate": {
       "label": "USD → CNY rate",
-      "extra": "Used when a row's currency differs from the base currency"
+      "extra": "Used to book CNY price rows into the ledger and to display the ledger in CNY; changing it changes the CNY display of history"
     }
   },
   "config": {
@@ -276,6 +276,7 @@
     "accounts": "Accounts",
     "modelGroups": "Model groups",
     "mappings": "Mappings",
-    "settings": "Settings"
+    "settings": "Settings",
+    "missingKeys": "These accounts had no key in the snapshot and were restored disabled; enter their keys again: {{names}}"
   }
 }

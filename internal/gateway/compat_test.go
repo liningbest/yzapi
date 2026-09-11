@@ -456,7 +456,7 @@ func TestCompatUpstreamHeaders(t *testing.T) {
 
 type testPricer struct{ table map[string]float64 } // model -> price per token (micros), same for in/out
 
-func (p testPricer) Cost(_, m string, prompt, completion, _ int64) (int64, bool) {
+func (p testPricer) Cost(_, m string, prompt, completion, _, _ int64) (int64, bool) {
 	v, ok := p.table[m]
 	if !ok {
 		return 0, false

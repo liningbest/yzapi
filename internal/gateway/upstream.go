@@ -66,7 +66,8 @@ type attemptRecord struct {
 	PromptTokens     int64  `json:"prompt_tokens,omitempty"`
 	CompletionTokens int64  `json:"completion_tokens,omitempty"`
 	CachedTokens     int64  `json:"cached_tokens,omitempty"`
-	CostMicros       int64  `json:"cost_micros,omitempty"` // base currency, 1e-6 units
+	CacheWriteTokens int64  `json:"cache_write_tokens,omitempty"`
+	CostMicros       int64  `json:"cost_micros,omitempty"` // ledger currency (USD), 1e-6 units
 	CostKnown        bool   `json:"cost_known,omitempty"`
 }
 
@@ -218,6 +219,7 @@ func usageFromJSON(proto string, raw []byte) (u convert.Usage, ok bool) {
 			return u, false
 		}
 		u.PromptTokens = r.Usage.InputTokens + r.Usage.CacheReadInputTokens + r.Usage.CacheCreationInputTokens
+		u.CacheWriteTokens = r.Usage.CacheCreationInputTokens
 		u.CompletionTokens = r.Usage.OutputTokens
 		u.TotalTokens = u.PromptTokens + u.CompletionTokens
 		if r.Usage.CacheReadInputTokens > 0 {
@@ -336,6 +338,7 @@ func passthroughStream(r io.Reader, w io.Writer, flush func(), proto string, dro
 				if json.Unmarshal([]byte(data), &e) == nil {
 					if e.Message != nil {
 						usage.PromptTokens = e.Message.Usage.InputTokens + e.Message.Usage.CacheReadInputTokens + e.Message.Usage.CacheCreationInputTokens
+						usage.CacheWriteTokens = e.Message.Usage.CacheCreationInputTokens
 						if e.Message.Usage.CacheReadInputTokens > 0 {
 							usage.PromptTokensDetails = &struct {
 								CachedTokens int `json:"cached_tokens"`
@@ -347,6 +350,7 @@ func passthroughStream(r io.Reader, w io.Writer, flush func(), proto string, dro
 						usage.CompletionTokens = e.Usage.OutputTokens
 						if e.Usage.InputTokens > 0 {
 							usage.PromptTokens = e.Usage.InputTokens + e.Usage.CacheReadInputTokens + e.Usage.CacheCreationInputTokens
+							usage.CacheWriteTokens = e.Usage.CacheCreationInputTokens
 						}
 						known = true
 					}

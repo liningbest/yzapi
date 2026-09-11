@@ -232,6 +232,7 @@ type CallLog struct {
 	CompletionTokens int64  `json:"completion_tokens"`
 	TotalTokens      int64  `json:"total_tokens"`
 	CachedTokens     int64  `json:"cached_tokens"`
+	CacheWriteTokens int64  `gorm:"not null;default:0" json:"cache_write_tokens"` // prompt tokens written to a prompt cache (billed at the cache-write rate)
 	TokensKnown      bool   `json:"tokens_known"`
 	UsageStatus      string `gorm:"size:12;index" json:"usage_status"` // confirmed | partial | unknown | none
 	EstPromptTokens  int64  `json:"est_prompt_tokens"`                 // rough estimate (request bytes / 4) when usage is not confirmed
@@ -251,10 +252,14 @@ type CallLog struct {
 	UpstreamLatencyMs int64 `json:"upstream_latency_ms"`
 	FirstByteMs       int64 `json:"first_byte_ms"`
 	ClientWriteMs     int64 `json:"client_write_ms"`
-	// Estimated cost in the base currency, micro-units (1e-6), summed over attempts and
-	// frozen at record time. CostKnown is false when any attempt with tokens had no price.
-	CostMicros int64     `gorm:"not null;default:0" json:"cost_micros"`
-	CostKnown  bool      `gorm:"not null;default:false" json:"cost_known"`
+	// Estimated cost in the ledger currency (USD), micro-units (1e-6), summed over attempts
+	// and frozen at record time; the API converts to the display currency. CostKnown is
+	// false when any attempt with tokens had no price or any attempt's usage is unknown /
+	// partial, so a true value means the figure is complete.
+	CostMicros int64 `gorm:"not null;default:0" json:"cost_micros"`
+	CostKnown  bool  `gorm:"not null;default:false" json:"cost_known"`
+	// Cost is CostMicros in the display currency, filled by the API (not stored).
+	Cost       float64   `gorm:"-" json:"cost"`
 	Error      string    `gorm:"size:1024" json:"error"`
 	Attempts   JSON      `gorm:"type:text" json:"attempts"`
 	RouteLabel string    `gorm:"size:16" json:"route_label"`
@@ -288,7 +293,7 @@ type UsageHourly struct {
 	CachedTokens     int64 `json:"cached_tokens"`
 	UnknownUsage     int64 `json:"unknown_usage"` // requests whose usage is partial or unknown
 	LatencyMs        int64 `json:"latency_ms"`
-	CostMicros       int64 `gorm:"not null;default:0" json:"cost_micros"` // booked like tokens: on the attempt's account
+	CostMicros       int64 `gorm:"not null;default:0" json:"cost_micros"` // ledger currency (USD); booked like tokens: on the attempt's account
 }
 
 // ConfigSnapshot is a point-in-time copy of the routing configuration (accounts with

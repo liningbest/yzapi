@@ -244,6 +244,7 @@ func AnthropicToChatResponse(in *AnthropicResponse, model string) *ChatResponse 
 	u := &Usage{
 		PromptTokens:     in.Usage.InputTokens + in.Usage.CacheReadInputTokens + in.Usage.CacheCreationInputTokens,
 		CompletionTokens: in.Usage.OutputTokens,
+		CacheWriteTokens: in.Usage.CacheCreationInputTokens,
 	}
 	u.TotalTokens = u.PromptTokens + u.CompletionTokens
 	if in.Usage.CacheReadInputTokens > 0 {
@@ -336,6 +337,7 @@ func AnthropicStreamToChat(r io.Reader, w io.Writer, flush func(), model string,
 			if e.Message != nil {
 				id = chatID(e.Message.ID)
 				usage.PromptTokens = e.Message.Usage.InputTokens + e.Message.Usage.CacheReadInputTokens + e.Message.Usage.CacheCreationInputTokens
+				usage.CacheWriteTokens = e.Message.Usage.CacheCreationInputTokens
 				if e.Message.Usage.CacheReadInputTokens > 0 {
 					usage.PromptTokensDetails = &struct {
 						CachedTokens int `json:"cached_tokens"`
@@ -384,6 +386,7 @@ func AnthropicStreamToChat(r io.Reader, w io.Writer, flush func(), model string,
 				usage.CompletionTokens = e.Usage.OutputTokens
 				if e.Usage.InputTokens > 0 {
 					usage.PromptTokens = e.Usage.InputTokens + e.Usage.CacheReadInputTokens + e.Usage.CacheCreationInputTokens
+					usage.CacheWriteTokens = e.Usage.CacheCreationInputTokens
 				}
 			}
 		case "error":

@@ -181,7 +181,7 @@ export default function Logs() {
             <span style={{ color: 'var(--yz-text-secondary)' }}>{t('logs:unpriced')}</span>
           </Tooltip>
         ) : (
-          <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatMoney((r.cost_micros ?? 0) / 1e6, currency)}</span>
+          <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatMoney(r.cost ?? 0, currency)}</span>
         ),
     },
     {

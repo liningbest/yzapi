@@ -116,8 +116,10 @@ func newMetrics() Metrics {
 }
 
 // Pricer estimates the cost of an attempt in the base currency (micro-units).
+// Pricer estimates the cost of one attempt in ledger micro-units (USD). cached and
+// cacheWrite are the parts of prompt read from / written to a prompt cache.
 type Pricer interface {
-	Cost(provider, model string, prompt, completion, cached int64) (micros int64, known bool)
+	Cost(provider, model string, prompt, completion, cached, cacheWrite int64) (micros int64, known bool)
 }
 
 // BodySink receives request/response bodies for external audit storage.

@@ -90,6 +90,9 @@ func New(cfg *config.Config, db *gorm.DB, gw *gateway.Gateway, st *settings.Stor
 	if err != nil {
 		return nil, fmt.Errorf("load price table: %w", err)
 	}
+	if err := pricing.MigrateLedger(db, st); err != nil {
+		return nil, fmt.Errorf("migrate cost ledger: %w", err)
+	}
 	gw.SetPricer(pr)
 	convert.SetReasoningToContent(st.Get().Basic.ReasoningToContent)
 	st.OnApply(func(all settings.All) {
@@ -326,7 +329,7 @@ func likeEscape(s string) string {
 
 func (s *Server) publicInfo(c *gin.Context) {
 	b := s.st.Get().Basic
-	c.JSON(200, gin.H{"site_name": b.SiteName, "version": s.version, "base_url": b.BaseURL, "currency": s.st.Get().Pricing.Currency})
+	c.JSON(200, gin.H{"site_name": b.SiteName, "version": s.version, "base_url": b.BaseURL, "currency": s.pricer.Currency()})
 }
 
 func (s *Server) systemInfo(c *gin.Context) {
