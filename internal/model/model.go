@@ -114,11 +114,15 @@ type User struct {
 }
 
 type UserGroup struct {
-	ID                uint         `gorm:"primaryKey" json:"id"`
-	Name              string       `gorm:"size:64;uniqueIndex" json:"name"`
-	MaxConcurrency    int          `json:"max_concurrency"`
-	KeyMaxConcurrency int          `json:"key_max_concurrency"`
-	TokenQuota        int64        `json:"token_quota"`
+	ID                uint   `gorm:"primaryKey" json:"id"`
+	Name              string `gorm:"size:64;uniqueIndex" json:"name"`
+	MaxConcurrency    int    `json:"max_concurrency"`
+	KeyMaxConcurrency int    `json:"key_max_concurrency"`
+	TokenQuota        int64  `json:"token_quota"`
+	// Trailing-60s rate limits for the whole group (0 = unlimited). Tokens are counted
+	// when a request finishes, so a burst is admitted until the window fills.
+	TokensPerMinute   int64        `gorm:"not null;default:0" json:"tokens_per_minute"`
+	RequestsPerMinute int          `gorm:"not null;default:0" json:"requests_per_minute"`
 	IsDefault         bool         `gorm:"index" json:"is_default"`
 	Enabled           bool         `gorm:"default:true" json:"enabled"`
 	Note              string       `gorm:"size:255" json:"note"`
@@ -185,8 +189,14 @@ type APIKey struct {
 	Suffix     string     `gorm:"size:8" json:"suffix"`
 	Enabled    bool       `gorm:"default:true" json:"enabled"`
 	LastUsedAt *time.Time `json:"last_used_at"`
-	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
+	// Owner-set restrictions: expiry, model whitelist (empty = group's models) and
+	// trailing-60s limits (0 = unlimited). All are narrower than the group's rules.
+	ExpiresAt         *time.Time `json:"expires_at"`
+	AllowedModels     StringList `gorm:"type:text" json:"allowed_models"`
+	TokensPerMinute   int64      `gorm:"not null;default:0" json:"tokens_per_minute"`
+	RequestsPerMinute int        `gorm:"not null;default:0" json:"requests_per_minute"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
 // Usage status of a call log: how trustworthy the token counts are.

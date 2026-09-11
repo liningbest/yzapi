@@ -56,6 +56,7 @@ import type {
   VectorTestResult,
   WordListParams,
   ModelPrice,
+  CacheCheckResult,
   ModelPriceInput,
   PricingSettings
 } from '@/types';
@@ -82,6 +83,7 @@ export const accountsApi = {
   resetHealth: (id: number) => post<Account>(`${A}/accounts/${id}/reset-health`),
   discover: (body: DiscoverInput) => post<{ models: string[] }>(`${A}/accounts/discover`, body),
   test: (body: AccountInput) => post<AccountTestResult>(`${A}/accounts/test`, body, { skipErrorToast: true }),
+  cacheCheck: (id: number, model: string) => post<CacheCheckResult>(`${A}/accounts/${id}/cache-check`, { model }, { skipErrorToast: true }),
   testModel: (id: number, model: string) =>
     post<AccountTestResult>(`${A}/accounts/${id}/test-model`, { model }, { skipErrorToast: true }),
   updateMappings: (id: number, mappings: ModelMapping[]) => put<Account>(`${A}/accounts/${id}/mappings`, { mappings }),

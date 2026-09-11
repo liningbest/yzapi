@@ -440,3 +440,47 @@ func TestConversionFailureKeepsReportedUsage(t *testing.T) {
 		t.Fatalf("status %d usage=%s total=%d attempts=%+v", w.Code, l.UsageStatus, l.TotalTokens, att)
 	}
 }
+
+// Key restrictions: expiry, model whitelist and per-minute limits are enforced on the
+// data plane; group limits apply to everyone in the group.
+func TestKeyRestrictionsAndGroupLimits(t *testing.T) {
+	up := jsonUpstream(200, ok200)
+	defer up.Close()
+	e := newE2E(t, up.URL)
+	past := time.Now().Add(-time.Hour)
+	e.db.Model(&model.APIKey{}).Where("id > 0").Update("expires_at", past)
+	e.g.InvalidateKeys()
+	if w := e.chat(t, context.Background(), false); w.Code != 401 || !strings.Contains(w.Body.String(), "api_key_expired") {
+		t.Fatalf("expired key: %d %s", w.Code, w.Body.String())
+	}
+	e.db.Model(&model.APIKey{}).Where("id > 0").Updates(map[string]any{"expires_at": nil, "allowed_models": model.StringList{"other"}})
+	e.g.InvalidateKeys()
+	if w := e.chat(t, context.Background(), false); w.Code != 403 || !strings.Contains(w.Body.String(), "key_model_not_allowed") {
+		t.Fatalf("whitelist: %d %s", w.Code, w.Body.String())
+	}
+	e.db.Model(&model.APIKey{}).Where("id > 0").Updates(map[string]any{"allowed_models": model.StringList{"m"}, "requests_per_minute": 2})
+	e.g.InvalidateKeys()
+	for i := 0; i < 2; i++ {
+		if w := e.chat(t, context.Background(), false); w.Code != 200 {
+			t.Fatalf("request %d: %d", i, w.Code)
+		}
+	}
+	if w := e.chat(t, context.Background(), false); w.Code != 429 || w.Header().Get("Retry-After") == "" {
+		t.Fatalf("key rpm: %d retry-after=%q", w.Code, w.Header().Get("Retry-After"))
+	}
+	// Group token limit: 25 tokens per call; with 50 booked, a 70-token budget admits one more call and
+	// refuses the next after its tokens are booked.
+	e.db.Model(&model.APIKey{}).Where("id > 0").Update("requests_per_minute", 0)
+	e.db.Model(&model.UserGroup{}).Where("id > 0").Update("tokens_per_minute", 70) // 50 already booked by the two earlier calls
+	e.g.InvalidateKeys()
+	if err := e.g.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	if w := e.chat(t, context.Background(), false); w.Code != 200 {
+		t.Fatalf("first under tpm: %d", w.Code)
+	}
+	time.Sleep(50 * time.Millisecond) // finish() books tokens synchronously before returning; small margin
+	if w := e.chat(t, context.Background(), false); w.Code != 429 || !strings.Contains(w.Body.String(), "token_rate_limited") {
+		t.Fatalf("group tpm: %d %s", w.Code, w.Body.String())
+	}
+}

@@ -33,6 +33,8 @@ interface FormValues {
   name: string;
   max_concurrency: number;
   key_max_concurrency: number;
+  tokens_per_minute?: number;
+  requests_per_minute?: number;
   quota_amount: number;
   quota_unit: string;
   model_group_ids: number[];
@@ -44,6 +46,8 @@ const DEFAULT_VALUES: FormValues = {
   name: '',
   max_concurrency: 0,
   key_max_concurrency: 0,
+  tokens_per_minute: 0,
+  requests_per_minute: 0,
   quota_amount: 0,
   quota_unit: 'token',
   model_group_ids: [],
@@ -57,6 +61,8 @@ function toFormValues(g: UserGroup): FormValues {
     name: g.name,
     max_concurrency: g.max_concurrency,
     key_max_concurrency: g.key_max_concurrency,
+    tokens_per_minute: g.tokens_per_minute ?? 0,
+    requests_per_minute: g.requests_per_minute ?? 0,
     quota_amount: q.amount,
     quota_unit: q.unit,
     model_group_ids: g.model_group_ids ?? [],
@@ -142,6 +148,8 @@ export default function UserGroups() {
     const body: UserGroupInput = {
       name: v.name.trim(),
       max_concurrency: v.max_concurrency ?? 0,
+      tokens_per_minute: v.tokens_per_minute ?? 0,
+      requests_per_minute: v.requests_per_minute ?? 0,
       key_max_concurrency: v.key_max_concurrency ?? 0,
       token_quota: joinQuota(v.quota_amount ?? 0, v.quota_unit),
       model_group_ids: v.model_group_ids ?? [],
@@ -388,6 +396,12 @@ export default function UserGroups() {
             ]}
           >
             <InputNumber min={0} max={100000} precision={0} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="tokens_per_minute" label={t('userGroups:tokensPerMinute')} extra={t('userGroups:form.tokensPerMinuteExtra')}>
+            <InputNumber min={0} precision={0} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="requests_per_minute" label={t('userGroups:requestsPerMinute')} extra={t('userGroups:form.requestsPerMinuteExtra')}>
+            <InputNumber min={0} precision={0} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item label={t('userGroups:tokenQuota')} extra={t('userGroups:form.tokenQuotaExtra')} required>
             <Space.Compact style={{ width: '100%' }}>

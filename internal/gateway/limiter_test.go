@@ -259,3 +259,43 @@ func TestOrderUpstreamsWeighted(t *testing.T) {
 		t.Fatalf("weight 90 vs 10 should win ~90%% of draws, got %d/2000", firstA)
 	}
 }
+
+// Trailing-window limits: requests are counted on admission, tokens when booked; the
+// window forgets after 60 s; zero means unlimited.
+func TestRateLimiterWindow(t *testing.T) {
+	r := newRateLimiter()
+	if e := r.admit("k:1", 0, 0); e != nil {
+		t.Fatal("unlimited must admit")
+	}
+	if e := r.admit("k:2", 2, 0); e != nil {
+		t.Fatal("first")
+	}
+	if e := r.admit("k:2", 2, 0); e != nil {
+		t.Fatal("second")
+	}
+	if e := r.admit("k:2", 2, 0); e != ErrRateLimited {
+		t.Fatalf("third must be rate limited, got %v", e)
+	}
+	r.addTokens("g:3", 900)
+	if e := r.admit("g:3", 0, 1000); e != nil {
+		t.Fatal("below token limit must admit")
+	}
+	r.addTokens("g:3", 200)
+	if e := r.admit("g:3", 0, 1000); e != ErrTokenRateLimited {
+		t.Fatalf("over token limit must be refused, got %v", e)
+	}
+	// Age the window: pretend the stamps are from a minute ago.
+	w := r.m["g:3"]
+	for i := range w.stamps {
+		if w.stamps[i] != 0 {
+			w.stamps[i] -= 61
+		}
+	}
+	if e := r.admit("g:3", 0, 1000); e != nil {
+		t.Fatal("window must forget after 60s")
+	}
+	r.prune(0)
+	if len(r.m) != 0 {
+		t.Fatal("prune must drop idle subjects")
+	}
+}

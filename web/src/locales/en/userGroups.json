@@ -27,6 +27,10 @@
     "modelGroupsMax": "Select at most 100 model groups",
     "modelGroupsPlaceholder": "Leave empty to allow all models",
     "enabledExtra": "When disabled, members fall back to the default group; changes take effect immediately",
-    "noteMax": "Note must be at most 255 characters"
-  }
+    "noteMax": "Note must be at most 255 characters",
+    "tokensPerMinuteExtra": "0 = unlimited; trailing 60 seconds of actual consumption, 429 with Retry-After when exceeded",
+    "requestsPerMinuteExtra": "0 = unlimited; trailing 60 seconds of requests"
+  },
+  "tokensPerMinute": "Tokens per minute",
+  "requestsPerMinute": "Requests per minute"
 }

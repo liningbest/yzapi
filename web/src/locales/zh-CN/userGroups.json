@@ -27,6 +27,10 @@
     "modelGroupsMax": "最多选择 100 个模型组",
     "modelGroupsPlaceholder": "不选择则可访问全部模型",
     "enabledExtra": "禁用后成员将回落到默认组；配置改动即时生效",
-    "noteMax": "备注最多 255 个字符"
-  }
+    "noteMax": "备注最多 255 个字符",
+    "tokensPerMinuteExtra": "0 表示不限制；按最近 60 秒实际消耗统计，超出后返回 429 并带 Retry-After",
+    "requestsPerMinuteExtra": "0 表示不限制；按最近 60 秒请求数统计"
+  },
+  "tokensPerMinute": "每分钟 Token 上限",
+  "requestsPerMinute": "每分钟请求上限"
 }

@@ -8,13 +8,14 @@ import {
   EditOutlined,
   PlusOutlined,
   ThunderboltOutlined,
+  DatabaseOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { accountsApi } from '@/api';
 import type { NormalizedError } from '@/api';
 import { NeutralTag } from '@/components';
-import type { Account, AccountTestResult, ModelMapping } from '@/types';
+import type { Account, AccountTestResult, ModelMapping, CacheCheckResult } from '@/types';
 
 interface Props {
   account: Account;
@@ -57,6 +58,34 @@ export default function MappingsPopover({ account }: Props) {
     } catch (e) {
       setLatency((s) => ({ ...s, [k]: { status: 'fail', message: (e as NormalizedError).message } }));
     }
+  };
+
+  const [cache, setCache] = useState<Record<string, { status: 'testing' | 'hit' | 'miss' | 'fail'; message?: string; detail?: string }>>({});
+  const cacheOne = async (m: ModelMapping) => {
+    const k = m.upstream_model;
+    setCache((s) => ({ ...s, [k]: { status: 'testing' } }));
+    try {
+      const r: CacheCheckResult = await accountsApi.cacheCheck(account.id, m.upstream_model);
+      const detail = r.second
+        ? t('accounts:mappings.cacheDetail', { prompt: r.second.prompt_tokens, cached: r.second.cached_tokens, ms: r.second.latency_ms })
+        : undefined;
+      setCache((s) => ({ ...s, [k]: r.ok ? { status: r.hit ? 'hit' : 'miss', message: r.message, detail } : { status: 'fail', message: r.message } }));
+    } catch (e) {
+      setCache((s) => ({ ...s, [k]: { status: 'fail', message: (e as NormalizedError).message } }));
+    }
+  };
+  const renderCache = (m: ModelMapping) => {
+    const st = cache[m.upstream_model];
+    if (!st || st.status === 'testing') return null;
+    const tone = st.status === 'hit' ? 'success' : st.status === 'miss' ? 'warning' : 'danger';
+    const label = st.status === 'hit' ? t('accounts:mappings.cacheHit') : st.status === 'miss' ? t('accounts:mappings.cacheMiss') : t('accounts:mappings.cacheFail');
+    return (
+      <Tooltip title={[st.message, st.detail].filter(Boolean).join(' · ')}>
+        <span>
+          <NeutralTag tone={tone}>{label}</NeutralTag>
+        </span>
+      </Tooltip>
+    );
   };
 
   const testAll = async () => {
@@ -207,7 +236,12 @@ export default function MappingsPopover({ account }: Props) {
                       {r.upstream_model}
                     </span>
                   </td>
-                  <td style={cell}>{renderLatency(r)}</td>
+                  <td style={cell}>
+                    <Space size={4}>
+                      {renderLatency(r)}
+                      {renderCache(r)}
+                    </Space>
+                  </td>
                   <td style={{ ...cell, whiteSpace: 'nowrap' }}>
                     <Space size={0}>
                       <Tooltip title={t('accounts:mappings.test')}>
@@ -217,6 +251,15 @@ export default function MappingsPopover({ account }: Props) {
                           icon={<ThunderboltOutlined />}
                           loading={latency[r.upstream_model]?.status === 'testing'}
                           onClick={() => void testOne(r)}
+                        />
+                      </Tooltip>
+                      <Tooltip title={t('accounts:mappings.cacheCheck')}>
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<DatabaseOutlined />}
+                          loading={cache[r.upstream_model]?.status === 'testing'}
+                          onClick={() => void cacheOne(r)}
                         />
                       </Tooltip>
                       <Tooltip title={t('accounts:mappings.edit')}>

@@ -140,6 +140,11 @@
     "ok": "{{ms}} ms",
     "copyName": "复制请求模型名",
     "empty": "暂无映射",
-    "failed": "失败"
+    "failed": "失败",
+    "cacheCheck": "缓存自检：连续发两次相同的长前缀请求，看第二次是否命中提示缓存",
+    "cacheHit": "缓存命中",
+    "cacheMiss": "未命中",
+    "cacheFail": "自检失败",
+    "cacheDetail": "第二次：输入 {{prompt}} · 缓存 {{cached}} · {{ms}} ms"
   }
 }

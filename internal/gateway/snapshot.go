@@ -51,6 +51,8 @@ type GroupView struct {
 	MaxConcurrency    int
 	KeyMaxConcurrency int
 	TokenQuota        int64
+	TokensPerMinute   int64
+	RequestsPerMinute int
 	Allowed           map[string]bool // nil = all models allowed
 	ModelGroupNames   map[string]bool
 }
@@ -350,7 +352,7 @@ func (h *snapshotHolder) rebuild(virtualModel string, smartEnabled bool) error {
 	}
 	for _, g := range groups {
 		gv := &GroupView{ID: g.ID, Name: g.Name, Enabled: g.Enabled, MaxConcurrency: g.MaxConcurrency,
-			KeyMaxConcurrency: g.KeyMaxConcurrency, TokenQuota: g.TokenQuota}
+			KeyMaxConcurrency: g.KeyMaxConcurrency, TokenQuota: g.TokenQuota, TokensPerMinute: g.TokensPerMinute, RequestsPerMinute: g.RequestsPerMinute}
 		if len(g.ModelGroups) > 0 {
 			gv.Allowed = map[string]bool{}
 			gv.ModelGroupNames = map[string]bool{}

@@ -276,6 +276,8 @@ export interface UserGroup {
   max_concurrency: number;
   key_max_concurrency: number;
   token_quota: number;
+  tokens_per_minute: number;
+  requests_per_minute: number;
   is_default: boolean;
   enabled: boolean;
   note: string;
@@ -291,6 +293,8 @@ export interface UserGroupInput {
   max_concurrency: number;
   key_max_concurrency: number;
   token_quota: number;
+  tokens_per_minute: number;
+  requests_per_minute: number;
   model_group_ids: number[];
   enabled: boolean;
   note?: string;
@@ -790,6 +794,32 @@ export interface ApiKey {
   enabled: boolean;
   last_used_at: string | null;
   created_at: string;
+  /** null = never expires */
+  expires_at: string | null;
+  expired: boolean;
+  /** empty = every model the user's group allows */
+  allowed_models: string[];
+  /** trailing-60s limits, 0 = unlimited */
+  tokens_per_minute: number;
+  requests_per_minute: number;
+}
+
+export interface KeyInput {
+  name: string;
+  expires_at?: string | null;
+  allowed_models?: string[];
+  tokens_per_minute?: number;
+  requests_per_minute?: number;
+}
+
+export interface CacheCheckResult {
+  ok: boolean;
+  hit?: boolean;
+  protocol: string;
+  model: string;
+  message: string;
+  first?: { prompt_tokens: number; cached_tokens: number; cache_write_tokens: number; latency_ms: number };
+  second?: { prompt_tokens: number; cached_tokens: number; cache_write_tokens: number; latency_ms: number };
 }
 
 export interface CreateKeyResponse {
@@ -817,6 +847,8 @@ export interface MyGroup {
   max_concurrency: number;
   key_max_concurrency: number;
   token_quota: number;
+  tokens_per_minute: number;
+  requests_per_minute: number;
   tokens_used_month: number;
   model_groups: { id: number; name: string; models: string[] }[];
 }

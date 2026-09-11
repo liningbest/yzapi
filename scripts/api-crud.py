@@ -188,6 +188,36 @@ try:
         with urllib.request.urlopen(r, timeout=10) as resp: eq(resp.status, 204, "cors preflight"); eq(resp.headers.get("Access-Control-Allow-Origin"), "*")
         req("DELETE", f"/api/admin/accounts/{pt['id']}", expect=200)
     check("client compatibility: passthrough, case-insensitive names, count_tokens, model by id, api-key, CORS", t_compat)
+    def t_key_restrictions():
+        exp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 86400))
+        k = req("POST", "/api/user/keys", {"name": "restricted", "expires_at": exp, "allowed_models": ["solo"], "tokens_per_minute": 100000, "requests_per_minute": 2}, token=BT, expect=200)
+        eq(k["item"]["allowed_models"], ["solo"]); eq(k["item"]["requests_per_minute"], 2); eq(k["item"]["expired"], False)
+        req("POST", "/api/user/keys", {"name": "bad", "allowed_models": ["not-visible-model"]}, token=BT, expect=400)
+        req("POST", "/api/user/keys", {"name": "bad", "expires_at": "2000-01-01T00:00:00Z"}, token=BT, expect=400)
+        for _ in range(2):
+            req("POST", "/v1/chat/completions", {"model": "solo", "messages": [{"role": "user", "content": "hi"}]}, token=k["key"], expect=200)
+        st, js = req("POST", "/v1/chat/completions", {"model": "solo", "messages": [{"role": "user", "content": "hi"}]}, token=k["key"], raw=True)
+        eq(st, 429, "key rpm"); eq(js["error"]["code"], "rate_limited")
+        st, js = req("POST", "/v1/chat/completions", {"model": "g1b", "messages": [{"role": "user", "content": "hi"}]}, token=k["key"], raw=True)
+        eq(st, 403, "key whitelist")
+        upd = req("PUT", f"/api/user/keys/{k['item']['id']}", {"name": "restricted2", "expires_at": None, "allowed_models": [], "tokens_per_minute": 0, "requests_per_minute": 0}, token=BT, expect=200)
+        eq(upd["expires_at"], None); eq(upd["allowed_models"], [])
+        req("DELETE", f"/api/user/keys/{k['item']['id']}", token=BT, expect=200)
+    check("key expiry / whitelist / per-minute limits", t_key_restrictions)
+    def t_group_limits():
+        body = lambda tpm: {"name": "team2", "max_concurrency": 6, "key_max_concurrency": 3, "token_quota": 0, "tokens_per_minute": tpm, "requests_per_minute": 0, "model_group_ids": [MG], "enabled": True, "note": "t2"}
+        try:
+            # Earlier calls in this run already booked >5 tokens for the group within the window,
+            # so a 5-token limit refuses immediately; lifting it admits again.
+            eq(req("PUT", f"/api/admin/user-groups/{UG}", body(5), expect=200)["tokens_per_minute"], 5)
+            st, js = req("POST", "/v1/chat/completions", {"model": "solo", "messages": [{"role": "user", "content": "hi"}]}, token=KEY, raw=True)
+            eq(st, 429, "group tpm"); eq(js["error"]["code"], "token_rate_limited")
+            req("PUT", f"/api/admin/user-groups/{UG}", body(-1), expect=400)
+        finally:
+            req("PUT", f"/api/admin/user-groups/{UG}", body(0), expect=200)
+        req("POST", "/v1/chat/completions", {"model": "solo", "messages": [{"role": "user", "content": "hi"}]}, token=KEY, expect=200)
+    check("group per-minute token limit", t_group_limits)
+    check("account cache self-check runs against mock", lambda: eq(req("POST", f"/api/admin/accounts/{AID}/cache-check", {"model": "mock-mini"}, expect=200)["ok"], True))
     check("key delete", lambda: req("DELETE", f"/api/user/keys/{KID}", token=BT, expect=200))
 
     # ---------- settings ----------
@@ -287,7 +317,7 @@ try:
     check("usage rebuild/reconcile/metering", lambda: (req("POST", "/api/admin/usage/rebuild", {"from": time.strftime("%Y-%m-%dT00:00:00Z", time.gmtime()), "to": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}, expect=200), req("GET", "/api/admin/usage/reconcile?range=24h", expect=200), req("GET", "/api/admin/usage/metering", expect=200)))
     check("overview live/usage", lambda: (req("GET", "/api/admin/overview/live", expect=200), req("GET", "/api/admin/overview/usage?range=7d", expect=200)))
     check("providers/models/system info", lambda: (req("GET", "/api/admin/providers", expect=200), req("GET", "/api/admin/models", expect=200), req("GET", "/api/admin/system/info", expect=200)))
-    check("user logs/usage", lambda: (eq(req("GET", "/api/user/logs?range=24h", token=BT, expect=200)["items"][0]["usage_status"], "confirmed"), req("GET", "/api/user/usage?range=24h", token=BT, expect=200)))
+    check("user logs/usage", lambda: (eq(req("GET", "/api/user/logs?range=24h&result=success", token=BT, expect=200)["items"][0]["usage_status"], "confirmed"), req("GET", "/api/user/usage?range=24h", token=BT, expect=200)))
 
     # ---------- deletes in dependency order ----------
     check("word delete", lambda: req("DELETE", f"/api/admin/compliance/words/{w['id']}", expect=200))

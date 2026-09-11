@@ -140,6 +140,11 @@
     "ok": "{{ms}} ms",
     "copyName": "複製請求模型名",
     "empty": "暫無映射",
-    "failed": "失敗"
+    "failed": "失敗",
+    "cacheCheck": "快取自檢：連續發兩次相同的長前綴請求，看第二次是否命中提示快取",
+    "cacheHit": "快取命中",
+    "cacheMiss": "未命中",
+    "cacheFail": "自檢失敗",
+    "cacheDetail": "第二次：輸入 {{prompt}} · 快取 {{cached}} · {{ms}} ms"
   }
 }

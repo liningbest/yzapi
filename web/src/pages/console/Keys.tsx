@@ -1,32 +1,37 @@
 import { useState } from 'react';
-import {
-  Alert,
-  App,
-  Button,
-  Card,
-  Form,
-  Input,
-  Modal,
-  Popconfirm,
-  Result,
-  Space,
-  Switch,
-  Table,
-  Tooltip,
-  Typography,
-} from 'antd';
+import { Alert, App, Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Result, Select, Space, Switch, Table, Tag, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { CopyOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { userApi } from '@/api';
 import { EmptyState, FormDrawer, PageHeader, TimeCell } from '@/components';
-import type { ApiKey, CreateKeyResponse } from '@/types';
+import type { ApiKey, CreateKeyResponse, KeyInput } from '@/types';
 
 const QUERY_KEY = ['user', 'keys'];
 
-interface NameForm {
+interface KeyForm {
   name: string;
+  /** 'keep' (edit only) | 'never' | days */
+  expires_in: string;
+  allowed_models: string[];
+  tokens_per_minute?: number | null;
+  requests_per_minute?: number | null;
+}
+
+const EXPIRY_DAYS = ['7', '30', '90', '365'];
+
+function toKeyInput(v: KeyForm, current?: ApiKey): KeyInput {
+  let expires_at: string | null | undefined = null;
+  if (v.expires_in === 'keep') expires_at = current?.expires_at ?? null;
+  else if (v.expires_in !== 'never') expires_at = new Date(Date.now() + Number(v.expires_in) * 86400000).toISOString();
+  return {
+    name: v.name.trim(),
+    expires_at,
+    allowed_models: v.allowed_models ?? [],
+    tokens_per_minute: v.tokens_per_minute ?? 0,
+    requests_per_minute: v.requests_per_minute ?? 0,
+  };
 }
 
 export default function Keys() {
@@ -37,14 +42,16 @@ export default function Keys() {
   const [createOpen, setCreateOpen] = useState(false);
   const [created, setCreated] = useState<CreateKeyResponse | null>(null);
   const [renaming, setRenaming] = useState<ApiKey | null>(null);
-  const [createForm] = Form.useForm<NameForm>();
-  const [renameForm] = Form.useForm<NameForm>();
+  const [createForm] = Form.useForm<KeyForm>();
+  const [renameForm] = Form.useForm<KeyForm>();
 
   const keys = useQuery({ queryKey: QUERY_KEY, queryFn: userApi.keys });
+  const models = useQuery({ queryKey: ['user', 'models'], queryFn: userApi.models });
+  const modelOptions = (models.data?.models ?? []).map((m) => ({ value: m.name, label: m.name }));
   const invalidate = () => qc.invalidateQueries({ queryKey: QUERY_KEY });
 
   const createMut = useMutation({
-    mutationFn: (name: string) => userApi.createKey(name),
+    mutationFn: (body: KeyInput) => userApi.createKey(body),
     onSuccess: (res) => {
       setCreated(res);
       void invalidate();
@@ -52,7 +59,7 @@ export default function Keys() {
   });
 
   const renameMut = useMutation({
-    mutationFn: ({ id, name }: { id: number; name: string }) => userApi.renameKey(id, name),
+    mutationFn: ({ id, body }: { id: number; body: KeyInput }) => userApi.updateKey(id, body),
     onSuccess: () => {
       message.success(t('common:common.saveSuccess'));
       setRenaming(null);
@@ -89,8 +96,47 @@ export default function Keys() {
   };
 
   const openRename = (row: ApiKey) => {
-    renameForm.setFieldsValue({ name: row.name });
+    renameForm.setFieldsValue({
+      name: row.name,
+      expires_in: 'keep',
+      allowed_models: row.allowed_models ?? [],
+      tokens_per_minute: row.tokens_per_minute || null,
+      requests_per_minute: row.requests_per_minute || null,
+    });
     setRenaming(row);
+  };
+
+  const expiryOptions = (withKeep: boolean) => [
+    ...(withKeep ? [{ value: 'keep', label: t('console:keys.expiryKeep') }] : []),
+    { value: 'never', label: t('console:keys.expiryNever') },
+    ...EXPIRY_DAYS.map((d) => ({ value: d, label: t('console:keys.expiryDays', { days: d }) })),
+  ];
+
+  const restrictionFields = (withKeep: boolean) => (
+    <>
+      <Form.Item name="expires_in" label={t('console:keys.expiry')} extra={t('console:keys.expiryExtra')}>
+        <Select options={expiryOptions(withKeep)} />
+      </Form.Item>
+      <Form.Item name="allowed_models" label={t('console:keys.allowedModels')} extra={t('console:keys.allowedModelsExtra')}>
+        <Select mode="multiple" allowClear showSearch options={modelOptions} placeholder={t('console:keys.allowedModelsPlaceholder')} loading={models.isLoading} />
+      </Form.Item>
+      <Space style={{ width: '100%' }} styles={{ item: { flex: 1 } }}>
+        <Form.Item name="tokens_per_minute" label={t('console:keys.tpm')} extra={t('console:keys.limitExtra')}>
+          <InputNumber min={0} precision={0} style={{ width: '100%' }} placeholder="0" />
+        </Form.Item>
+        <Form.Item name="requests_per_minute" label={t('console:keys.rpm')} extra={t('console:keys.limitExtra')}>
+          <InputNumber min={0} precision={0} style={{ width: '100%' }} placeholder="0" />
+        </Form.Item>
+      </Space>
+    </>
+  );
+
+  const restrictionSummary = (row: ApiKey) => {
+    const parts: string[] = [];
+    if (row.allowed_models?.length) parts.push(t('console:keys.modelsCount', { count: row.allowed_models.length }));
+    if (row.tokens_per_minute > 0) parts.push(`${row.tokens_per_minute} tok/min`);
+    if (row.requests_per_minute > 0) parts.push(`${row.requests_per_minute} req/min`);
+    return parts.length ? parts.join(' · ') : '-';
   };
 
   const copyKey = (key: string) => {
@@ -130,6 +176,31 @@ export default function Keys() {
           loading={toggleMut.isPending && toggleMut.variables?.id === row.id}
           onChange={(v) => toggleMut.mutate({ id: row.id, enabled: v })}
         />
+      ),
+    },
+    {
+      title: t('console:keys.expiry'),
+      dataIndex: 'expires_at',
+      width: 150,
+      render: (v: string | null, row) =>
+        v ? (
+          row.expired ? (
+            <Tag color="error">{t('console:keys.expired')}</Tag>
+          ) : (
+            <TimeCell value={v} absolute />
+          )
+        ) : (
+          <span style={{ color: 'var(--yz-text-secondary)' }}>{t('console:keys.expiryNever')}</span>
+        ),
+    },
+    {
+      title: t('console:keys.restrictions'),
+      key: 'restrictions',
+      width: 200,
+      render: (_, row) => (
+        <Tooltip title={row.allowed_models?.length ? row.allowed_models.join(', ') : undefined}>
+          <span style={{ fontSize: 12.5 }}>{restrictionSummary(row)}</span>
+        </Tooltip>
       ),
     },
     {
@@ -246,15 +317,17 @@ export default function Keys() {
             <Alert type="error" showIcon message={t('console:keys.onceWarn')} style={{ marginTop: 16 }} />
           </div>
         ) : (
-          <Form<NameForm>
+          <Form<KeyForm>
             form={createForm}
             layout="vertical"
             requiredMark={false}
-            onFinish={(v) => createMut.mutate(v.name.trim())}
+            initialValues={{ expires_in: 'never', allowed_models: [] }}
+            onFinish={(v) => createMut.mutate(toKeyInput(v))}
           >
             <Form.Item name="name" label={t('console:keys.name')} rules={nameRules}>
               <Input maxLength={64} showCount placeholder={t('console:keys.namePlaceholder')} autoFocus />
             </Form.Item>
+            {restrictionFields(false)}
             <Typography.Text type="secondary" style={{ fontSize: 12.5 }}>
               {t('console:keys.keyTooltip')}
             </Typography.Text>
@@ -272,15 +345,16 @@ export default function Keys() {
         confirmLoading={renameMut.isPending}
         destroyOnClose
       >
-        <Form<NameForm>
+        <Form<KeyForm>
           form={renameForm}
           layout="vertical"
           requiredMark={false}
-          onFinish={(v) => renaming && renameMut.mutate({ id: renaming.id, name: v.name.trim() })}
+          onFinish={(v) => renaming && renameMut.mutate({ id: renaming.id, body: toKeyInput(v, renaming) })}
         >
           <Form.Item name="name" label={t('console:keys.name')} rules={nameRules}>
             <Input maxLength={64} showCount placeholder={t('console:keys.namePlaceholder')} autoFocus />
           </Form.Item>
+          {restrictionFields(true)}
         </Form>
       </Modal>
     </div>

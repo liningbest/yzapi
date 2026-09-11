@@ -73,6 +73,7 @@ type Gateway struct {
 	quota    *quotaTracker
 	gate     *gate
 	groups   *counterMap
+	rates    *rateLimiter
 	apikeys  *counterMap
 	accounts *counterMap
 
@@ -133,6 +134,7 @@ func New(cfg *config.Config, db *gorm.DB, cipher *crypto.Cipher, st *settings.St
 		health:   newHealthTracker(db),
 		quota:    newQuotaTracker(db),
 		groups:   newCounterMap(),
+		rates:    newRateLimiter(),
 		apikeys:  newCounterMap(),
 		accounts: newCounterMap(),
 		Metrics:  newMetrics(),
@@ -219,6 +221,7 @@ func (g *Gateway) quotaRefresher() {
 	defer t.Stop()
 	for range t.C {
 		g.quota.refresh()
+		g.rates.prune(10 * time.Minute)
 	}
 }
 

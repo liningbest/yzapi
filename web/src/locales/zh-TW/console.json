@@ -59,7 +59,21 @@
     "onceWarn": "此 Key 僅顯示一次，請立即複製保存；關閉後無法再次查看",
     "copyKey": "複製",
     "enabledSuccess": "已啟用",
-    "disabledSuccess": "已停用"
+    "disabledSuccess": "已停用",
+    "expiry": "有效期",
+    "expiryExtra": "到期後自動失效，需要時可在編輯裡延長",
+    "expiryKeep": "保持不變",
+    "expiryNever": "永不過期",
+    "expiryDays": "{{days}} 天",
+    "expired": "已過期",
+    "allowedModels": "可用模型",
+    "allowedModelsExtra": "不選則可用使用者群組授權的全部模型；只能從你可見的模型中選擇",
+    "allowedModelsPlaceholder": "全部可用模型",
+    "tpm": "每分鐘 Token 上限",
+    "rpm": "每分鐘請求上限",
+    "limitExtra": "0 表示不限制，按最近 60 秒統計",
+    "restrictions": "限制",
+    "modelsCount": "限 {{count}} 個模型"
   },
   "usage": {
     "title": "用量統計",

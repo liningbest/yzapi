@@ -7,6 +7,8 @@
 列表接口统一：查询参数 `page`（从 1 开始）、`page_size`（默认 20，最大 200），响应 `{"items": [...], "total": N}`。
 时间范围参数 `range`: `24h` | `7d` | `30d` | `custom`（配合 `from`、`to`，RFC3339）。
 
+数据面限速：用户组与 API Key 各有每分钟请求数 / Token 数上限（0 不限），按最近 60 秒统计，请求数在准入时计数、Token 在结束时计数；超出返回 429 `rate_limited` / `token_rate_limited` 并带 `Retry-After`。Key 过期返回 401 `api_key_expired`，Key 白名单外的模型返回 403 `key_model_not_allowed`。
+
 数据面接口（客户端调用，API Key 认证）：`GET /v1/models`、`GET /v1/models/{id}`、`POST /v1/chat/completions`、`POST /v1/responses`、`POST /v1/messages`、`POST /v1/messages/count_tokens`、`POST /v1/embeddings`、`POST /v1/images/generations`。为兼容各种编程客户端：
 
 - 认证头接受 `Authorization: Bearer`、`x-api-key`、`api-key` 三种；路径省略或重复 `/v1` 也接受；`/v1/*` 支持 CORS 预检，浏览器内的客户端可直连。
@@ -78,6 +80,7 @@
 - `PATCH /api/admin/accounts/:id/enabled` `{enabled}`
 - `POST /api/admin/accounts/:id/reset-health` → 清除冷却
 - `POST /api/admin/accounts/:id/test-model` `{model}` → `{ok, latency_ms, message, model}`，用已存凭据探测指定上游模型
+- `POST /api/admin/accounts/:id/cache-check` `{model}` → `{ok, hit, protocol, model, first:{prompt_tokens,cached_tokens,cache_write_tokens,latency_ms}, second:{...}, message}`：连续发两次约 1.5k Token 相同前缀的请求（Anthropic 协议带 `cache_control`），第二次的缓存字段非零即命中；用于证明提示缓存在该账号与模型上真实生效
 - `PUT /api/admin/accounts/:id/mappings` `{mappings:[{request_model,upstream_model}]}` → 账号对象；整体替换映射（1–100 条，请求模型名唯一）
 - `POST /api/admin/accounts/discover` `{provider, base_url, api_key, account_id}` → `{models:["..."]}`（account_id 提供且 api_key 为空时用已存 key）
 - `POST /api/admin/accounts/test` 同 POST 账号 body（可带 `account_id`）→ `{ok, latency_ms, message, model}`
@@ -98,7 +101,7 @@
 
 ### 用户组 `/api/admin/user-groups`
 对象：`{id, name, max_concurrency, key_max_concurrency, token_quota, is_default, enabled, note, model_group_ids:[...], model_groups:[{id,name}], members_count, tokens_used_month, created_at}`
-- `GET`、`POST {name,max_concurrency,key_max_concurrency,token_quota,model_group_ids[],enabled,note}`、`PUT /:id`、`DELETE /:id`（有成员 409 `has_members`；默认组 409 `is_default`）、`PATCH /:id/enabled`
+- `GET`、`POST {name,max_concurrency,key_max_concurrency,token_quota,tokens_per_minute,requests_per_minute,model_group_ids[],enabled,note}`、`PUT /:id`、`DELETE /:id`（有成员 409 `has_members`；默认组 409 `is_default`）、`PATCH /:id/enabled`
 
 ### 智能路由 `/api/admin/route`
 - 样本：`GET /samples?label=&q=&vectorized=true|false&page=`；对象 `{id,label:"simple"|"complex",text,threshold,note,vector_dim,vectorized:bool,created_at}`
@@ -171,8 +174,8 @@
 ## 用户中心 `/api/user/*`（任意登录用户）
 - `GET /api/user/models` → `{base_url, models:[{name,type,kind,provider}]}`（仅本人用户组可用的模型）
 - `GET /api/user/keys` → `[{id,name,prefix,suffix,masked:"sk-abcd…wxyz",enabled,last_used_at,created_at}]`
-- `POST /api/user/keys {name}` → `{key:"sk-完整明文（仅此一次）", item:{...}}`
-- `PUT /api/user/keys/:id {name}`；`PATCH /api/user/keys/:id/enabled {enabled}`；`DELETE /api/user/keys/:id`
+- `POST /api/user/keys {name, expires_at?, allowed_models?[], tokens_per_minute?, requests_per_minute?}` → `{key:"sk-完整明文（仅此一次）", item:{...}}`。`expires_at` 为 null 表示永不过期；`allowed_models` 只能是本人可见的模型或模型组名，空表示继承用户组；每分钟上限 0 表示不限制，按最近 60 秒统计。Key 对象另含 `expires_at, expired, allowed_models, tokens_per_minute, requests_per_minute`
+- `PUT /api/user/keys/:id` 同 POST 字段；`PATCH /api/user/keys/:id/enabled {enabled}`；`DELETE /api/user/keys/:id`
 - `GET /api/user/usage?api_key_id=&model=&api_type=&range=&from=&to=&group_by=` → 同管理端用量结构（仅含 by_model / by_api_key / by_provider）
 - `GET /api/user/logs?api_key_id=&model=&result=&range=&q=&page=` → 同调用日志对象（脱敏，不含账号信息）
 - `GET /api/user/group` → `{id,name,max_concurrency,key_max_concurrency,token_quota,tokens_used_month,model_groups:[{id,name,models[]}]}`

@@ -59,7 +59,21 @@
     "onceWarn": "此 Key 仅显示一次，请立即复制保存；关闭后无法再次查看",
     "copyKey": "复制",
     "enabledSuccess": "已启用",
-    "disabledSuccess": "已禁用"
+    "disabledSuccess": "已禁用",
+    "expiry": "有效期",
+    "expiryExtra": "到期后自动失效，需要时可在编辑里延长",
+    "expiryKeep": "保持不变",
+    "expiryNever": "永不过期",
+    "expiryDays": "{{days}} 天",
+    "expired": "已过期",
+    "allowedModels": "可用模型",
+    "allowedModelsExtra": "不选则可用用户组授权的全部模型；只能从你可见的模型中选择",
+    "allowedModelsPlaceholder": "全部可用模型",
+    "tpm": "每分钟 Token 上限",
+    "rpm": "每分钟请求上限",
+    "limitExtra": "0 表示不限制，按最近 60 秒统计",
+    "restrictions": "限制",
+    "modelsCount": "限 {{count}} 个模型"
   },
   "usage": {
     "title": "用量统计",

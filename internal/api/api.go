@@ -127,6 +127,7 @@ func (s *Server) Register(r *gin.Engine) {
 		acc.PATCH("/:id/enabled", s.setAccountEnabled)
 		acc.POST("/:id/reset-health", s.resetAccountHealth)
 		acc.POST("/:id/test-model", s.testAccountModel)
+		acc.POST("/:id/cache-check", s.cacheCheckAccount)
 		acc.PUT("/:id/mappings", s.updateAccountMappings)
 
 		mg := admin.Group("/model-groups")

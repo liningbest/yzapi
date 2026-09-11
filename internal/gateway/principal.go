@@ -20,6 +20,10 @@ type Principal struct {
 	UserRole    string
 	UserEnabled bool
 	KeyEnabled  bool
+	KeyExpired  bool
+	KeyModels   map[string]bool // nil = inherit the group's models
+	KeyTPM      int64
+	KeyRPM      int
 	GroupID     uint
 }
 
@@ -73,7 +77,16 @@ func (c *keyCache) lookup(raw string) *Principal {
 	var p *Principal
 	ttl := keyCacheNegTTL
 	if err := c.db.Preload("User").Where("key_hash = ?", h).First(&k).Error; err == nil {
-		p = &Principal{KeyID: k.ID, KeyName: k.Name, KeyEnabled: k.Enabled}
+		p = &Principal{KeyID: k.ID, KeyName: k.Name, KeyEnabled: k.Enabled, KeyTPM: k.TokensPerMinute, KeyRPM: k.RequestsPerMinute}
+		if k.ExpiresAt != nil && time.Now().After(*k.ExpiresAt) {
+			p.KeyExpired = true
+		}
+		if len(k.AllowedModels) > 0 {
+			p.KeyModels = map[string]bool{}
+			for _, m := range k.AllowedModels {
+				p.KeyModels[m] = true
+			}
+		}
 		if k.User != nil {
 			p.UserID = k.User.ID
 			p.Username = k.User.Username

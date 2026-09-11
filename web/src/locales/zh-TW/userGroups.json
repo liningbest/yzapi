@@ -27,6 +27,10 @@
     "modelGroupsMax": "最多選擇 100 個模型群組",
     "modelGroupsPlaceholder": "不選擇則可存取全部模型",
     "enabledExtra": "停用後成員將回落到預設群組；設定變更即時生效",
-    "noteMax": "備註最多 255 個字元"
-  }
+    "noteMax": "備註最多 255 個字元",
+    "tokensPerMinuteExtra": "0 表示不限制；按最近 60 秒實際消耗統計，超出後回傳 429 並帶 Retry-After",
+    "requestsPerMinuteExtra": "0 表示不限制；按最近 60 秒請求數統計"
+  },
+  "tokensPerMinute": "每分鐘 Token 上限",
+  "requestsPerMinute": "每分鐘請求上限"
 }

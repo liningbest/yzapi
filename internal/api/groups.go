@@ -14,6 +14,8 @@ type userGroupIn struct {
 	MaxConcurrency    int    `json:"max_concurrency"`
 	KeyMaxConcurrency int    `json:"key_max_concurrency"`
 	TokenQuota        int64  `json:"token_quota"`
+	TokensPerMinute   int64  `json:"tokens_per_minute"`
+	RequestsPerMinute int    `json:"requests_per_minute"`
 	ModelGroupIDs     []uint `json:"model_group_ids"`
 	Enabled           *bool  `json:"enabled"`
 	Note              string `json:"note"`
@@ -27,7 +29,8 @@ func (s *Server) userGroupView(g *model.UserGroup, members int64) gin.H {
 		mgs = append(mgs, gin.H{"id": mg.ID, "name": mg.Name, "type": mg.Type, "models": mg.Models})
 	}
 	return gin.H{"id": g.ID, "name": g.Name, "max_concurrency": g.MaxConcurrency, "key_max_concurrency": g.KeyMaxConcurrency,
-		"token_quota": g.TokenQuota, "is_default": g.IsDefault, "enabled": g.Enabled, "note": g.Note,
+		"token_quota": g.TokenQuota, "tokens_per_minute": g.TokensPerMinute, "requests_per_minute": g.RequestsPerMinute,
+		"is_default": g.IsDefault, "enabled": g.Enabled, "note": g.Note,
 		"model_group_ids": ids, "model_groups": mgs, "members_count": members, "tokens_used_month": s.gw.GroupUsage(g.ID),
 		"created_at": g.CreatedAt, "updated_at": g.UpdatedAt}
 }
@@ -85,6 +88,9 @@ func validateUserGroup(in *userGroupIn) string {
 	if in.MaxConcurrency < 0 || in.MaxConcurrency > 100000 || in.KeyMaxConcurrency < 0 || in.KeyMaxConcurrency > 100000 {
 		return "并发范围 0-100000"
 	}
+	if in.TokensPerMinute < 0 || in.RequestsPerMinute < 0 {
+		return "每分钟限速不能为负数"
+	}
 	if in.TokenQuota < 0 {
 		return "Token 配额不能为负数"
 	}
@@ -139,7 +145,8 @@ func (s *Server) createUserGroup(c *gin.Context) {
 		return
 	}
 	g := model.UserGroup{Name: in.Name, MaxConcurrency: in.MaxConcurrency, KeyMaxConcurrency: in.KeyMaxConcurrency,
-		TokenQuota: in.TokenQuota, Enabled: in.Enabled == nil || *in.Enabled, Note: in.Note, ModelGroups: mgs}
+		TokenQuota: in.TokenQuota, TokensPerMinute: in.TokensPerMinute, RequestsPerMinute: in.RequestsPerMinute,
+		Enabled: in.Enabled == nil || *in.Enabled, Note: in.Note, ModelGroups: mgs}
 	if err := s.db.Create(&g).Error; err != nil {
 		conflictOrServerError(c, err, "用户组名称已存在")
 		return
@@ -182,7 +189,7 @@ func (s *Server) updateUserGroup(c *gin.Context) {
 	}
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		upd := map[string]any{"name": in.Name, "max_concurrency": in.MaxConcurrency, "key_max_concurrency": in.KeyMaxConcurrency,
-			"token_quota": in.TokenQuota, "note": in.Note}
+			"token_quota": in.TokenQuota, "tokens_per_minute": in.TokensPerMinute, "requests_per_minute": in.RequestsPerMinute, "note": in.Note}
 		if in.Enabled != nil {
 			upd["enabled"] = *in.Enabled
 		}

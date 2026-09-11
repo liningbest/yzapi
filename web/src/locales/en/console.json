@@ -59,7 +59,21 @@
     "onceWarn": "This key is shown only once. Copy and save it now; it cannot be viewed again after closing",
     "copyKey": "Copy",
     "enabledSuccess": "Enabled",
-    "disabledSuccess": "Disabled"
+    "disabledSuccess": "Disabled",
+    "expiry": "Expires",
+    "expiryExtra": "The key stops working after this; extend it from Edit",
+    "expiryKeep": "Keep current",
+    "expiryNever": "Never",
+    "expiryDays": "{{days}} days",
+    "expired": "Expired",
+    "allowedModels": "Allowed models",
+    "allowedModelsExtra": "Empty = every model your group allows; only models you can see can be chosen",
+    "allowedModelsPlaceholder": "All available models",
+    "tpm": "Tokens per minute",
+    "rpm": "Requests per minute",
+    "limitExtra": "0 = unlimited, trailing 60 seconds",
+    "restrictions": "Restrictions",
+    "modelsCount": "{{count}} models"
   },
   "usage": {
     "title": "Usage",

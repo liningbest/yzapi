@@ -131,6 +131,10 @@ func (g *Gateway) finish(req *request) {
 	}
 	if l.TotalTokens > 0 && req.group != nil {
 		g.quota.add(req.group.ID, l.TotalTokens)
+		g.rates.addTokens("g:"+strconv.FormatUint(uint64(req.group.ID), 10), l.TotalTokens)
+	}
+	if l.TotalTokens > 0 && req.principal != nil {
+		g.rates.addTokens("k:"+strconv.FormatUint(uint64(req.principal.KeyID), 10), l.TotalTokens)
 	}
 	g.logs.Record(l)
 	if g.BodySink != nil && g.BodySink.Enabled() {
@@ -206,6 +210,9 @@ func (g *Gateway) authenticate(r *http.Request) (*Principal, *GatewayError) {
 	}
 	if !p.KeyEnabled {
 		return nil, ErrKeyDisabled
+	}
+	if p.KeyExpired {
+		return nil, ErrKeyExpired
 	}
 	if !p.UserEnabled {
 		return nil, ErrUserDisabled
@@ -302,8 +309,19 @@ func (g *Gateway) prepare(req *request) *GatewayError {
 			return ErrModelNotAllowed
 		}
 	}
+	if p.KeyModels != nil && !p.KeyModels[req.model] {
+		return ErrKeyModelDenied
+	}
 	if g.quota.exceeded(grp.ID, grp.TokenQuota) {
 		return ErrQuotaExceeded
+	}
+	if e := g.rates.admit("g:"+strconv.FormatUint(uint64(grp.ID), 10), grp.RequestsPerMinute, grp.TokensPerMinute); e != nil {
+		req.w.Header().Set("Retry-After", "5")
+		return e
+	}
+	if e := g.rates.admit("k:"+strconv.FormatUint(uint64(p.KeyID), 10), p.KeyRPM, p.KeyTPM); e != nil {
+		req.w.Header().Set("Retry-After", "5")
+		return e
 	}
 	return nil
 }

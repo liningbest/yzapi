@@ -140,6 +140,11 @@
     "ok": "{{ms}} ms",
     "copyName": "Copy request model name",
     "empty": "No mappings",
-    "failed": "Failed"
+    "failed": "Failed",
+    "cacheCheck": "Cache self-check: send the same long-prefix request twice and see whether the second hits the prompt cache",
+    "cacheHit": "Cache hit",
+    "cacheMiss": "No hit",
+    "cacheFail": "Check failed",
+    "cacheDetail": "2nd: prompt {{prompt}} · cached {{cached}} · {{ms}} ms"
   }
 }

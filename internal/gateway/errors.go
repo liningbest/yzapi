@@ -35,6 +35,10 @@ func newErr(status int, code, msg string) *GatewayError {
 var (
 	ErrUnauthorized     = newErr(401, "invalid_api_key", "Invalid or missing API key")
 	ErrKeyDisabled      = newErr(401, "api_key_disabled", "API key is disabled")
+	ErrKeyExpired       = newErr(401, "api_key_expired", "API key has expired")
+	ErrKeyModelDenied   = newErr(403, "key_model_not_allowed", "This API key is not allowed to use this model")
+	ErrRateLimited      = newErr(429, "rate_limited", "Requests per minute limit reached")
+	ErrTokenRateLimited = newErr(429, "token_rate_limited", "Tokens per minute limit reached")
 	ErrUserDisabled     = newErr(403, "user_disabled", "User account is disabled")
 	ErrGroupDisabled    = newErr(403, "group_disabled", "User group is disabled")
 	ErrModelNotFound    = newErr(404, "model_not_found", "The requested model does not exist")
