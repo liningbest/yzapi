@@ -16,6 +16,8 @@
   "dim": {
     "account": "Upstream account",
     "count": "{{count}} items",
-    "attemptsHint": "{{count}} upstream attempts; tokens follow the attempt that consumed them, requests follow the final answer"
+    "attemptsHint": "{{count}} upstream attempts; tokens follow the attempt that consumed them, requests follow the final answer",
+    "client": "Client",
+    "clientHint": "From raw call logs (retention window only), detected from User-Agent and headers"
   }
 }

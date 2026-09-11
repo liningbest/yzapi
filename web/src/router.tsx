@@ -19,6 +19,7 @@ const Settings = lazy(() => import('@/pages/admin/Settings'));
 const About = lazy(() => import('@/pages/admin/About'));
 
 const ConsoleModels = lazy(() => import('@/pages/console/Models'));
+const ConsoleGuide = lazy(() => import('@/pages/console/Guide'));
 const ConsoleKeys = lazy(() => import('@/pages/console/Keys'));
 const ConsoleUsage = lazy(() => import('@/pages/console/Usage'));
 const ConsoleLogs = lazy(() => import('@/pages/console/Logs'));
@@ -63,6 +64,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="/console/models" replace /> },
           { path: 'models', element: <ConsoleModels /> },
+          { path: 'guide', element: <ConsoleGuide /> },
           { path: 'keys', element: <ConsoleKeys /> },
           { path: 'usage', element: <ConsoleUsage /> },
           { path: 'logs', element: <ConsoleLogs /> },

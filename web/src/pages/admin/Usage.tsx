@@ -13,6 +13,7 @@ import {
   UserOutlined,
   AppstoreOutlined,
   BarsOutlined,
+  LaptopOutlined,
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -136,6 +137,7 @@ export default function Usage() {
     { key: 'by_account', title: t('usage:dim.account'), icon: <DatabaseOutlined />, items: data?.by_account },
     { key: 'by_group', title: t('common:common.userGroup'), icon: <TeamOutlined />, items: data?.by_group },
     { key: 'by_user', title: t('common:common.user'), icon: <UserOutlined />, items: data?.by_user },
+    { key: 'by_client', title: t('usage:dim.client'), icon: <LaptopOutlined />, items: data?.by_client, hint: t('usage:dim.clientHint') },
   ] as const;
 
   return (
@@ -268,6 +270,7 @@ export default function Usage() {
               currency={data?.currency}
               loading={loading}
               provider={'provider' in d ? d.provider : false}
+              hint={'hint' in d ? d.hint : undefined}
               color={CHART_PALETTE[i % CHART_PALETTE.length]}
             />
           </Col>

@@ -208,6 +208,16 @@ export default function Usage() {
             <DimTable rows={usage.data?.by_provider} currency={currency} loading={loading} />
           </Card>
         </Col>
+        <Col xl={8} md={12} xs={24}>
+          <Card
+            className="yz-card"
+            title={t('console:usage.byClient')}
+            extra={<Typography.Text type="secondary" style={{ fontSize: 12 }}>{t('console:usage.byClientHint')}</Typography.Text>}
+            styles={{ body: { padding: 12 } }}
+          >
+            <DimTable rows={usage.data?.by_client} currency={currency} loading={loading} />
+          </Card>
+        </Col>
       </Row>
     </div>
   );

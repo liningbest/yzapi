@@ -244,3 +244,9 @@
 原表停留在 2026-06，主力型号（GPT-6 Astra、GPT-5.6 Sol / Terra / Luna、GPT-5.5、Claude Fable 5.1 / Opus 5 / Sonnet 5、Gemini 3.x、Grok 4.6、DeepSeek V4、Kimi K3、GLM-5.x、Qwen 3.8、豆包 2.x 等）全部缺失。现按各供应商官网价格页逐家抓取重写，来源与抓取方式记在 `docs/pricing-sources-2026-09.md`；分档计价取最低档并在备注写明其他档，促销价与牌价在备注区分，官网不再列出的旧行保留并标"未复核"。`BuiltinUpdated` 改为 `2026-09`。
 
 已部署实例：首次启动只补缺失的行，已有行（含你改过的）不动；要整体换成新表用「设置 → 计价 → 恢复内置」，它会重建全部内置行、保留自定义行。费用按上游模型名匹配，最长前缀优先（`gpt-5.5-pro` 命中自己的行而不是 `gpt-5.5`）。
+
+## 1.0.26：客户端识别、接入指引、价目表同步（`docs/changes-2026-09-12-client-guide-priceimport.md`）
+
+- 日志记录客户端标签（从 User-Agent 与识别头判断：claude-code、codex、gemini-cli、opencode、cline …）与 User-Agent；管理端日志可按客户端筛选，详情显示；用量报表新增按客户端分布（按明细日志统计，保留期内）。
+- 用户中心新页「接入指引」：Claude Code / Codex / OpenCode / Gemini CLI / Cline / SDK 的可复制配置。
+- 「设置 → 计价 → 同步价目」：从 LiteLLM、EasyCLIProxyAPI、自定义 URL 或上传文件导入，先预览后应用，手工行默认保留，内置行可恢复；价目行带来源与"已改"标记。

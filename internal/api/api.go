@@ -180,6 +180,8 @@ func (s *Server) Register(r *gin.Engine) {
 		pr.PUT("/:id", s.updatePrice)
 		pr.DELETE("/:id", s.deletePrice)
 		pr.POST("/reset-builtin", s.resetBuiltinPrices)
+		pr.POST("/import", s.importPrices)
+		pr.POST("/import-file", s.importPricesFile)
 		pr.GET("/lookup", s.lookupPrice)
 		admin.POST("/usage/rebuild", s.rebuildUsage)
 		admin.GET("/usage/reconcile", s.reconcileUsage)

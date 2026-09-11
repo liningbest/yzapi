@@ -26,7 +26,8 @@
     "management": "管理",
     "governance": "治理",
     "insight": "洞察",
-    "system": "系統"
+    "system": "系統",
+    "guide": "接入指引"
   },
   "header": {
     "toConsole": "切換到使用者中心",

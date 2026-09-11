@@ -64,6 +64,12 @@ export default function LogDetailDrawer({ open, log, onClose }: Props) {
             <Descriptions.Item label={t('logs:detail.clientIp')}>
               <span className="yz-mono">{log.client_ip || dash}</span>
             </Descriptions.Item>
+            <Descriptions.Item label={t('logs:columns.client')}>{log.client ? <NeutralTag>{log.client}</NeutralTag> : dash}</Descriptions.Item>
+            <Descriptions.Item label={t('logs:detail.userAgent')}>
+              <Typography.Text className="yz-mono" ellipsis={{ tooltip: log.user_agent }} style={{ maxWidth: 260, fontSize: 12 }}>
+                {log.user_agent || dash}
+              </Typography.Text>
+            </Descriptions.Item>
             <Descriptions.Item label={t('common:common.user')}>{log.username || dash}</Descriptions.Item>
             <Descriptions.Item label={t('common:common.userGroup')}>{log.group_name || dash}</Descriptions.Item>
             <Descriptions.Item label={t('common:common.apiKey')} span={2}>

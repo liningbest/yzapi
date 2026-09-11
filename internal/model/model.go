@@ -278,6 +278,8 @@ type CallLog struct {
 	Attempts       JSON      `gorm:"type:text" json:"attempts"`
 	RouteLabel     string    `gorm:"size:16" json:"route_label"`
 	ClientIP       string    `gorm:"size:64" json:"client_ip"`
+	Client         string    `gorm:"size:32;index" json:"client"` // coding client label detected from User-Agent / headers (claude-code, codex, ...)
+	UserAgent      string    `gorm:"size:200" json:"user_agent"`  // raw User-Agent, truncated
 	CreatedAt      time.Time `gorm:"index" json:"created_at"`
 }
 
@@ -326,18 +328,26 @@ type ConfigSnapshot struct {
 // matches a model name exactly or as a prefix before "-", ":" or "@"; Provider "" applies
 // to any provider. Builtin rows are seeded and can be edited or reset.
 type ModelPrice struct {
-	ID              uint      `gorm:"primaryKey" json:"id"`
-	Pattern         string    `gorm:"size:128;index" json:"pattern"`
-	Provider        string    `gorm:"size:32;index" json:"provider"`
-	InputPerM       float64   `json:"input_per_m"`
-	OutputPerM      float64   `json:"output_per_m"`
-	CachedInputPerM float64   `json:"cached_input_per_m"`
-	CacheWritePerM  float64   `json:"cache_write_per_m"`
-	Currency        string    `gorm:"size:8" json:"currency"`
-	Builtin         bool      `gorm:"not null;default:false" json:"builtin"`
-	Enabled         bool      `gorm:"not null;default:true" json:"enabled"`
-	Note            string    `gorm:"size:255" json:"note"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID              uint    `gorm:"primaryKey" json:"id"`
+	Pattern         string  `gorm:"size:128;index" json:"pattern"`
+	Provider        string  `gorm:"size:32;index" json:"provider"`
+	InputPerM       float64 `json:"input_per_m"`
+	OutputPerM      float64 `json:"output_per_m"`
+	CachedInputPerM float64 `json:"cached_input_per_m"`
+	CacheWritePerM  float64 `json:"cache_write_per_m"`
+	Currency        string  `gorm:"size:8" json:"currency"`
+	Builtin         bool    `gorm:"not null;default:false" json:"builtin"`
+	Enabled         bool    `gorm:"not null;default:true" json:"enabled"`
+	Note            string  `gorm:"size:255" json:"note"`
+	// Source names where the row's numbers came from: "" for rows an administrator typed
+	// in (or the built-in table), otherwise the import source ("litellm", "easycpa",
+	// or a host name). SourceDate is the source's own date when it publishes one.
+	Source     string `gorm:"size:64" json:"source"`
+	SourceDate string `gorm:"size:32" json:"source_date"`
+	// Edited is set once an administrator changes a row by hand; imports never overwrite
+	// such rows unless explicitly told to.
+	Edited    bool      `gorm:"not null;default:false" json:"edited"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // RouteSample is a labelled example used by smart routing.

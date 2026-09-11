@@ -55,7 +55,8 @@ func (g *Gateway) newRequest(w http.ResponseWriter, r *http.Request, proto strin
 		id: uuid.NewString(), proto: proto, apiType: provider.ProtocolType(proto),
 		anthropic: proto == model.ProtoAnthropicMessages, w: w, r: r, start: time.Now(),
 	}
-	req.log = &model.CallLog{RequestID: req.id, APIType: req.apiType, ClientProtocol: proto, ClientIP: clientIP(r), CreatedAt: req.start}
+	req.log = &model.CallLog{RequestID: req.id, APIType: req.apiType, ClientProtocol: proto, ClientIP: clientIP(r), CreatedAt: req.start,
+		Client: DetectClient(r.Header), UserAgent: truncate(r.Header.Get("User-Agent"), 200)}
 	w.Header().Set("X-Request-Id", req.id)
 	return req
 }

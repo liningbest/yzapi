@@ -579,6 +579,9 @@ export interface CallLog {
   first_content_ms?: number;
   /** Time spent waiting for gateway / group / key concurrency slots. */
   queue_wait_ms?: number;
+  /** Coding client detected from User-Agent / headers (claude-code, codex, opencode, ...). */
+  client?: string;
+  user_agent?: string;
   error: string;
   attempts: LogAttempt[];
   route_label: string;
@@ -601,6 +604,7 @@ export interface LogListParams extends PageParams, RangeParams {
 export interface LogFilters {
   users: { id: number; username: string }[];
   accounts: { id: number; name: string; provider: string }[];
+  clients?: string[];
   providers: string[];
   models: string[];
 }
@@ -648,6 +652,8 @@ export interface UsageResponse {
   by_group?: UsageDim[];
   by_user?: UsageDim[];
   by_api_key?: UsageDim[];
+  /** Aggregated from raw call logs (retention window), not from the hourly rollup. */
+  by_client?: UsageDim[];
 }
 
 export interface UsageParams extends RangeParams {
@@ -754,7 +760,39 @@ export interface ModelPrice {
   builtin: boolean;
   enabled: boolean;
   note: string;
+  /** '' for manual / built-in rows, otherwise the import source ('litellm', 'easycpa', ...). */
+  source?: string;
+  source_date?: string;
+  /** Set once an administrator changed the row by hand; imports keep such rows unless told to overwrite. */
+  edited?: boolean;
   updated_at: string;
+}
+
+export interface PriceImportChange {
+  action: 'new' | 'update' | 'keep';
+  pattern: string;
+  provider: string;
+  old?: [number, number, number, number];
+  new: [number, number, number, number];
+  reason?: string;
+}
+
+export interface PriceImportPlan {
+  source: string;
+  date: string;
+  total: number;
+  new: number;
+  updated: number;
+  same: number;
+  kept: number;
+  skipped: number;
+  changes: PriceImportChange[];
+}
+
+export interface PriceImportResult {
+  applied: boolean;
+  origin: string;
+  plan: PriceImportPlan;
 }
 
 export type ModelPriceInput = Omit<ModelPrice, 'id' | 'builtin' | 'updated_at'>;

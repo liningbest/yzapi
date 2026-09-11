@@ -13,6 +13,7 @@ import {
   TeamOutlined,
   UserOutlined,
   UsergroupAddOutlined,
+  RocketOutlined,
 } from '@ant-design/icons';
 
 export interface NavItem {
@@ -39,6 +40,7 @@ export const ADMIN_NAV: NavItem[] = [
 
 export const CONSOLE_NAV: NavItem[] = [
   { path: '/console/models', navKey: 'models', icon: AppstoreOutlined },
+  { path: '/console/guide', navKey: 'guide', icon: RocketOutlined },
   { path: '/console/keys', navKey: 'keys', icon: KeyOutlined },
   { path: '/console/usage', navKey: 'myUsage', icon: BarChartOutlined },
   { path: '/console/logs', navKey: 'myLogs', icon: FileSearchOutlined },

@@ -257,7 +257,42 @@
     "rate": {
       "label": "USD → CNY rate",
       "extra": "Used to book CNY price rows into the ledger and to display the ledger in CNY; changing it changes the CNY display of history"
-    }
+    },
+    "import": {
+      "button": "Sync prices",
+      "title": "Sync / import a price catalog",
+      "notice": "Update prices from an external catalog. Preview first, then apply; rows you added or edited by hand are kept by default, built-in and previously imported rows are updated (“Reset built-in” still restores the reference prices). Only later requests are affected; history is not recalculated.",
+      "sources": {
+        "litellm": "LiteLLM (recommended, widest coverage)",
+        "easycpa": "EasyCLIProxyAPI",
+        "url": "Custom URL",
+        "file": "Upload file"
+      },
+      "chooseFile": "Choose JSON file",
+      "overwrite": "Overwrite rows I added or edited by hand",
+      "preview": "Preview",
+      "apply": "Apply",
+      "applied": "Applied: {{new}} new, {{updated}} updated, {{kept}} manual rows kept",
+      "action": "Action",
+      "actions": {
+        "new": "New",
+        "update": "Update",
+        "keep": "Keep"
+      },
+      "old": "Current (in/out/cache read/cache write)",
+      "new": "Imported (in/out/cache read/cache write)",
+      "source": "Source",
+      "total": "Rows",
+      "same": "Unchanged",
+      "skipped": "Skipped",
+      "status": "Status",
+      "done": "Written",
+      "previewOnly": "Preview only",
+      "changesHint": "New, updated and kept rows (up to 500); all prices per 1M tokens, imported rows are in USD."
+    },
+    "sourceHint": "Imported from {{source}} (source date {{date}})",
+    "edited": "Edited",
+    "editedHint": "Changed by an administrator; imports keep it by default"
   },
   "config": {
     "title": "Configuration snapshots",

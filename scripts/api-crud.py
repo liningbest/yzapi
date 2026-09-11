@@ -15,10 +15,11 @@ mock = subprocess.Popen([f"{DATA}/mock", "-addr", MOCK], stdout=open(f"{DATA}/mo
 gw = subprocess.Popen([f"{DATA}/yzapi"], env=env, stdout=open(f"{DATA}/yzapi.log", "w"), stderr=subprocess.STDOUT)
 
 TOKEN = None; PASSED = 0; FAILED = []
-def req(method, path, body=None, token=None, expect=None, raw=False):
+def req(method, path, body=None, token=None, expect=None, raw=False, headers=None):
     data = json.dumps(body).encode() if body is not None else None
     r = urllib.request.Request(BASE + path, data=data, method=method)
     r.add_header("Content-Type", "application/json")
+    for hk, hv in (headers or {}).items(): r.add_header(hk, hv)
     if token or TOKEN: r.add_header("Authorization", "Bearer " + (token or TOKEN))
     try:
         with urllib.request.urlopen(r, timeout=30) as resp:
@@ -293,17 +294,64 @@ try:
         req("DELETE", f"/api/admin/prices/{p['id']}", expect=404)
     check("price table CRUD, lookup, settings and cost in logs/report", t_prices)
 
+    def t_price_import():
+        import io, urllib.request
+        cat = {"schemaVersion": 1, "updatedAt": "2026-09-07", "models": [
+            {"id": "import-test-model", "inputPer1M": 1.5, "outputPer1M": 6, "cacheReadPer1M": 0.15, "cacheCreationPer1M": 0},
+            {"id": "mock-mini", "inputPer1M": 9, "outputPer1M": 9}]}
+        body = json.dumps(cat).encode()
+        boundary = "----yzapicrud"
+        def multipart(apply):
+            parts = []
+            for k, v in (("apply", "1" if apply else "0"), ("overwrite_edited", "0")):
+                parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n".encode())
+            parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"prices.json\"\r\nContent-Type: application/json\r\n\r\n".encode() + body + b"\r\n")
+            parts.append(f"--{boundary}--\r\n".encode())
+            return b"".join(parts)
+        def upload(apply):
+            req = urllib.request.Request(f"{BASE}/api/admin/prices/import-file", data=multipart(apply), method="POST")
+            req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+            req.add_header("Authorization", f"Bearer {TOKEN}")
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return json.loads(r.read())
+        # a manual generic row for mock-mini: the import must keep it (not overwrite) unless overwrite_edited is set
+        manual = req("POST", "/api/admin/prices", {"pattern": "mock-mini", "provider": "", "input_per_m": 1, "output_per_m": 2, "currency": "USD"}, expect=200)
+        pv = upload(False)
+        eq(pv["applied"], False); eq(pv["plan"]["source"], "easycpa"); eq(pv["plan"]["new"] >= 1, True, "preview lists new rows")
+        eq(pv["plan"]["kept"], 1, "manual row listed as kept")
+        eq(req("GET", "/api/admin/prices/lookup?model=import-test-model", expect=200)["found"], False, "preview writes nothing")
+        ap = upload(True)
+        eq(ap["applied"], True)
+        got = req("GET", "/api/admin/prices/lookup?provider=custom&model=import-test-model", expect=200)
+        eq(got["found"], True, "imported row prices"); eq(got["price"]["source"], "easycpa"); eq(got["price"]["input_per_m"], 1.5)
+        kept = req("GET", "/api/admin/prices/lookup?model=mock-mini", expect=200)["price"]
+        eq((kept["id"], kept["input_per_m"], kept["source"]), (manual["id"], 1, ""), "manual row kept by import")
+        eq(upload(True)["plan"]["same"] >= 1, True, "second import reports unchanged rows")
+        req("DELETE", f"/api/admin/prices/{manual['id']}", expect=200)
+        req("POST", "/api/admin/prices/import", {"source": "url", "url": "not-a-url", "apply": False}, expect=400)
+        # log carries the detected client
+        k3 = req("POST", "/api/user/keys", {"name": "k-client"}, token=BT, expect=200)["key"]
+        req("POST", "/v1/chat/completions", {"model": "solo", "messages": [{"role": "user", "content": "client"}]}, token=k3, expect=200, headers={"User-Agent": "claude-cli/2.1.4 (external, cli)"})
+        time.sleep(1.5)
+        lg = req("GET", "/api/admin/logs?range=24h&client=claude-code", expect=200)["items"]
+        eq(len(lg) >= 1 and lg[0]["client"] == "claude-code", True, "client detected and filterable")
+        eq("claude-code" in req("GET", "/api/admin/logs/filters", expect=200)["clients"], True, "client in filter options")
+        rep = req("GET", "/api/admin/usage?range=24h", expect=200)
+        eq(any(d["name"] == "claude-code" for d in rep.get("by_client", [])), True, "usage by client")
+    check("price catalog import (upload, preview/apply) and client detection", t_price_import)
+
     # ---------- config snapshots ----------
     def t_snapshots():
         before = req("GET", "/api/admin/config/snapshots", expect=200)["total"]
         req("POST", "/api/admin/config/snapshots", {"reason": "crud-manual"}, expect=200)
         lst = req("GET", "/api/admin/config/snapshots", expect=200)
-        eq(lst["total"], before + 1); sid = lst["items"][0]["id"]; eq(lst["items"][0]["reason"], "crud-manual")
+        eq(lst["total"], min(before + 1, 50), "snapshot count (capped at 50)"); sid = lst["items"][0]["id"]; eq(lst["items"][0]["reason"], "crud-manual")
+        before = lst["total"] - 1
         det = req("GET", f"/api/admin/config/snapshots/{sid}", expect=200)
         eq(any(a["name"] == "mock-a2" or a["name"] == "mock-a" for a in det["accounts"]), True, "snapshot lists accounts")
         # a mutating change auto-snapshots first
         req("PUT", "/api/admin/settings/basic", dict(st0["basic"], site_name="Snap GW", base_url=f"http://127.0.0.1:{PORT}/v1"), expect=200)
-        eq(req("GET", "/api/admin/config/snapshots", expect=200)["total"], before + 2, "auto snapshot before change")
+        eq(req("GET", "/api/admin/config/snapshots", expect=200)["total"], min(before + 2, 50), "auto snapshot before change")
         res = req("POST", f"/api/admin/config/snapshots/{sid}/restore", {}, expect=200)
         eq(res.get("missing_keys") or [], [], "restored accounts keep their keys")
         eq(req("GET", "/api/admin/settings", expect=200)["basic"]["site_name"], "My GW", "settings restored")

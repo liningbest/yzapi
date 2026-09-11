@@ -24,11 +24,15 @@
     "firstContent": "First content out",
     "firstContentHint": "When the first event carrying generated content (text, thinking or a tool call) was written to the client, from request arrival; for non-streaming, when the body was written",
     "queueWait": "Slot wait",
-    "queueWaitHint": "Time waiting for a gateway / group / key concurrency slot; 0 means no queueing"
+    "queueWaitHint": "Time waiting for a gateway / group / key concurrency slot; 0 means no queueing",
+    "userAgent": "User-Agent"
   },
   "unpriced": "Unpriced",
   "costUnpriced": "No matching price for this model; add one under Settings → Pricing",
   "costPartial": "Partially priced: an attempt had unknown or incomplete usage; the actual cost is at least this",
   "unverified": "Currency unverified",
-  "costUnverified": "The currency of this pre-upgrade record could not be established; the raw amount is kept in the database and counted nowhere"
+  "costUnverified": "The currency of this pre-upgrade record could not be established; the raw amount is kept in the database and counted nowhere",
+  "columns": {
+    "client": "Client"
+  }
 }

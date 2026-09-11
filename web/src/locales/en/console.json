@@ -111,7 +111,9 @@
       "cachedTokens": "Cached tokens",
       "proportion": "Share",
       "cost": "Est. cost"
-    }
+    },
+    "byClient": "By client",
+    "byClientHint": "From raw logs, retention window only"
   },
   "logs": {
     "title": "My Call Logs",
@@ -132,7 +134,8 @@
       "statusCode": "Status",
       "latency": "Latency",
       "time": "Time",
-      "cost": "Est. cost"
+      "cost": "Est. cost",
+      "client": "Client"
     },
     "in": "In",
     "out": "Out",
@@ -181,5 +184,52 @@
     "allModels": "No model group restriction — all models are accessible",
     "dispatchHint": "Requests are dispatched in model-group order; when a model is unavailable the next one is tried automatically",
     "modelsCount": "{{count}} models"
+  },
+  "guide": {
+    "title": "Client setup",
+    "subtitle": "Copy the configuration for the coding tool you use and replace <YOUR_API_KEY> with your API key.",
+    "model": "Default model",
+    "keyHint": "An API key is shown only once, when it is created; if you did not save it, create a new one under “API Keys” and come back. Every client uses the same URL and key.",
+    "orShell": "Or set environment variables in your shell",
+    "protocolNote": "Claude Code speaks the Anthropic protocol, Codex the Responses protocol, Gemini CLI the native Gemini protocol, everything else OpenAI Chat; the gateway converts by the account behind the model, and same-protocol routes have the least overhead.",
+    "tabs": {
+      "claude-code": "Claude Code",
+      "codex": "Codex",
+      "opencode": "OpenCode",
+      "gemini-cli": "Gemini CLI",
+      "cline": "Cline / Roo Code",
+      "sdk": "curl / SDK"
+    },
+    "claudeCode": {
+      "s1": "Put the env block below into ~/.claude/settings.json (create it if missing)",
+      "s2": "Replace <YOUR_API_KEY> with your key",
+      "s3": "Restart claude and run /status to confirm the Base URL points at the gateway"
+    },
+    "codex": {
+      "s1": "Append the block below to ~/.codex/config.toml",
+      "s2": "Export YZAPI_API_KEY in your shell",
+      "s3": "Start codex; the model can be any text model from the Models page"
+    },
+    "opencode": {
+      "s1": "Write the block below to ~/.config/opencode/opencode.json",
+      "s2": "Replace <YOUR_API_KEY> with your key",
+      "s3": "Start opencode and pick the yzapi model with /models"
+    },
+    "geminiCli": {
+      "s1": "Export the two environment variables below",
+      "s2": "Pick the model with -m or in ~/.gemini/settings.json",
+      "s3": "This entry speaks the native Gemini protocol; the gateway can also route it to other providers’ models"
+    },
+    "cline": {
+      "s1": "Choose the API Provider in the extension settings",
+      "s2": "Fill in the fields below",
+      "s3": "Save and send a message to verify",
+      "fields": "OpenAI Compatible provider",
+      "anthropic": "Or the Anthropic provider (recommended for Claude models)"
+    },
+    "sdk": {
+      "s1": "Any OpenAI / Anthropic compatible SDK can point straight at the gateway",
+      "s2": "Replace <YOUR_API_KEY> with your key"
+    }
   }
 }

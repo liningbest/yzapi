@@ -257,7 +257,42 @@
     "rate": {
       "label": "美元兑人民币汇率",
       "extra": "人民币单价换算入账本、账本换算成人民币展示时使用；修改后历史金额的人民币展示随之变化"
-    }
+    },
+    "import": {
+      "button": "同步价目",
+      "title": "同步 / 导入价目表",
+      "notice": "从外部价目表更新单价。先预览再应用；你手工新增或修改过的行默认保留，内置行和之前导入的行会被更新（「恢复内置」仍可把内置行还原为官网参考价）。只对之后的请求生效，历史费用不回算。",
+      "sources": {
+        "litellm": "LiteLLM（推荐，覆盖最全）",
+        "easycpa": "EasyCLIProxyAPI",
+        "url": "自定义 URL",
+        "file": "上传文件"
+      },
+      "chooseFile": "选择 JSON 文件",
+      "overwrite": "覆盖我手工新增 / 修改过的行",
+      "preview": "预览",
+      "apply": "应用",
+      "applied": "已应用：新增 {{new}}、更新 {{updated}}、保留手工 {{kept}}",
+      "action": "动作",
+      "actions": {
+        "new": "新增",
+        "update": "更新",
+        "keep": "保留"
+      },
+      "old": "当前 (输入/输出/缓存读/缓存写)",
+      "new": "导入 (输入/输出/缓存读/缓存写)",
+      "source": "来源",
+      "total": "条数",
+      "same": "无变化",
+      "skipped": "跳过",
+      "status": "状态",
+      "done": "已写入",
+      "previewOnly": "仅预览",
+      "changesHint": "下表列出新增、更新与保留的行（最多 500 条）；单价均为每百万 Token，导入行一律按美元。"
+    },
+    "sourceHint": "导入自 {{source}}（来源日期 {{date}}）",
+    "edited": "已改",
+    "editedHint": "管理员手工改过，导入时默认保留"
   },
   "config": {
     "title": "配置快照",

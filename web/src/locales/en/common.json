@@ -26,7 +26,8 @@
     "management": "Management",
     "governance": "Governance",
     "insight": "Insight",
-    "system": "System"
+    "system": "System",
+    "guide": "Client setup"
   },
   "header": {
     "toConsole": "Switch to User Console",

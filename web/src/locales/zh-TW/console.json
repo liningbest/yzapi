@@ -111,7 +111,9 @@
       "cachedTokens": "快取 Token",
       "proportion": "占比",
       "cost": "估算費用"
-    }
+    },
+    "byClient": "按用戶端",
+    "byClientHint": "按明細日誌識別，僅保留期內"
   },
   "logs": {
     "title": "我的呼叫日誌",
@@ -132,7 +134,8 @@
       "statusCode": "狀態碼",
       "latency": "耗時",
       "time": "時間",
-      "cost": "估算費用"
+      "cost": "估算費用",
+      "client": "用戶端"
     },
     "in": "輸入",
     "out": "輸出",
@@ -181,5 +184,52 @@
     "allModels": "未限制模型組，可存取全部模型",
     "dispatchHint": "請求按模型組內順序派發，前一個模型不可用時自動嘗試下一個",
     "modelsCount": "{{count}} 個模型"
+  },
+  "guide": {
+    "title": "接入指引",
+    "subtitle": "按你使用的程式設計工具複製設定，把 <YOUR_API_KEY> 換成你的 API Key。",
+    "model": "預設模型",
+    "keyHint": "API Key 只在建立時顯示一次；如果沒記下，到「API Keys」新建一把再回來。所有用戶端都用同一個位址和 Key。",
+    "orShell": "或在終端機裡設定環境變數",
+    "protocolNote": "Claude Code 走 Anthropic 協定，Codex 走 Responses 協定，Gemini CLI 走原生 Gemini 協定，其餘走 OpenAI Chat 協定；閘道會按模型所在帳號自動轉換，同協定直連時開銷最小。",
+    "tabs": {
+      "claude-code": "Claude Code",
+      "codex": "Codex",
+      "opencode": "OpenCode",
+      "gemini-cli": "Gemini CLI",
+      "cline": "Cline / Roo Code",
+      "sdk": "curl / SDK"
+    },
+    "claudeCode": {
+      "s1": "把下面的 env 寫進 ~/.claude/settings.json（沒有就新建）",
+      "s2": "把 <YOUR_API_KEY> 換成你的 Key",
+      "s3": "重新啟動 claude，執行 /status 確認 Base URL 指向閘道"
+    },
+    "codex": {
+      "s1": "把下面的內容追加到 ~/.codex/config.toml",
+      "s2": "在終端機裡匯出 YZAPI_API_KEY",
+      "s3": "啟動 codex；模型名可換成模型廣場裡的任意文字模型"
+    },
+    "opencode": {
+      "s1": "把下面的內容寫進 ~/.config/opencode/opencode.json",
+      "s2": "把 <YOUR_API_KEY> 換成你的 Key",
+      "s3": "啟動 opencode，用 /models 選擇 yzapi 下的模型"
+    },
+    "geminiCli": {
+      "s1": "匯出下面兩個環境變數",
+      "s2": "用 -m 指定模型，或寫進 ~/.gemini/settings.json",
+      "s3": "該入口走原生 Gemini 協定，閘道也支援把它轉到其他供應商的模型"
+    },
+    "cline": {
+      "s1": "在外掛設定裡選擇 API Provider",
+      "s2": "按下面的欄位填寫",
+      "s3": "儲存後發一條訊息驗證",
+      "fields": "OpenAI Compatible 方式",
+      "anthropic": "或 Anthropic 方式（Claude 系列模型建議用這個）"
+    },
+    "sdk": {
+      "s1": "任何 OpenAI / Anthropic 相容的 SDK 都可以直接指向閘道",
+      "s2": "把 <YOUR_API_KEY> 換成你的 Key"
+    }
   }
 }

@@ -16,6 +16,8 @@
   "dim": {
     "account": "上游帳號",
     "count": "{{count}} 項",
-    "attemptsHint": "含 {{count}} 次上游嘗試；Token 按實際消耗的嘗試歸屬，請求數按最終應答歸屬"
+    "attemptsHint": "含 {{count}} 次上游嘗試；Token 按實際消耗的嘗試歸屬，請求數按最終應答歸屬",
+    "client": "用戶端",
+    "clientHint": "按明細日誌統計（僅保留期內），由 User-Agent 與請求標頭識別"
   }
 }

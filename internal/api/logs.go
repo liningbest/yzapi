@@ -44,6 +44,9 @@ func applyLogFilters(c *gin.Context, q *gorm.DB, scopedUser uint) *gorm.DB {
 	if v := c.Query("model"); v != "" {
 		q = q.Where("request_model = ?", v)
 	}
+	if v := c.Query("client"); v != "" {
+		q = q.Where("client = ?", v)
+	}
 	if v := strings.TrimSpace(c.Query("q")); v != "" {
 		l := likeEscape(v)
 		q = q.Where("request_id LIKE ? ESCAPE '\\' OR request_model LIKE ? ESCAPE '\\' OR upstream_model LIKE ? ESCAPE '\\' OR error LIKE ? ESCAPE '\\'", l, l, l, l)
@@ -105,6 +108,8 @@ func (s *Server) logFilters(c *gin.Context) {
 	s.db.Model(&model.Account{}).Distinct("provider").Order("provider").Pluck("provider", &providers)
 	var models []string
 	s.db.Model(&model.ModelMapping{}).Distinct("request_model").Order("request_model").Pluck("request_model", &models)
+	var clients []string
+	s.db.Model(&model.CallLog{}).Where("client <> ''").Distinct("client").Order("client").Pluck("client", &clients)
 	if snap := s.gw.Snapshot(); snap.VirtualModel != "" {
 		models = append([]string{snap.VirtualModel}, models...)
 	}
@@ -114,7 +119,7 @@ func (s *Server) logFilters(c *gin.Context) {
 			Username string `json:"username"`
 		}{}
 	}
-	c.JSON(200, gin.H{"users": users, "accounts": accounts, "groups": groups, "providers": orEmpty(providers), "models": orEmpty(models)})
+	c.JSON(200, gin.H{"users": users, "accounts": accounts, "groups": groups, "providers": orEmpty(providers), "models": orEmpty(models), "clients": orEmpty(clients)})
 }
 
 func orEmpty(s []string) []string {
@@ -141,7 +146,7 @@ func (s *Server) userLogs(c *gin.Context) {
 		out = append(out, gin.H{
 			"id": l.ID, "request_id": l.RequestID, "api_key_id": l.APIKeyID, "api_key_name": l.APIKeyName,
 			"provider": l.Provider, "request_model": l.RequestModel, "upstream_model": l.UpstreamModel, "api_type": l.APIType,
-			"client_protocol": l.ClientProtocol, "stream": l.Stream,
+			"client_protocol": l.ClientProtocol, "stream": l.Stream, "client": l.Client, "client_ip": l.ClientIP,
 			"prompt_tokens": l.PromptTokens, "completion_tokens": l.CompletionTokens, "total_tokens": l.TotalTokens,
 			"cached_tokens": l.CachedTokens, "tokens_known": l.TokensKnown, "result": l.Result, "status_code": l.StatusCode,
 			"latency_ms": l.LatencyMs, "first_byte_ms": l.FirstByteMs, "first_content_ms": l.FirstContentMs, "queue_wait_ms": l.QueueWaitMs, "error": l.Error, "route_label": l.RouteLabel, "created_at": l.CreatedAt,

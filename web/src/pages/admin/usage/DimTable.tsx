@@ -16,6 +16,8 @@ interface Props {
   /** Render a provider avatar next to the name (for by_provider). */
   provider?: boolean;
   color?: string;
+  /** Extra explanation shown next to the count (e.g. data comes from raw logs). */
+  hint?: string;
 }
 
 const DELETED_RE = /\((已删除|已刪除|deleted)\)\s*$/i;
@@ -27,7 +29,7 @@ export function splitDeleted(name: string): { label: string; deleted: boolean } 
 }
 
 /** Compact distribution table shared by all six usage dimensions. */
-export default function DimTable({ title, icon, items, currency, loading, provider, color = CHART_PALETTE[0] }: Props) {
+export default function DimTable({ title, icon, items, currency, loading, provider, color = CHART_PALETTE[0], hint }: Props) {
   const { t } = useTranslation(['usage', 'common']);
   const rows = useMemo(() => [...(items ?? [])].sort((a, b) => b.total_tokens - a.total_tokens), [items]);
   const totalTokens = useMemo(() => rows.reduce((s, r) => s + (r.total_tokens || 0), 0), [rows]);
@@ -114,8 +116,8 @@ export default function DimTable({ title, icon, items, currency, loading, provid
         </span>
       }
       extra={
-        <Tooltip title={formatNumber(totalTokens)}>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        <Tooltip title={hint ? `${hint} · ${formatNumber(totalTokens)}` : formatNumber(totalTokens)}>
+          <Typography.Text type="secondary" style={{ fontSize: 12, borderBottom: hint ? '1px dotted currentColor' : undefined, cursor: hint ? 'help' : undefined }}>
             {t('usage:dim.count', { count: rows.length })}
           </Typography.Text>
         </Tooltip>

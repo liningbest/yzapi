@@ -139,6 +139,37 @@ func applyUsageFilters(c *gin.Context, q *gorm.DB, scopedUser uint) (*gorm.DB, t
 	return q, from, to
 }
 
+// clientDist aggregates the range's call logs by detected client. The hourly rollup has
+// no client dimension, so this reads raw logs (retention window only) and follows the
+// same filters; unverified-currency rows contribute no cost.
+func (s *Server) clientDist(c *gin.Context, scopedUser uint) []*dist {
+	q := applyLogFilters(c, s.db.Model(&model.CallLog{}), scopedUser)
+	var rows []struct {
+		Client       string
+		Requests     int64
+		TotalTokens  int64
+		CachedTokens int64
+		PromptTokens int64
+		CompTokens   int64
+		CostMicros   int64
+		Unverified   int64
+	}
+	q.Select("client, COUNT(*) AS requests, SUM(total_tokens) AS total_tokens, SUM(cached_tokens) AS cached_tokens, SUM(prompt_tokens) AS prompt_tokens, SUM(completion_tokens) AS comp_tokens, " +
+		"SUM(CASE WHEN cost_ledger = '" + model.CostLedgerUnverified + "' THEN 0 ELSE cost_micros END) AS cost_micros, " +
+		"SUM(CASE WHEN cost_ledger = '" + model.CostLedgerUnverified + "' THEN 1 ELSE 0 END) AS unverified").
+		Group("client").Order("requests DESC").Scan(&rows)
+	out := make([]*dist, 0, len(rows))
+	for _, r := range rows {
+		name := r.Client
+		if name == "" {
+			name = "unknown"
+		}
+		out = append(out, &dist{Key: name, Name: name, Requests: r.Requests, TotalTokens: r.TotalTokens, CachedTokens: r.CachedTokens,
+			PromptTokens: r.PromptTokens, CompletionTokens: r.CompTokens, CostUnverified: r.Unverified, costMicros: r.CostMicros, Cost: s.costOut(r.CostMicros)})
+	}
+	return out
+}
+
 func (s *Server) usageReport(c *gin.Context, scopedUser uint) gin.H {
 	q, from, to := applyUsageFilters(c, s.db.Model(&model.UsageHourly{}), scopedUser)
 	var rows []usageRow
@@ -265,6 +296,7 @@ func (s *Server) usageReport(c *gin.Context, scopedUser uint) gin.H {
 		"by_group":       toList("group"),
 		"by_user":        toList("user"),
 		"by_api_key":     toList("api_key"),
+		"by_client":      s.clientDist(c, scopedUser), // from raw logs, see clientDist
 	}
 }
 

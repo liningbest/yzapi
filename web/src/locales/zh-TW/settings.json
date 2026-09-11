@@ -257,7 +257,42 @@
     "rate": {
       "label": "美元兌人民幣匯率",
       "extra": "人民幣單價換算入帳本、帳本換算成人民幣顯示時使用；修改後歷史金額的人民幣顯示隨之變化"
-    }
+    },
+    "import": {
+      "button": "同步價目",
+      "title": "同步 / 匯入價目表",
+      "notice": "從外部價目表更新單價。先預覽再套用；你手工新增或修改過的行預設保留，內建行和之前匯入的行會被更新（「恢復內建」仍可把內建行還原為官網參考價）。只對之後的請求生效，歷史費用不回算。",
+      "sources": {
+        "litellm": "LiteLLM（推薦，覆蓋最全）",
+        "easycpa": "EasyCLIProxyAPI",
+        "url": "自訂 URL",
+        "file": "上傳檔案"
+      },
+      "chooseFile": "選擇 JSON 檔案",
+      "overwrite": "覆蓋我手工新增 / 修改過的行",
+      "preview": "預覽",
+      "apply": "套用",
+      "applied": "已套用：新增 {{new}}、更新 {{updated}}、保留手工 {{kept}}",
+      "action": "動作",
+      "actions": {
+        "new": "新增",
+        "update": "更新",
+        "keep": "保留"
+      },
+      "old": "目前 (輸入/輸出/快取讀/快取寫)",
+      "new": "匯入 (輸入/輸出/快取讀/快取寫)",
+      "source": "來源",
+      "total": "條數",
+      "same": "無變化",
+      "skipped": "跳過",
+      "status": "狀態",
+      "done": "已寫入",
+      "previewOnly": "僅預覽",
+      "changesHint": "下表列出新增、更新與保留的行（最多 500 條）；單價均為每百萬 Token，匯入行一律按美元。"
+    },
+    "sourceHint": "匯入自 {{source}}（來源日期 {{date}}）",
+    "edited": "已改",
+    "editedHint": "管理員手工改過，匯入時預設保留"
   },
   "config": {
     "title": "設定快照",

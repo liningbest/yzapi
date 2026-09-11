@@ -1,7 +1,13 @@
 package api
 
 import (
+	"context"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -99,7 +105,7 @@ func (s *Server) updatePrice(c *gin.Context) {
 		return
 	}
 	upd := map[string]any{"pattern": in.Pattern, "provider": in.Provider, "input_per_m": in.InputPerM, "output_per_m": in.OutputPerM,
-		"cached_input_per_m": in.CachedInputPerM, "cache_write_per_m": in.CacheWritePerM, "currency": in.Currency, "note": in.Note}
+		"cached_input_per_m": in.CachedInputPerM, "cache_write_per_m": in.CacheWritePerM, "currency": in.Currency, "note": in.Note, "edited": true}
 	if in.Enabled != nil {
 		upd["enabled"] = *in.Enabled
 	}
@@ -190,4 +196,118 @@ func (s *Server) displayCost(l *model.CallLog) float64 {
 func (s *Server) fillCost(l *model.CallLog) {
 	l.CostUnverified = l.CostLedger == model.CostLedgerUnverified
 	l.Cost = s.displayCost(l)
+}
+
+// ---- price catalog import ----
+
+const importMaxBytes = 32 << 20
+
+type importIn struct {
+	Source          string `json:"source"` // litellm | easycpa | url
+	URL             string `json:"url"`
+	Apply           bool   `json:"apply"`
+	OverwriteEdited bool   `json:"overwrite_edited"`
+}
+
+// importPrices downloads a price catalog (LiteLLM or EasyCLIProxyAPI format) and either
+// previews the changes or applies them. Manual and edited rows are kept unless
+// overwrite_edited is set.
+func (s *Server) importPrices(c *gin.Context) {
+	var in importIn
+	if err := c.ShouldBindJSON(&in); err != nil {
+		badRequest(c, "invalid body")
+		return
+	}
+	url := strings.TrimSpace(in.URL)
+	if u, ok := pricing.KnownSources[strings.ToLower(in.Source)]; ok && url == "" {
+		url = u
+	}
+	if !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "http://") {
+		badRequest(c, "来源地址必须为 http(s) URL，或 source 取 litellm / easycpa")
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 60*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		badRequest(c, "来源地址无效")
+		return
+	}
+	req.Header.Set("User-Agent", "yzapi-gateway/1.0")
+	resp, err := s.gw.HTTPClient().Do(req)
+	if err != nil {
+		fail(c, 502, "import_fetch_failed", "下载价目失败: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		fail(c, 502, "import_fetch_failed", fmt.Sprintf("下载价目失败: HTTP %d", resp.StatusCode))
+		return
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, importMaxBytes+1))
+	if err != nil {
+		fail(c, 502, "import_fetch_failed", "下载价目失败: "+err.Error())
+		return
+	}
+	if len(data) > importMaxBytes {
+		badRequest(c, "价目文件超过 32 MB")
+		return
+	}
+	s.importCatalog(c, data, url, in.Apply, in.OverwriteEdited)
+}
+
+// importPricesFile is the upload variant: multipart field "file", plus "apply" and
+// "overwrite_edited" form fields ("1" / "true").
+func (s *Server) importPricesFile(c *gin.Context) {
+	fh, err := c.FormFile("file")
+	if err != nil {
+		badRequest(c, "缺少文件字段 file")
+		return
+	}
+	if fh.Size > importMaxBytes {
+		badRequest(c, "价目文件超过 32 MB")
+		return
+	}
+	f, err := fh.Open()
+	if err != nil {
+		badRequest(c, "无法读取文件")
+		return
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, importMaxBytes+1))
+	if err != nil {
+		badRequest(c, "无法读取文件")
+		return
+	}
+	truthy := func(v string) bool {
+		v = strings.ToLower(strings.TrimSpace(v))
+		return v == "1" || v == "true" || v == "yes"
+	}
+	s.importCatalog(c, data, "upload:"+fh.Filename, truthy(c.PostForm("apply")), truthy(c.PostForm("overwrite_edited")))
+}
+
+func (s *Server) importCatalog(c *gin.Context, data []byte, origin string, apply, overwrite bool) {
+	cat, err := pricing.ParseCatalog(data)
+	if err != nil {
+		badRequest(c, "价目文件格式无法识别（支持 LiteLLM model_prices_and_context_window.json 与 EasyCLIProxyAPI model_prices.json）: "+err.Error())
+		return
+	}
+	if len(cat.Rows) == 0 {
+		badRequest(c, "价目文件里没有可用的行")
+		return
+	}
+	plan, err := pricing.PlanImport(s.db, cat, overwrite)
+	if err != nil {
+		serverError(c, err)
+		return
+	}
+	if apply {
+		if err := plan.Apply(s.db); err != nil {
+			serverError(c, err)
+			return
+		}
+		_ = s.pricer.Reload()
+		slog.Info("price catalog imported", "origin", origin, "plan", plan.Summary(), "by", cur(c).Username)
+	}
+	c.JSON(200, gin.H{"applied": apply, "origin": origin, "plan": plan})
 }

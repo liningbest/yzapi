@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Alert, Button, Col, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Switch, Table, Tooltip, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { CloudDownloadOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import PriceImportModal from './PriceImportModal';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { pricesApi, providersApi, settingsApi } from '@/api';
@@ -37,6 +38,7 @@ export default function PricingTab({ data }: Props) {
 
   const invalidate = () => void qc.invalidateQueries({ queryKey: PRICES_KEY });
   const [editing, setEditing] = useState<ModelPrice | null | 'new'>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const [editForm] = Form.useForm<ModelPriceInput>();
 
   const upsert = useMutation({
@@ -82,6 +84,16 @@ export default function PricingTab({ data }: Props) {
             {v}
           </Typography.Text>
           {r.builtin ? <NeutralTag>{t('settings:pricing.builtin')}</NeutralTag> : <NeutralTag tone="success">{t('settings:pricing.custom')}</NeutralTag>}
+          {r.source ? (
+            <Tooltip title={t('settings:pricing.sourceHint', { source: r.source, date: r.source_date || '-' })}>
+              <span><NeutralTag>{r.source}</NeutralTag></span>
+            </Tooltip>
+          ) : null}
+          {r.edited ? (
+            <Tooltip title={t('settings:pricing.editedHint')}>
+              <span><NeutralTag tone="warning">{t('settings:pricing.edited')}</NeutralTag></span>
+            </Tooltip>
+          ) : null}
         </Space>
       ),
     },
@@ -146,6 +158,9 @@ export default function PricingTab({ data }: Props) {
                 {t('settings:pricing.reset')}
               </Button>
             </Popconfirm>
+            <Button size="small" icon={<CloudDownloadOutlined />} onClick={() => setImportOpen(true)}>
+              {t('settings:pricing.import.button')}
+            </Button>
             <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => openEdit('new')}>
               {t('settings:pricing.add')}
             </Button>
@@ -155,6 +170,8 @@ export default function PricingTab({ data }: Props) {
         {t('settings:pricing.table')}
       </SectionTitle>
       <Table<ModelPrice> rowKey="id" size="small" loading={prices.isLoading} columns={columns} dataSource={prices.data?.items ?? []} pagination={{ pageSize: 20, showSizeChanger: false }} />
+
+      <PriceImportModal open={importOpen} onClose={() => setImportOpen(false)} onApplied={invalidate} />
 
       <Modal
         open={editing !== null}

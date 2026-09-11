@@ -5,7 +5,7 @@ import { EyeOutlined } from '@ant-design/icons';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { userApi } from '@/api';
-import { EmptyState, FilterBar, PageHeader, RangeSelector, ResultTag, SectionTitle, TimeCell, TypeTag, UsageStatusTag } from '@/components';
+import { EmptyState, FilterBar, NeutralTag, PageHeader, RangeSelector, ResultTag, SectionTitle, TimeCell, TypeTag, UsageStatusTag } from '@/components';
 import { useIsMobile } from '@/hooks/useMediaQuery';
 import { useRange } from '@/hooks/useRange';
 import { useTableQuery } from '@/hooks/useTableQuery';
@@ -85,6 +85,7 @@ export default function Logs() {
       ),
     },
     { title: t('console:logs.columns.apiKey'), dataIndex: 'api_key_name', render: (v: string) => v || '-' },
+    { title: t('console:logs.columns.client'), dataIndex: 'client', width: 110, render: (v: string) => (v ? <NeutralTag>{v}</NeutralTag> : '-') },
     {
       title: t('console:logs.columns.type'),
       dataIndex: 'api_type',

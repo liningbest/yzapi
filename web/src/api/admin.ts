@@ -1,5 +1,6 @@
-import { del, get, patch, post, put } from './client';
+import { del, get, http, patch, post, put } from './client';
 import type {
+  PriceImportResult,
   ModelMapping,
   Account,
   AccountInput,
@@ -187,6 +188,14 @@ export const pricesApi = {
   update: (id: number, body: ModelPriceInput) => put<ModelPrice>(`${A}/prices/${id}`, body),
   remove: (id: number) => del(`${A}/prices/${id}`),
   resetBuiltin: () => post<{ builtin_updated: string }>(`${A}/prices/reset-builtin`, {}),
+  import: (body: { source: string; url?: string; apply: boolean; overwrite_edited: boolean }) => post<PriceImportResult>(`${A}/prices/import`, body),
+  importFile: (file: File, apply: boolean, overwrite: boolean) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('apply', apply ? '1' : '0');
+    fd.append('overwrite_edited', overwrite ? '1' : '0');
+    return http.post<PriceImportResult>(`${A}/prices/import-file`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data);
+  },
 };
 
 export const settingsApi = {

@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useSiteStore } from '@/stores/site';
 import { logsApi } from '@/api';
-import { EmptyState, FilterBar, PageHeader, ProviderAvatar, RangeSelector, ResultTag, StatusCodeTag, TimeCell, UsageStatusTag } from '@/components';
+import { EmptyState, FilterBar, NeutralTag, PageHeader, ProviderAvatar, RangeSelector, ResultTag, StatusCodeTag, TimeCell, UsageStatusTag } from '@/components';
 import { useRange } from '@/hooks/useRange';
 import { useTableQuery } from '@/hooks/useTableQuery';
 import type { CallLog, LogResult } from '@/types';
@@ -22,6 +22,7 @@ interface Filters {
   result?: LogResult;
   status_code?: number;
   model?: string;
+  client?: string;
   q?: string;
 }
 
@@ -88,6 +89,12 @@ export default function Logs() {
           <Tooltip title={v}>{shortId(v)}</Tooltip>
         </Typography.Text>
       ),
+    },
+    {
+      title: t('logs:columns.client'),
+      dataIndex: 'client',
+      width: 110,
+      render: (v: string, r) => (v ? <Tooltip title={r.user_agent || v}><span><NeutralTag>{v}</NeutralTag></span></Tooltip> : '-'),
     },
     {
       title: `${t('common:common.provider')} / ${t('common:common.account')}`,
@@ -297,6 +304,15 @@ export default function Logs() {
                 <span>{opt.data.label}</span>
               </Space>
             )}
+          />
+          <Select
+            style={{ width: 140 }}
+            allowClear
+            showSearch
+            placeholder={t('logs:columns.client')}
+            value={filters.client}
+            onChange={(v) => setFilters({ client: v })}
+            options={(filterOpts.data?.clients ?? []).map((c) => ({ value: c, label: c }))}
           />
           <Select
             style={{ width: 160 }}

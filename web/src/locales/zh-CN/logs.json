@@ -24,11 +24,15 @@
     "firstContent": "首个正文写出",
     "firstContentHint": "首个带生成内容（正文、思考或工具调用）的事件写向客户端的时刻，从请求进入网关起算；非流式为正文写出时刻",
     "queueWait": "并发槽等待",
-    "queueWaitHint": "等待网关 / 用户组 / Key 并发槽的时间，为 0 表示没有排队"
+    "queueWaitHint": "等待网关 / 用户组 / Key 并发槽的时间，为 0 表示没有排队",
+    "userAgent": "User-Agent"
   },
   "unpriced": "未定价",
   "costUnpriced": "该模型没有匹配的单价，费用未计入；在「设置 → 计价」添加单价",
   "costPartial": "部分计价：有尝试的用量未知或不完整，实际费用不低于此数",
   "unverified": "币种待核实",
-  "costUnverified": "升级前的这条记录无法确定金额币种，原始数值保留在数据库里，未计入任何费用合计"
+  "costUnverified": "升级前的这条记录无法确定金额币种，原始数值保留在数据库里，未计入任何费用合计",
+  "columns": {
+    "client": "客户端"
+  }
 }
