@@ -10,11 +10,13 @@ import (
 )
 
 // firstContentWriter watches the SSE events written to the client and calls onFirst once,
-// when the first event that carries generated content (text, thinking or a tool call
-// delta) goes out. Role announcements, empty deltas, pings and usage-only events do not
-// count. After the first hit every Write passes straight through, so the cost is a JSON
-// parse per event only until content appears. Events are delimited by a blank line; a
-// Write that ends mid-event is buffered until the event is complete.
+// after the Write that completed the first event carrying generated content (non-empty
+// text, thinking text or tool-call name / arguments) has been accepted by the underlying
+// writer. Role announcements, empty deltas, signatures, pings and usage-only events do
+// not count. After the first hit every Write passes straight through, so the cost is a
+// JSON parse per event only until content appears. Events are delimited by a blank line
+// ("\n\n" or "\r\n\r\n"); a Write that ends mid-event is buffered until complete.
+// It is used on the SSE branch only; a non-streaming body is timed by the relay itself.
 type firstContentWriter struct {
 	w       io.Writer
 	proto   string // client wire protocol: decides what "content" looks like
@@ -30,12 +32,15 @@ func (f *firstContentWriter) Write(p []byte) (int, error) {
 	}
 	f.buf = append(f.buf, p[:n]...)
 	for !f.found {
-		i := bytes.Index(f.buf, []byte("\n\n"))
+		i, sep := bytes.Index(f.buf, []byte("\n\n")), 2
+		if j := bytes.Index(f.buf, []byte("\r\n\r\n")); j >= 0 && (i < 0 || j < i) {
+			i, sep = j, 4
+		}
 		if i < 0 {
 			break
 		}
 		ev := f.buf[:i]
-		f.buf = f.buf[i+2:]
+		f.buf = f.buf[i+sep:]
 		if eventHasContent(f.proto, ev) {
 			f.found = true
 			f.buf = nil
@@ -55,6 +60,7 @@ func (f *firstContentWriter) Write(p []byte) (int, error) {
 func eventHasContent(proto string, raw []byte) bool {
 	event, data := "", ""
 	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimRight(line, "\r")
 		switch {
 		case strings.HasPrefix(line, "event:"):
 			event = strings.TrimSpace(line[6:])
@@ -70,26 +76,50 @@ func eventHasContent(proto string, raw []byte) bool {
 	}
 	switch proto {
 	case model.ProtoAnthropicMessages:
+		// Only a delta that carries text, thinking text or tool-input JSON counts;
+		// signatures and other metadata deltas do not, nor does an empty text delta.
+		var e struct {
+			Type  string `json:"type"`
+			Delta struct {
+				Type        string `json:"type"`
+				Text        string `json:"text"`
+				Thinking    string `json:"thinking"`
+				PartialJSON string `json:"partial_json"`
+			} `json:"delta"`
+		}
+		if json.Unmarshal([]byte(data), &e) != nil {
+			return false
+		}
 		if event == "" {
-			var e struct {
-				Type string `json:"type"`
-			}
-			_ = json.Unmarshal([]byte(data), &e)
 			event = e.Type
 		}
-		return event == "content_block_delta"
+		if event != "content_block_delta" {
+			return false
+		}
+		switch e.Delta.Type {
+		case "text_delta":
+			return e.Delta.Text != ""
+		case "thinking_delta":
+			return e.Delta.Thinking != ""
+		case "input_json_delta":
+			return e.Delta.PartialJSON != ""
+		}
+		return false
 	case model.ProtoOpenAIResponses:
+		var e struct {
+			Type  string `json:"type"`
+			Delta string `json:"delta"`
+		}
+		if json.Unmarshal([]byte(data), &e) != nil {
+			return false
+		}
 		if event == "" {
-			var e struct {
-				Type string `json:"type"`
-			}
-			_ = json.Unmarshal([]byte(data), &e)
 			event = e.Type
 		}
 		switch event {
 		case "response.output_text.delta", "response.reasoning_text.delta", "response.reasoning_summary_text.delta",
 			"response.function_call_arguments.delta", "response.refusal.delta":
-			return true
+			return e.Delta != ""
 		}
 		return false
 	case model.ProtoGemini:
@@ -97,8 +127,10 @@ func eventHasContent(proto string, raw []byte) bool {
 			Candidates []struct {
 				Content struct {
 					Parts []struct {
-						Text         string          `json:"text"`
-						FunctionCall json.RawMessage `json:"functionCall"`
+						Text         string `json:"text"`
+						FunctionCall *struct {
+							Name string `json:"name"`
+						} `json:"functionCall"`
 					} `json:"parts"`
 				} `json:"content"`
 			} `json:"candidates"`
@@ -108,7 +140,7 @@ func eventHasContent(proto string, raw []byte) bool {
 		}
 		for _, c := range e.Candidates {
 			for _, p := range c.Content.Parts {
-				if p.Text != "" || len(p.FunctionCall) > 0 {
+				if p.Text != "" || (p.FunctionCall != nil && p.FunctionCall.Name != "") {
 					return true
 				}
 			}
@@ -129,9 +161,21 @@ func eventHasContent(proto string, raw []byte) bool {
 			return false
 		}
 		for _, c := range e.Choices {
-			if (c.Delta.Content != nil && *c.Delta.Content != "") || c.Delta.Reasoning != "" || c.Delta.Reasoning2 != "" ||
-				(len(c.Delta.ToolCalls) > 0 && string(c.Delta.ToolCalls) != "null" && string(c.Delta.ToolCalls) != "[]") {
+			if (c.Delta.Content != nil && *c.Delta.Content != "") || c.Delta.Reasoning != "" || c.Delta.Reasoning2 != "" {
 				return true
+			}
+			var calls []struct {
+				Function struct {
+					Name      string `json:"name"`
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			}
+			if len(c.Delta.ToolCalls) > 0 && json.Unmarshal(c.Delta.ToolCalls, &calls) == nil {
+				for _, tc := range calls {
+					if tc.Function.Name != "" || tc.Function.Arguments != "" {
+						return true
+					}
+				}
 			}
 		}
 		return false

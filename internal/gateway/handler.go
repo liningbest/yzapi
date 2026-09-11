@@ -1076,11 +1076,6 @@ func (g *Gateway) relay(req *request, resp *http.Response, upProto string, dropU
 	// "upstream was slow" from "client / reverse proxy was slow to accept bytes".
 	tw := &timedWriter{w: dst}
 	dst = tw
-	// The moment the first generated content goes out is what a user perceives as
-	// "first token"; FirstByteMs (upstream headers) is much earlier on reasoning models.
-	dst = &firstContentWriter{w: dst, proto: req.proto, onFirst: func() {
-		req.log.FirstContentMs = time.Since(req.start).Milliseconds()
-	}}
 	flush := func() {
 		if flusher != nil {
 			t := time.Now()
@@ -1105,6 +1100,12 @@ func (g *Gateway) relay(req *request, resp *http.Response, upProto string, dropU
 		w.WriteHeader(http.StatusOK)
 		req.wrote = true
 		flush()
+		// FirstContentMs: the Write that completed the first event with generated content
+		// was accepted by the connection. Same reference point as the non-stream branch
+		// (after a successful Write); neither is "the client has seen text".
+		dst = &firstContentWriter{w: dst, proto: req.proto, onFirst: func() {
+			req.log.FirstContentMs = time.Since(req.start).Milliseconds()
+		}}
 
 		var usage convert.Usage
 		var known bool
@@ -1215,8 +1216,9 @@ func (g *Gateway) relay(req *request, resp *http.Response, upProto string, dropU
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	req.log.FirstContentMs = time.Since(req.start).Milliseconds()
-	_, _ = dst.Write(out)
+	if n, werr := dst.Write(out); werr == nil && n > 0 {
+		req.log.FirstContentMs = time.Since(req.start).Milliseconds() // body accepted by the connection
+	}
 	req.wrote = true
 	req.log.Result, req.log.StatusCode = "success", 200
 	g.finish(req)

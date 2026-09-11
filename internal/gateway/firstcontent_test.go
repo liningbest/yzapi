@@ -34,6 +34,17 @@ func TestEventHasContentPerProtocol(t *testing.T) {
 		{model.ProtoGemini, `data: {"candidates":[{"content":{"role":"model","parts":[]}}]}`, false},
 		{model.ProtoGemini, `data: {"candidates":[{"content":{"parts":[{"text":"hi"}]}}]}`, true},
 		{model.ProtoGemini, `data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"f"}}]}}]}`, true},
+		// Review perf-bd68104: empty deltas, metadata and JSON null are not content.
+		{model.ProtoAnthropicMessages, "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"\"}}", false},
+		{model.ProtoAnthropicMessages, "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"signature_delta\",\"signature\":\"abc\"}}", false},
+		{model.ProtoAnthropicMessages, "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\"}}", true},
+		{model.ProtoOpenAIResponses, "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"\"}", false},
+		{model.ProtoOpenAIResponses, "event: response.function_call_arguments.delta\ndata: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"\"}", false},
+		{model.ProtoGemini, `data: {"candidates":[{"content":{"parts":[{"functionCall":null}]}}]}`, false},
+		{model.ProtoOpenAIChat, `data: {"choices":[{"index":0,"delta":{"tool_calls":null}}]}`, false},
+		{model.ProtoOpenAIChat, `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"name":"","arguments":""}}]}}]}`, false},
+		// CRLF-delimited streams are parsed too.
+		{model.ProtoOpenAIChat, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"x\"}}]}\r", true},
 	}
 	for _, c := range cases {
 		if got := eventHasContent(c.proto, []byte(c.ev)); got != c.want {
@@ -61,7 +72,25 @@ func TestFirstContentWriterFiresOnce(t *testing.T) {
 	if out.String() != parts[0]+parts[1]+parts[2]+parts[3] {
 		t.Fatal("bytes must pass through unchanged")
 	}
+	// CRLF delimiters.
+	fired = 0
+	fc = &firstContentWriter{w: io.Discard, proto: model.ProtoOpenAIChat, onFirst: func() { fired++ }}
+	_, _ = fc.Write([]byte("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"x\"}}]}\r\n\r\n"))
+	if fired != 1 {
+		t.Fatalf("crlf: fired=%d", fired)
+	}
+	// A writer that accepts nothing never fires.
+	fired = 0
+	fc = &firstContentWriter{w: zeroWriter{}, proto: model.ProtoOpenAIChat, onFirst: func() { fired++ }}
+	_, _ = fc.Write([]byte("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"x\"}}]}\n\n"))
+	if fired != 0 || fc.found {
+		t.Fatal("must not fire when the underlying writer accepted no bytes")
+	}
 }
+
+type zeroWriter struct{}
+
+func (zeroWriter) Write(p []byte) (int, error) { return 0, io.ErrShortWrite }
 
 // End to end: a stream records first_content_ms after the upstream headers, for a
 // same-protocol chat stream and for an Anthropic client on a chat upstream; a
@@ -75,6 +104,11 @@ func TestTimingsRecorded(t *testing.T) {
 		_, _ = io.WriteString(w, "data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"}}]}\n\n")
 		fl.Flush()
 		time.Sleep(30 * time.Millisecond) // headers and the role chunk are out; content follows later
+		// Empty and metadata events that must not count as content, then the real thing.
+		_, _ = io.WriteString(w, "data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\"}}]}\n\n")
+		_, _ = io.WriteString(w, "data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":null}}]}\n\n")
+		fl.Flush()
+		time.Sleep(30 * time.Millisecond)
 		_, _ = io.WriteString(w, sseOK)
 	}))
 	defer up.Close()
@@ -83,14 +117,14 @@ func TestTimingsRecorded(t *testing.T) {
 		t.Fatalf("status %d", w.Code)
 	}
 	l, _ := e.callLog(t)
-	if !l.Stream || l.FirstContentMs < l.FirstByteMs+20 || l.QueueWaitMs < 0 {
+	if !l.Stream || l.FirstContentMs < l.FirstByteMs+50 || l.QueueWaitMs < 0 {
 		t.Fatalf("chat stream timings: first_byte=%d first_content=%d queue=%d", l.FirstByteMs, l.FirstContentMs, l.QueueWaitMs)
 	}
 	if w := e.call(t, "/v1/messages", `{"model":"m","max_tokens":10,"stream":true,"messages":[{"role":"user","content":"hi"}]}`, nil); w.Code != 200 {
 		t.Fatalf("status %d %s", w.Code, w.Body.String())
 	}
 	l, _ = e.lastLog(t, 2)
-	if l.FirstContentMs < l.FirstByteMs+20 {
+	if l.FirstContentMs < l.FirstByteMs+50 {
 		t.Fatalf("converted stream timings: first_byte=%d first_content=%d", l.FirstByteMs, l.FirstContentMs)
 	}
 	up2 := jsonUpstream(200, ok200)

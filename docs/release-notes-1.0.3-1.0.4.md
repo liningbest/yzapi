@@ -222,3 +222,7 @@
 | 文档 | `docs/coding-performance.md` 按评审修订；`docs/api.md` 补耗时口径 | |
 
 实测（同协议 Anthropic 流式，零延迟 mock）：网关在 4 KB / 200 KB / 1 MB 请求体上分别多出约 0.3 / 2.9 / 12.9 ms 首字节时间，故本轮不改热路径。
+
+## 1.0.21：Coding 性能观测的验收修正（`docs/coding-performance-acceptance-bd68104.md`、`docs/acceptance-review-coding-perf-canvas-chat.md`）
+
+三个 P2 与材料缺口全部处理：首内容判定读取实际字段（空增量、签名、`null` 不算）；观测器只挂 SSE 分支，流式与非流式统一为"Write 成功返回之后"打点；`docs/api.md` 区分时间点与时长并收紧差值的解释；识别 CRLF 分隔；基准脚本 `scripts/bench-bigbody.sh` 与原始结果 `docs/perf/bigbody-2026-09-11.txt` 入库，含观测器开关前后对比（差异在噪声内）。评审夹具 `perf-bd68104/run.py` 通过。详见 `docs/coding-performance-changes-2026-09-11.md` 第 7 节。
