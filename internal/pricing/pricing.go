@@ -371,6 +371,11 @@ func MigrateLedger(db *gorm.DB, st *settings.Store) error {
 		// for a priced row). So cost_known=true is the per-row evidence of "not yet taken
 		// out"; a row 1.0.16 processed, or one that was never known, is left alone.
 		if repairV3 {
+			// Counted before this pass touches anything, so the rows it settles (which end
+			// up cost_known=false themselves) are not reported as unsettled (R118-01).
+			if err := tx.Model(&model.CallLog{}).Where("cost_ledger = ? AND cost_known = ? AND cost_micros <> 0", LedgerUnverified, false).Count(&unsettled).Error; err != nil {
+				return err
+			}
 			lastID := uint(0)
 			for {
 				var rows []model.CallLog
@@ -391,12 +396,9 @@ func MigrateLedger(db *gorm.DB, st *settings.Store) error {
 				}
 				lastID = rows[len(rows)-1].ID
 			}
-			// Rows 1.0.15 marked while cost_known was already false (partially priced) carry
-			// no evidence either way; they are not touched, only reported, and a rollup
-			// rebuild over the retention window settles them from the logs.
-			if err := tx.Model(&model.CallLog{}).Where("cost_ledger = ? AND cost_known = ? AND cost_micros <> 0", LedgerUnverified, false).Count(&unsettled).Error; err != nil {
-				return err
-			}
+			// Rows that were already cost_known=false when this pass started carry no
+			// evidence either way (1.0.15 marked them while partially priced, or 1.0.16
+			// already took them out); they are not touched, only reported above.
 		}
 		// In a repair pass, a row still without a stamp has no known history: never guess.
 		classifyOrigin := origin
@@ -453,7 +455,7 @@ func MigrateLedger(db *gorm.DB, st *settings.Store) error {
 		slog.Warn("cost ledger migration: rows whose currency could not be established were left as written", "rows", unverified, "stamp", LedgerUnverified)
 	}
 	if unsettled > 0 {
-		slog.Warn("cost ledger migration: unverified rows without evidence of being taken out of the hourly rollup; rebuild the usage rollup for the retention window to settle them", "rows", unsettled)
+		slog.Warn("cost ledger migration: unverified rows with no evidence either way about the hourly rollup; reconcile the retention window and rebuild only if it reports differences", "rows", unsettled)
 	}
 	return nil
 }

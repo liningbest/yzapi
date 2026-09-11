@@ -1,10 +1,13 @@
 package pricing
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -518,4 +521,44 @@ func TestR117V3AlreadyUnbookedMustNotSubtractAgain(t *testing.T) {
 	if u.CostMicros != 500 || u.CostUnverified != 1 {
 		t.Fatalf("already-unbooked v3 db subtracted again: hourly=%d unverified=%d", u.CostMicros, u.CostUnverified)
 	}
+}
+
+// R118-01: settling 1.0.15's rows must not then report those same rows as unsettled;
+// only rows that were already cost_known=false when the pass started are reported.
+func TestR118RepairMustNotWarnAsUnsettled(t *testing.T) {
+	run := func(t *testing.T, known bool) string {
+		var buf bytes.Buffer
+		prev := slog.Default()
+		slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+		defer slog.SetDefault(prev)
+		_, db, st := testSvc(t)
+		db.Create(&model.Setting{Key: ledgerMarker, Value: "usd-v3"})
+		db.Create(&model.Setting{Key: ledgerOriginKey, Value: "v2"})
+		h := time.Now().Truncate(time.Hour)
+		l := model.CallLog{RequestID: "r", CreatedAt: h.Add(time.Minute), UserID: 1, AccountID: 1, Provider: "custom", RequestModel: "m", APIType: "text", Result: "success",
+			CostLedger: LedgerUnverified, CostKnown: known, CostMicros: 7200000, Attempts: model.JSON(`[{"account_id":1,"provider":"custom","usage_status":"confirmed","prompt_tokens":1,"cost_micros":7200000}]`)}
+		db.Create(&l)
+		u := model.UsageHourly{Hour: h, UserID: 1, AccountID: 1, Provider: "custom", RequestModel: "m", APIType: "text", Requests: 1, CostMicros: 7200000}
+		if !known {
+			u.CostMicros, u.CostUnverified = 0, 1
+		}
+		db.Create(&u)
+		if err := MigrateLedger(db, st); err != nil {
+			t.Fatal(err)
+		}
+		if mm, err := logstore.Reconcile(db, h, h); err != nil || len(mm) != 0 {
+			t.Fatalf("reconcile: %v %+v", err, mm)
+		}
+		return buf.String()
+	}
+	t.Run("1.0.15 main path settles quietly", func(t *testing.T) {
+		if out := run(t, true); strings.Contains(out, "no evidence") {
+			t.Fatalf("settled rows reported as unsettled:\n%s", out)
+		}
+	})
+	t.Run("rows without evidence are reported", func(t *testing.T) {
+		if out := run(t, false); !strings.Contains(out, "no evidence") || !strings.Contains(out, "rows=1") {
+			t.Fatalf("expected the no-evidence warning:\n%s", out)
+		}
+	})
 }
