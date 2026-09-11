@@ -51,7 +51,7 @@ func TestLookupPrecedence(t *testing.T) {
 			t.Fatalf("%s/%s -> %q ok=%v, want %s", tc.prov, tc.name, p.Pattern, ok, tc.want)
 		}
 	}
-	if _, ok := svc.Lookup("custom", "gpt-6-astra"); ok {
+	if _, ok := svc.Lookup("custom", "no-such-model-9"); ok {
 		t.Fatal("unknown model must be unpriced")
 	}
 }

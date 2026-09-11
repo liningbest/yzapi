@@ -238,3 +238,9 @@
 ## 1.0.24：Coding 性能观测第五版（`docs/coding-performance-acceptance-5f8236e.md`）
 
 对象形 Responses `delta` 只按载荷字段（`text` / `delta` / `arguments` / `partial_json` / `refusal` / `value` / `content`）判定，元数据字符串、数字、布尔不算；成对正反用例入库。详见 `docs/coding-performance-changes-2026-09-11.md` 第 10 节。
+
+## 1.0.25：内置价目表按 2026-09-12 官网复核
+
+原表停留在 2026-06，主力型号（GPT-6 Astra、GPT-5.6 Sol / Terra / Luna、GPT-5.5、Claude Fable 5.1 / Opus 5 / Sonnet 5、Gemini 3.x、Grok 4.6、DeepSeek V4、Kimi K3、GLM-5.x、Qwen 3.8、豆包 2.x 等）全部缺失。现按各供应商官网价格页逐家抓取重写，来源与抓取方式记在 `docs/pricing-sources-2026-09.md`；分档计价取最低档并在备注写明其他档，促销价与牌价在备注区分，官网不再列出的旧行保留并标"未复核"。`BuiltinUpdated` 改为 `2026-09`。
+
+已部署实例：首次启动只补缺失的行，已有行（含你改过的）不动；要整体换成新表用「设置 → 计价 → 恢复内置」，它会重建全部内置行、保留自定义行。费用按上游模型名匹配，最长前缀优先（`gpt-5.5-pro` 命中自己的行而不是 `gpt-5.5`）。

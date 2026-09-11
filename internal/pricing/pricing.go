@@ -21,74 +21,155 @@ import (
 
 // BuiltinUpdated is the date the built-in table was last checked against provider
 // price pages. Shown in the UI so operators know how stale the defaults may be.
-const BuiltinUpdated = "2026-06"
+const BuiltinUpdated = "2026-09"
 
-// Builtin returns the reference price table (per 1M tokens, in the row's currency).
-// Patterns match a model name exactly or as a dash-separated prefix ("gpt-5" matches
-// "gpt-5-2026-01-01" but not "gpt-5-mini", which has its own row); the longest match wins.
+// Builtin returns the reference price table (per 1M tokens, in the row's currency),
+// checked against the providers' own price pages on 2026-09-12 (sources listed in
+// docs/pricing-sources-2026-09.md). Patterns match a model name exactly or as a
+// dash / colon / at-separated prefix ("gpt-5" matches "gpt-5-2026-01-01" but not
+// "gpt-5-mini" or "gpt-5.5", which have their own rows); the longest match wins.
+//
+// The table holds one price per row. Where a provider tiers by context length the row
+// carries the lowest tier and says so in Note; where a page quotes a promotional price
+// the row carries the price actually billed today and Note gives the list price. Rows
+// kept from the 2026-06 table that no longer appear on a price page are marked as
+// unverified in Note rather than dropped, so existing routes stay priced.
 func Builtin() []model.ModelPrice {
-	usd := func(pattern, provider string, in, out, cached, cacheWrite float64) model.ModelPrice {
-		return model.ModelPrice{Pattern: pattern, Provider: provider, InputPerM: in, OutputPerM: out, CachedInputPerM: cached, CacheWritePerM: cacheWrite, Currency: "USD", Builtin: true}
+	usd := func(pattern, provider string, in, out, cached, cacheWrite float64, note string) model.ModelPrice {
+		return model.ModelPrice{Pattern: pattern, Provider: provider, InputPerM: in, OutputPerM: out, CachedInputPerM: cached, CacheWritePerM: cacheWrite, Currency: "USD", Builtin: true, Note: note}
 	}
-	cny := func(pattern, provider string, in, out, cached float64) model.ModelPrice {
-		return model.ModelPrice{Pattern: pattern, Provider: provider, InputPerM: in, OutputPerM: out, CachedInputPerM: cached, Currency: "CNY", Builtin: true}
+	cny := func(pattern, provider string, in, out, cached float64, note string) model.ModelPrice {
+		return model.ModelPrice{Pattern: pattern, Provider: provider, InputPerM: in, OutputPerM: out, CachedInputPerM: cached, Currency: "CNY", Builtin: true, Note: note}
 	}
+	const old = "2026-06 参考价，2026-09 复核时官网已不再列出，未复核"
 	return []model.ModelPrice{
-		// OpenAI
-		usd("gpt-5", "openai", 1.25, 10, 0.125, 0),
-		usd("gpt-5-codex", "openai", 1.25, 10, 0.125, 0),
-		usd("gpt-5-mini", "openai", 0.25, 2, 0.025, 0),
-		usd("gpt-5-nano", "openai", 0.05, 0.4, 0.005, 0),
-		usd("gpt-4.1", "openai", 2, 8, 0.5, 0),
-		usd("gpt-4.1-mini", "openai", 0.4, 1.6, 0.1, 0),
-		usd("gpt-4.1-nano", "openai", 0.1, 0.4, 0.025, 0),
-		usd("gpt-4o", "openai", 2.5, 10, 1.25, 0),
-		usd("gpt-4o-mini", "openai", 0.15, 0.6, 0.075, 0),
-		usd("o3", "openai", 2, 8, 0.5, 0),
-		usd("o3-pro", "openai", 20, 80, 0, 0),
-		usd("o4-mini", "openai", 1.1, 4.4, 0.275, 0),
-		usd("text-embedding-3-small", "openai", 0.02, 0, 0, 0),
-		usd("text-embedding-3-large", "openai", 0.13, 0, 0, 0),
-		// Anthropic (cache write is billed at 1.25x input)
-		usd("claude-opus-4", "anthropic", 15, 75, 1.5, 18.75),
-		usd("claude-opus-4-1", "anthropic", 15, 75, 1.5, 18.75),
-		usd("claude-opus-4-5", "anthropic", 5, 25, 0.5, 6.25),
-		usd("claude-sonnet-4", "anthropic", 3, 15, 0.3, 3.75),
-		usd("claude-sonnet-4-5", "anthropic", 3, 15, 0.3, 3.75),
-		usd("claude-3-7-sonnet", "anthropic", 3, 15, 0.3, 3.75),
-		usd("claude-haiku-4-5", "anthropic", 1, 5, 0.1, 1.25),
-		usd("claude-3-5-haiku", "anthropic", 0.8, 4, 0.08, 1),
-		// Google
-		usd("gemini-2.5-pro", "gemini", 1.25, 10, 0.31, 0),
-		usd("gemini-2.5-flash", "gemini", 0.3, 2.5, 0.03, 0),
-		usd("gemini-2.5-flash-lite", "gemini", 0.1, 0.4, 0.01, 0),
-		usd("gemini-3-pro", "gemini", 2, 12, 0.2, 0),
-		// xAI
-		usd("grok-4", "xai", 3, 15, 0.75, 0),
-		usd("grok-4-fast", "xai", 0.2, 0.5, 0.05, 0),
-		usd("grok-code-fast-1", "xai", 0.2, 1.5, 0.02, 0),
-		// DeepSeek (USD list price)
-		usd("deepseek-chat", "deepseek", 0.28, 0.42, 0.028, 0),
-		usd("deepseek-reasoner", "deepseek", 0.28, 0.42, 0.028, 0),
-		// Moonshot (international list price)
-		usd("kimi-k2", "moonshot", 0.6, 2.5, 0.15, 0),
-		usd("kimi-k2-thinking", "moonshot", 0.6, 2.5, 0.15, 0),
-		// MiniMax
-		usd("MiniMax-M2", "minimax", 0.3, 1.2, 0.03, 0),
-		// Zhipu (CNY)
-		cny("glm-4.5", "zhipu", 2, 8, 0.4),
-		cny("glm-4.6", "zhipu", 2, 8, 0.4),
-		cny("glm-4.5-air", "zhipu", 0.8, 2, 0.16),
-		cny("glm-4.5-flash", "zhipu", 0, 0, 0),
-		// Alibaba DashScope (CNY, lowest context tier)
-		cny("qwen3-coder-plus", "aliyun", 4, 16, 0.8),
-		cny("qwen3-coder-flash", "aliyun", 1, 4, 0.2),
-		cny("qwen-max", "aliyun", 2.4, 9.6, 0.48),
-		cny("qwen-plus", "aliyun", 0.8, 2, 0.16),
-		cny("qwen-turbo", "aliyun", 0.3, 0.6, 0.06),
-		// Volcengine Doubao (CNY, lowest context tier)
-		cny("doubao-seed-1.6", "volcengine", 0.8, 8, 0.16),
-		cny("doubao-seed-1.6-flash", "volcengine", 0.15, 1.5, 0.03),
+		// OpenAI — developers.openai.com/api/docs/pricing, standard tier
+		usd("gpt-6-astra", "openai", 10, 50, 1, 0, ""),
+		usd("gpt-5.6-sol", "openai", 4, 20, 0.4, 0, "促销价（至 2026-11-21）"),
+		usd("gpt-5.6-terra", "openai", 2, 12, 0.2, 0, ""),
+		usd("gpt-5.6-luna", "openai", 0.2, 1.2, 0.02, 0, ""),
+		usd("gpt-5.5", "openai", 5, 30, 0.5, 0, ""),
+		usd("gpt-5.5-pro", "openai", 30, 180, 0, 0, "不支持缓存折扣"),
+		usd("gpt-5.4", "openai", 2.5, 15, 0.25, 0, ""),
+		usd("gpt-5.4-mini", "openai", 0.75, 4.5, 0.075, 0, ""),
+		usd("gpt-5.4-nano", "openai", 0.2, 1.25, 0.02, 0, ""),
+		usd("gpt-5.4-pro", "openai", 30, 180, 0, 0, "不支持缓存折扣"),
+		usd("gpt-5.3-codex", "openai", 1.75, 14, 0.175, 0, ""),
+		usd("gpt-5.3-codex-spark", "openai", 1.75, 14, 0.175, 0, "官网无公开 API 价，按 gpt-5.3-codex 同价"),
+		usd("gpt-5.2", "openai", 1.75, 14, 0.175, 0, ""),
+		usd("gpt-5.2-pro", "openai", 21, 168, 0, 0, "不支持缓存折扣"),
+		usd("gpt-5.1", "openai", 1.25, 10, 0.125, 0, ""),
+		usd("gpt-5", "openai", 1.25, 10, 0.125, 0, ""),
+		usd("gpt-5-mini", "openai", 0.25, 2, 0.025, 0, ""),
+		usd("gpt-5-nano", "openai", 0.05, 0.4, 0.005, 0, ""),
+		usd("gpt-5-pro", "openai", 15, 120, 0, 0, "不支持缓存折扣"),
+		usd("gpt-5-codex", "openai", 1.25, 10, 0.125, 0, old),
+		usd("o3", "openai", 2, 8, 0.5, 0, ""),
+		usd("o3-pro", "openai", 20, 80, 0, 0, ""),
+		usd("o3-mini", "openai", 1.1, 4.4, 0.55, 0, ""),
+		usd("o4-mini", "openai", 1.1, 4.4, 0.275, 0, ""),
+		usd("o1", "openai", 15, 60, 7.5, 0, ""),
+		usd("gpt-4o", "openai", 2.5, 10, 1.25, 0, ""),
+		usd("gpt-4o-mini", "openai", 0.15, 0.6, 0.075, 0, ""),
+		usd("gpt-4.1", "openai", 2, 8, 0.5, 0, old),
+		usd("gpt-4.1-mini", "openai", 0.4, 1.6, 0.1, 0, old),
+		usd("gpt-4.1-nano", "openai", 0.1, 0.4, 0.025, 0, old),
+		usd("text-embedding-3-small", "openai", 0.02, 0, 0, 0, ""),
+		usd("text-embedding-3-large", "openai", 0.13, 0, 0, 0, ""),
+		// Anthropic — platform.claude.com/docs/en/about-claude/pricing (cache write = 5-minute write, 1.25x input)
+		usd("claude-fable-5-1", "anthropic", 10, 50, 0.25, 12.5, "缓存读为输入价的 2.5%"),
+		usd("claude-fable-5", "anthropic", 10, 50, 1, 12.5, ""),
+		usd("claude-mythos-5-1", "anthropic", 10, 50, 0.25, 12.5, "限定客户可用"),
+		usd("claude-mythos-5", "anthropic", 10, 50, 1, 12.5, "限定客户可用"),
+		usd("claude-opus-5", "anthropic", 5, 25, 0.5, 6.25, ""),
+		usd("claude-opus-4-8", "anthropic", 5, 25, 0.5, 6.25, ""),
+		usd("claude-opus-4-7", "anthropic", 5, 25, 0.5, 6.25, ""),
+		usd("claude-opus-4-6", "anthropic", 5, 25, 0.5, 6.25, ""),
+		usd("claude-opus-4-5", "anthropic", 5, 25, 0.5, 6.25, ""),
+		usd("claude-opus-4-1", "anthropic", 15, 75, 1.5, 18.75, "已退役（Bedrock / Google Cloud 仍可用）"),
+		usd("claude-opus-4", "anthropic", 15, 75, 1.5, 18.75, "已退役（Google Cloud 仍可用）"),
+		usd("claude-sonnet-5", "anthropic", 2, 10, 0.2, 2.5, "官网已确认 $2/$10 为正式价"),
+		usd("claude-sonnet-4-6", "anthropic", 3, 15, 0.3, 3.75, ""),
+		usd("claude-sonnet-4-5", "anthropic", 3, 15, 0.3, 3.75, ""),
+		usd("claude-sonnet-4", "anthropic", 3, 15, 0.3, 3.75, "已退役（Bedrock / Google Cloud 仍可用）"),
+		usd("claude-3-7-sonnet", "anthropic", 3, 15, 0.3, 3.75, old),
+		usd("claude-haiku-4-5", "anthropic", 1, 5, 0.1, 1.25, ""),
+		usd("claude-3-5-haiku", "anthropic", 0.8, 4, 0.08, 1, "已退役（Bedrock / Google Cloud 仍可用）"),
+		// Google — ai.google.dev/gemini-api/docs/pricing, paid tier, text input; prices valid through 2026-12-31
+		usd("gemini-3.8-flash", "gemini", 0.75, 3.75, 0.075, 0, ""),
+		usd("gemini-3.7-flash", "gemini", 0.75, 3.75, 0.075, 0, ""),
+		usd("gemini-3.6-flash", "gemini", 0.75, 3.75, 0.075, 0, ""),
+		usd("gemini-3.5-flash", "gemini", 1.5, 9, 0.15, 0, ""),
+		usd("gemini-3.5-flash-lite", "gemini", 0.3, 2.5, 0.03, 0, ""),
+		usd("gemini-3.1-flash-lite", "gemini", 0.25, 1.5, 0.025, 0, "音频输入另计"),
+		usd("gemini-3.1-pro", "gemini", 2, 12, 0.2, 0, "≤200K 档；>200K 为 $4 / $18 / $0.40"),
+		usd("gemini-3-pro", "gemini", 2, 12, 0.2, 0, old),
+		usd("gemini-2.5-pro", "gemini", 1.25, 10, 0.125, 0, "≤200K 档；>200K 为 $2.50 / $15 / $0.25"),
+		usd("gemini-2.5-flash", "gemini", 0.3, 2.5, 0.03, 0, "音频输入另计"),
+		usd("gemini-2.5-flash-lite", "gemini", 0.1, 0.4, 0.01, 0, "音频输入另计"),
+		// xAI — docs.x.ai/docs/models, <200K prompt tier (≥200K doubles input and output)
+		usd("grok-4.6", "xai", 2, 6, 0.5, 0, "<200K 档；≥200K 全部按 2 倍"),
+		usd("grok-4.5", "xai", 2, 6, 0.3, 0, "<200K 档；≥200K 全部按 2 倍"),
+		usd("grok-4.3", "xai", 1.25, 2.5, 0.2, 0, "<200K 档；≥200K 全部按 2 倍"),
+		usd("grok-4.20", "xai", 1.25, 2.5, 0.2, 0, "含 -reasoning / -non-reasoning / multi-agent；<200K 档"),
+		usd("grok-build", "xai", 1, 2, 0.2, 0, "<200K 档；≥200K 全部按 2 倍"),
+		usd("grok-4", "xai", 3, 15, 0.75, 0, old),
+		usd("grok-4-fast", "xai", 0.2, 0.5, 0.05, 0, old),
+		usd("grok-code-fast-1", "xai", 0.2, 1.5, 0.02, 0, old),
+		// DeepSeek — api-docs.deepseek.com/quick_start/pricing, peak rate (off-peak 01:00–04:00 / 06:00–10:00 UTC weekdays is half)
+		usd("deepseek-v4-pro", "deepseek", 1.32, 3.96, 0.044, 0, "高峰价；非高峰时段减半"),
+		usd("deepseek-flash", "deepseek", 0.3, 1.2, 0.006, 0, "高峰价；非高峰时段减半"),
+		usd("deepseek-v4-flash", "deepseek", 0.3, 1.2, 0.006, 0, "旧名，路由到 deepseek-flash"),
+		usd("deepseek-chat", "deepseek", 0.28, 0.42, 0.028, 0, old),
+		usd("deepseek-reasoner", "deepseek", 0.28, 0.42, 0.028, 0, old),
+		// Moonshot — platform.kimi.com/docs/pricing/chat (CNY)
+		cny("kimi-k3", "moonshot", 20, 100, 2, ""),
+		cny("kimi-k2.7-code", "moonshot", 6.5, 27, 1.3, ""),
+		cny("kimi-k2.7-code-highspeed", "moonshot", 13, 54, 2.6, ""),
+		cny("kimi-k2.6", "moonshot", 6.5, 27, 1.1, ""),
+		usd("kimi-k2", "moonshot", 0.6, 2.5, 0.15, 0, old),
+		usd("kimi-k2-thinking", "moonshot", 0.6, 2.5, 0.15, 0, old),
+		// MiniMax — platform.minimax.cn/docs/guides/pricing-paygo (CNY, standard tier)
+		cny("MiniMax-M3", "minimax", 2.1, 8.4, 0.42, "永久五折后价；≤512K 档，>512K 翻倍；priority 档 1.5 倍"),
+		cny("MiniMax-M2.7", "minimax", 2.1, 8.4, 0.42, "缓存写 ¥2.625"),
+		cny("MiniMax-M2.7-highspeed", "minimax", 4.2, 16.8, 0.42, ""),
+		usd("MiniMax-M2", "minimax", 0.3, 1.2, 0.03, 0, old),
+		// Zhipu — docs.bigmodel.cn/cn/guide/start/pricing (CNY, lowest tier)
+		cny("glm-5.3", "zhipu", 8, 28, 2, ""),
+		cny("glm-5.3-flash", "zhipu", 0.8, 2.8, 0.23, ""),
+		cny("glm-5.2", "zhipu", 8, 28, 2, ""),
+		cny("glm-5.1", "zhipu", 6, 24, 1.3, "输入 <32K 档；≥32K 为 8 / 28 / 2"),
+		cny("glm-5-turbo", "zhipu", 5, 22, 1.2, "输入 <32K 档；≥32K 为 7 / 26 / 1.8"),
+		cny("glm-5", "zhipu", 4, 18, 1, "输入 <32K 档；≥32K 为 6 / 22 / 1.5"),
+		cny("glm-4.7", "zhipu", 2, 8, 0.4, "输入 <32K 且输出 <0.2K 档；更长为 3 / 14 或 4 / 16"),
+		cny("glm-4.7-flashx", "zhipu", 0.5, 3, 0.1, ""),
+		cny("glm-4.7-flash", "zhipu", 0, 0, 0, "免费"),
+		cny("glm-4.5-air", "zhipu", 0.8, 2, 0.16, "输入 <32K 且输出 <0.2K 档；更长为 0.8 / 6 或 1.2 / 8"),
+		cny("glm-4.6", "zhipu", 2, 8, 0.4, old),
+		cny("glm-4.5", "zhipu", 2, 8, 0.4, old),
+		cny("glm-4.5-flash", "zhipu", 0, 0, 0, old),
+		// Alibaba Model Studio — help.aliyun.com/zh/model-studio/model-pricing (CNY, China region, lowest tier, list price)
+		cny("qwen3.8-max", "aliyun", 12, 36, 1.2, ""),
+		cny("qwen3.7-max", "aliyun", 12, 36, 1.2, "官网当前 5 折促销 6 / 18"),
+		cny("qwen3.7-plus", "aliyun", 2, 8, 0.2, "牌价；官网当前 8 折 1.6 / 6.4；≤256K 档"),
+		cny("qwen3.8-flash", "aliyun", 0.8, 2.7, 0.08, ""),
+		cny("qwen3-max", "aliyun", 2.5, 10, 0.25, "≤32K 档，更长上下文按更高档"),
+		cny("qwen3-coder-plus", "aliyun", 4, 16, 0.4, "≤32K 档，更长上下文按更高档"),
+		cny("qwen-plus", "aliyun", 0.8, 2, 0.08, "≤128K 档，更长上下文按更高档"),
+		cny("qwen-turbo", "aliyun", 0.3, 0.6, 0, "思考模式输出 ¥3"),
+		cny("qwen-long", "aliyun", 0.5, 2, 0, ""),
+		cny("qwen3-coder-flash", "aliyun", 1, 4, 0.2, old),
+		cny("qwen-max", "aliyun", 2.4, 9.6, 0.48, old),
+		// Volcengine Doubao — ai.volcengine.com/model and the 2.0 launch page (CNY, ≤32K tier)
+		cny("doubao-seed-2-1-pro", "volcengine", 6, 30, 1.2, "缓存价按 2.0 系列 20% 比例推算，官网未列"),
+		cny("doubao-seed-2-1-turbo", "volcengine", 3, 15, 0.6, "缓存价按 2.0 系列 20% 比例推算，官网未列"),
+		cny("doubao-seed-2-0-pro", "volcengine", 3.2, 16, 0.64, "≤32K 档，更长上下文按更高档"),
+		cny("doubao-seed-2-0-lite", "volcengine", 0.6, 3.6, 0.12, "≤32K 档；最高档 1.8 / 10.8"),
+		cny("doubao-seed-2-0-mini", "volcengine", 0.2, 2, 0.04, "≤32K 档；最高档 0.8 / 8"),
+		cny("doubao-seed-evolving", "volcengine", 6, 30, 1.2, "缓存价按 2.0 系列 20% 比例推算，官网未列"),
+		cny("doubao-seed-1.8", "volcengine", 0.8, 8, 0.16, "≤16K 档；缓存价按比例推算"),
+		cny("doubao-seed-1.6", "volcengine", 0.8, 8, 0.16, old),
+		cny("doubao-seed-1.6-flash", "volcengine", 0.15, 1.5, 0.03, old),
 	}
 }
 
