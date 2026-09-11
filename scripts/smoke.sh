@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 PORT=${PORT:-18080}
-MOCK=${MOCK:-127.0.0.1:19911}
+MOCK=${MOCK:-127.0.0.1:19914}
 DATA=$(mktemp -d)
 export YZAPI_DATA_DIR="$DATA" YZAPI_LISTEN="127.0.0.1:$PORT" YZAPI_INITIAL_ADMIN_PASSWORD="Admin123456!" YZAPI_DEV=1
 BASE="http://127.0.0.1:$PORT"

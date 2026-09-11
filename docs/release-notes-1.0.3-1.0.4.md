@@ -103,3 +103,13 @@
 | `scripts/stream-timeline.py` | 对任一 Base URL 发一条流式请求，打印响应头、首 token、总耗时、chunk 间隔分位数和"成批到达"比例。配合固定节奏的 mock 上游（`tools/mockupstream -delay 50ms` 作为账号），分别打服务端口与域名反代，可以直接看出延迟出现在哪一段 |
 
 对比方法：固定账号、协议、请求参数与 `max_tokens`，新旧版本或不同开关交替执行、每组不少于 10 次，同时比较首字、完成时间、出字间隔与输出量；单看 tok/s 会被首字时刻的变化误导。
+
+## 1.0.11：供应商预设扩充与 Anthropic 兼容入口
+
+| 修改 | 说明 |
+|---|---|
+| 账号类型可带独立协议集 | DeepSeek、Kimi、智谱、MiniMax、阿里云百炼各新增"Anthropic 兼容（Claude Code）"账号类型，Base URL 指向各家的 `/anthropic` 入口、只讲 `anthropic-messages`；此前这些预设把 OpenAI 与 Anthropic 协议混在同一个 `/v1` 下，Claude Code 同协议直连会打到不存在的 `/v1/messages` |
+| 创建 / 编辑账号按账号类型校验协议 | 选择 Anthropic 兼容入口时协议默认且只能为 `anthropic-messages`，前端切换账号类型自动刷新协议与地址 |
+| 新增 9 个预设 | 阶跃星辰、百度千帆、Groq、Mistral、Together AI、Fireworks AI、Cerebras、LM Studio、自定义 (Anthropic 兼容)，共 26 家 |
+
+回归：`TestRegistryConsistency`（预设一致性、Anthropic 入口不得复用 `/v1`）、`TestAccountTypeNarrowsProtocols`。

@@ -286,3 +286,30 @@ func TestAuditRouteSampleEditBuild(t *testing.T) {
 		t.Fatalf("edited text with build_vector=true but BuildVectors calls=%d", engine.builds)
 	}
 }
+
+// Creating an account on a provider's Anthropic-compatible endpoint must default to
+// that endpoint's base URL and protocol set, never the OpenAI ones.
+func TestAccountTypeNarrowsProtocols(t *testing.T) {
+	s := auditServer(t)
+	admin := auditUser(s, "admin-p")
+	w := auditCall(s.createAccount, admin, 0, map[string]any{"name": "ds-claude", "provider": "deepseek", "account_type": "anthropic",
+		"type": "text", "api_key": "sk-x", "mappings": []map[string]string{{"request_model": "deepseek-chat", "upstream_model": "deepseek-chat"}}, "skip_test": true})
+	if w.Code != 200 {
+		t.Fatalf("create: %d %s", w.Code, w.Body.String())
+	}
+	var out struct {
+		BaseURL   string   `json:"base_url"`
+		Protocols []string `json:"protocols"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &out)
+	if out.BaseURL != "https://api.deepseek.com/anthropic" || len(out.Protocols) != 1 || out.Protocols[0] != model.ProtoAnthropicMessages {
+		t.Fatalf("anthropic account type: base=%s protocols=%v", out.BaseURL, out.Protocols)
+	}
+	// Explicitly asking for the OpenAI protocol on the Anthropic endpoint is ignored.
+	w = auditCall(s.createAccount, admin, 0, map[string]any{"name": "ds-claude-2", "provider": "deepseek", "account_type": "anthropic",
+		"type": "text", "api_key": "sk-x", "protocols": []string{model.ProtoOpenAIChat}, "mappings": []map[string]string{{"request_model": "m", "upstream_model": "m"}}, "skip_test": true})
+	_ = json.Unmarshal(w.Body.Bytes(), &out)
+	if w.Code != 200 || len(out.Protocols) != 1 || out.Protocols[0] != model.ProtoAnthropicMessages {
+		t.Fatalf("protocol override must be dropped: %d %v", w.Code, out.Protocols)
+	}
+}

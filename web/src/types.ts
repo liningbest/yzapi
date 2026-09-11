@@ -117,6 +117,8 @@ export interface ProviderAccountType {
   key: string;
   name: string;
   base_url?: string;
+  /** When set, this endpoint only speaks these protocols (e.g. a provider's Anthropic-compatible base). */
+  protocols?: Protocol[];
 }
 
 export interface Provider {

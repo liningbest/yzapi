@@ -152,6 +152,21 @@ func (s *Server) validateAccountIn(in *accountIn, existing *model.Account) strin
 	for _, pr := range provider.ProtocolsForType(in.Type) {
 		allowed[pr] = true
 	}
+	// An account type with its own protocol list (e.g. a provider's separate
+	// Anthropic-compatible endpoint) restricts what this endpoint can speak.
+	native := p.Protocols
+	if at, ok := p.AccountTypeOf(in.AccountType); ok && len(at.Protocols) > 0 {
+		native = at.Protocols
+		nat := map[string]bool{}
+		for _, pr := range at.Protocols {
+			nat[pr] = true
+		}
+		for pr := range allowed {
+			if !nat[pr] {
+				delete(allowed, pr)
+			}
+		}
+	}
 	var protos []string
 	for _, pr := range in.Protocols {
 		if allowed[pr] {
@@ -159,8 +174,8 @@ func (s *Server) validateAccountIn(in *accountIn, existing *model.Account) strin
 		}
 	}
 	if len(protos) == 0 {
-		// default to all protocols the provider natively supports for this type
-		for _, pr := range p.Protocols {
+		// default to all protocols the endpoint natively supports for this type
+		for _, pr := range native {
 			if allowed[pr] {
 				protos = append(protos, pr)
 			}

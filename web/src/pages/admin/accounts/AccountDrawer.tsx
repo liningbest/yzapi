@@ -60,11 +60,13 @@ interface FormValues {
 }
 
 
-function protocolOptions(p: Provider | undefined, type: ModelType | undefined): Protocol[] {
+function protocolOptions(p: Provider | undefined, type: ModelType | undefined, accountType?: string): Protocol[] {
   if (!type) return [];
   const base = PROTOCOLS_BY_TYPE[type];
-  if (!p || p.custom) return base;
-  return base.filter((x) => p.protocols.includes(x));
+  if (!p || p.custom) return base.filter((x) => !p || p.protocols.includes(x));
+  const at = p.account_types?.find((a) => a.key === accountType);
+  const native = at?.protocols?.length ? at.protocols : p.protocols;
+  return base.filter((x) => native.includes(x));
 }
 
 function defaultBaseUrl(p: Provider | undefined, accountType: string | undefined): string {
@@ -175,11 +177,12 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
         form.setFieldValue('type', ty);
       }
       applyBaseUrl(p, at);
-      form.setFieldValue('protocols', protocolOptions(p, ty));
+      form.setFieldValue('protocols', protocolOptions(p, ty, at));
     } else if ('account_type' in changed) {
       applyBaseUrl(provider, changed.account_type);
+      form.setFieldValue('protocols', protocolOptions(provider, form.getFieldValue('type') as ModelType | undefined, changed.account_type));
     } else if ('type' in changed) {
-      form.setFieldValue('protocols', protocolOptions(provider, changed.type));
+      form.setFieldValue('protocols', protocolOptions(provider, changed.type, form.getFieldValue('account_type') as string | undefined));
     }
   };
 

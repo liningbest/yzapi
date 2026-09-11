@@ -114,7 +114,7 @@ export default function Login() {
 
             <div className="yz-login-facts">
               <div>
-                <b>18</b>
+                <b>26</b>
                 <span>{t('auth:login.factProviders')}</span>
               </div>
               <div>
