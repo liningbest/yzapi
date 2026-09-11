@@ -25,6 +25,7 @@ type Upstream struct {
 	Protocols      map[string]bool
 	Mappings       map[string]string // request model -> upstream model
 	Priority       int
+	Weight         int
 	MaxConcurrency int
 	Passthrough    bool // accepts unmapped model names as-is
 	Extra          map[string]any
@@ -276,7 +277,7 @@ func (h *snapshotHolder) rebuild(virtualModel string, smartEnabled bool) error {
 			ID: a.ID, Name: a.Name, Provider: a.Provider, Type: a.Type,
 			BaseURL: strings.TrimRight(a.BaseURL, "/"), APIKey: key, AuthHeader: auth,
 			Protocols: map[string]bool{}, Mappings: map[string]string{},
-			Priority: a.Priority, MaxConcurrency: a.MaxConcurrency, Passthrough: a.PassthroughModels,
+			Priority: a.Priority, Weight: max(a.Weight, 1), MaxConcurrency: a.MaxConcurrency, Passthrough: a.PassthroughModels,
 		}
 		if a.PassthroughModels {
 			snap.passthrough[a.Type] = append(snap.passthrough[a.Type], u)

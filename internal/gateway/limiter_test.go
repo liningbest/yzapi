@@ -210,3 +210,52 @@ func TestFailedAttemptUsageClassification(t *testing.T) {
 		t.Fatalf("all none: %s", st)
 	}
 }
+
+// After a cooldown expires exactly one request probes the account; others wait until the
+// probe reports. A failed probe extends the cooldown, a successful one closes the circuit.
+func TestHealthHalfOpenProbe(t *testing.T) {
+	h := newHealthTracker(nil)
+	h.failFor(7, 20*time.Millisecond, "boom")
+	if h.available(7) {
+		t.Fatal("must be unavailable during cooldown")
+	}
+	time.Sleep(30 * time.Millisecond)
+	if !h.available(7) {
+		t.Fatal("first caller after cooldown must be admitted as the probe")
+	}
+	if h.available(7) {
+		t.Fatal("second caller must wait while the probe is outstanding")
+	}
+	h.fail(7, 20*time.Millisecond, "still broken")
+	if h.available(7) {
+		t.Fatal("failed probe must re-open the circuit")
+	}
+	time.Sleep(60 * time.Millisecond) // failures=2 -> 2x base
+	if !h.available(7) {
+		t.Fatal("probe again after the extended cooldown")
+	}
+	h.ok(7)
+	if !h.available(7) || !h.available(7) {
+		t.Fatal("successful probe must fully close the circuit")
+	}
+}
+
+// Equal-priority accounts are drawn by weight; a lower priority tier always comes first.
+func TestOrderUpstreamsWeighted(t *testing.T) {
+	a := &Upstream{ID: 1, Priority: 10, Weight: 90}
+	b := &Upstream{ID: 2, Priority: 10, Weight: 10}
+	c := &Upstream{ID: 3, Priority: 20, Weight: 1000}
+	firstA := 0
+	for i := 0; i < 2000; i++ {
+		got := orderUpstreams([]*Upstream{a, b, c})
+		if len(got) != 3 || got[2] != c {
+			t.Fatalf("priority tiers must stay ordered: %v", []uint{got[0].ID, got[1].ID, got[2].ID})
+		}
+		if got[0] == a {
+			firstA++
+		}
+	}
+	if firstA < 1700 || firstA > 1900 { // expect ~90%
+		t.Fatalf("weight 90 vs 10 should win ~90%% of draws, got %d/2000", firstA)
+	}
+}

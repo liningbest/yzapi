@@ -52,6 +52,7 @@ interface FormValues {
   protocols: Protocol[];
   mappings: ModelMapping[];
   priority: number;
+  weight: number;
   max_concurrency: number;
   passthrough_models?: boolean;
   test_model?: string;
@@ -92,6 +93,7 @@ function toPayload(v: FormValues, isEdit: boolean, skipTest: boolean, accountId?
     })),
     test_model: v.test_model || undefined,
     priority: v.priority ?? 100,
+    weight: v.weight ?? 1,
     max_concurrency: v.max_concurrency ?? 0,
     passthrough_models: v.passthrough_models ?? false,
     enabled: v.enabled ?? true,
@@ -137,6 +139,7 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
       protocols: a.protocols ?? [],
       mappings: (a.mappings ?? []).map((m) => ({ id: m.id, request_model: m.request_model, upstream_model: m.upstream_model })),
       priority: a.priority,
+      weight: a.weight ?? 1,
       max_concurrency: a.max_concurrency,
       passthrough_models: a.passthrough_models ?? false,
       test_model: a.test_model || undefined,
@@ -376,7 +379,7 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
           layout="vertical"
           requiredMark="optional"
           onValuesChange={onValuesChange}
-          initialValues={{ type: 'text', protocols: [], mappings: [], priority: 100, max_concurrency: 0, enabled: true }}
+          initialValues={{ type: 'text', protocols: [], mappings: [], priority: 100, weight: 1, max_concurrency: 0, enabled: true }}
         >
           {/* provider */}
           <Section title={t('accounts:steps.provider')} />
@@ -641,6 +644,9 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
                 rules={[requiredRule]}
               >
                 <InputNumber min={0} max={1000} precision={0} style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item name="weight" label={t('accounts:form.weight')} extra={t('accounts:form.weightExtra')} rules={[requiredRule]}>
+                <InputNumber min={1} max={1000} precision={0} style={{ width: '100%' }} />
               </Form.Item>
               <Form.Item
                 name="max_concurrency"

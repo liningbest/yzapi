@@ -65,13 +65,15 @@
 账号对象：
 ```
 {id, name, provider, account_type, type:"text"|"image"|"embedding", base_url, has_key:true, api_key_masked:"sk-ab…yz",
- protocols:["openai-completions",...], mappings:[{id,request_model,upstream_model}], test_model, priority, max_concurrency,
+ protocols:["openai-completions",...], mappings:[{id,request_model,upstream_model}], test_model, priority, weight, max_concurrency,
  enabled, health:"available"|"cooling"|"unavailable", cooldown_until, last_error, note, created_at, updated_at}
 ```
 - `GET /api/admin/accounts?provider=&type=&protocol=&enabled=&health=&q=&page=&page_size=`
 - `POST /api/admin/accounts` body: `{name, provider, account_type, type, base_url, api_key, protocols[], mappings:[{request_model,upstream_model}], test_model, priority, max_concurrency, enabled, note, skip_test:false}` → 账号对象。保存前会做一次最小调用验证（文本 / 向量），失败返回 400 `{error, code:"validation_failed"}`。
 - `GET /api/admin/accounts/:id`
 - `PUT /api/admin/accounts/:id` 同 POST；`api_key` 为空表示沿用。`type` 不可修改。
+- 调度顺序：先按 `priority` 从小到大分层，同一层内按 `weight`（1–1000，默认 1）加权随机排序，因此权重 5 与 95 并列即 5% 灰度。账号冷却到期后进入半开状态：只放行一个探测请求，成功即恢复，失败则按退避延长冷却，其余请求在探测期间仍视该账号不可用。
+- 数据面成功响应带 `X-Upstream-Account` / `X-Upstream-Model` / `X-Upstream-Protocol` 头，指明实际服务的账号、上游模型与协议。
 - `DELETE /api/admin/accounts/:id`；被向量服务引用时返回 409。
 - `PATCH /api/admin/accounts/:id/enabled` `{enabled}`
 - `POST /api/admin/accounts/:id/reset-health` → 清除冷却

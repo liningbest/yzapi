@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"strconv"
@@ -567,7 +568,7 @@ func (g *Gateway) forward(req *request, cands []string) {
 		if len(ups) == 0 {
 			ups = req.snap.PassthroughFor(req.apiType) // unmapped name: accounts that take anything
 		}
-		for _, up := range ups {
+		for _, up := range orderUpstreams(ups) {
 			if tries >= maxTries {
 				break
 			}
@@ -677,6 +678,7 @@ func (g *Gateway) forward(req *request, cands []string) {
 				req.log.AccountID, req.log.AccountName, req.log.Provider = up.ID, up.Name, up.Provider
 				req.log.UpstreamModel, req.log.UpstreamProtocol = upstreamModel, proto
 				if proto == req.proto && json.Valid(raw) {
+					setUpstreamHeaders(req.w, up, upstreamModel, proto)
 					req.w.Header().Set("Content-Type", "application/json")
 					req.w.WriteHeader(resp.StatusCode)
 					_, _ = req.w.Write(raw)
@@ -698,6 +700,7 @@ func (g *Gateway) forward(req *request, cands []string) {
 			req.log.UpstreamModel, req.log.UpstreamProtocol = upstreamModel, proto
 			req.log.FirstByteMs = time.Since(req.start).Milliseconds()
 			g.health.ok(up.ID)
+			setUpstreamHeaders(req.w, up, upstreamModel, proto)
 			g.relay(req, resp, proto, dropUsage, cancel, t0)
 			ctr.release()
 			return
@@ -719,6 +722,49 @@ func (g *Gateway) forward(req *request, cands []string) {
 		status = 400 // conversion refused the request (e.g. stateful Responses fields)
 	}
 	g.fail(req, newErr(status, "upstream_failed", "All upstream attempts failed: "+truncate(lastMsg, 300)))
+}
+
+// setUpstreamHeaders tells the client which upstream actually served the request, so
+// client-side troubleshooting does not need the admin log.
+func setUpstreamHeaders(w http.ResponseWriter, up *Upstream, upstreamModel, proto string) {
+	h := w.Header()
+	h.Set("X-Upstream-Account", up.Name)
+	h.Set("X-Upstream-Model", upstreamModel)
+	h.Set("X-Upstream-Protocol", proto)
+}
+
+// orderUpstreams keeps priority tiers in order (lower first) and, inside a tier, draws
+// accounts in weighted-random order, so equal-priority accounts share load by weight and
+// a small weight acts as a canary. Input is already sorted by priority.
+func orderUpstreams(ups []*Upstream) []*Upstream {
+	if len(ups) < 2 {
+		return ups
+	}
+	out := make([]*Upstream, 0, len(ups))
+	for i := 0; i < len(ups); {
+		j := i + 1
+		for j < len(ups) && ups[j].Priority == ups[i].Priority {
+			j++
+		}
+		tier := append([]*Upstream(nil), ups[i:j]...)
+		for len(tier) > 0 {
+			total := 0
+			for _, u := range tier {
+				total += max(u.Weight, 1)
+			}
+			r := rand.IntN(total)
+			for k, u := range tier {
+				r -= max(u.Weight, 1)
+				if r < 0 {
+					out = append(out, u)
+					tier = append(tier[:k], tier[k+1:]...)
+					break
+				}
+			}
+		}
+		i = j
+	}
+	return out
 }
 
 // networkFailureUsage classifies a transport error: a request that was never written

@@ -163,6 +163,7 @@ export interface Account {
   mappings: ModelMapping[];
   test_model: string;
   priority: number;
+  weight: number;
   max_concurrency: number;
   /** Unmapped model names are forwarded to this account unchanged. */
   passthrough_models: boolean;
@@ -186,6 +187,7 @@ export interface AccountInput {
   mappings: ModelMapping[];
   test_model?: string;
   priority: number;
+  weight: number;
   max_concurrency: number;
   passthrough_models?: boolean;
   enabled: boolean;

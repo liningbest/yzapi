@@ -38,6 +38,7 @@ type accountIn struct {
 	} `json:"mappings"`
 	TestModel      string `json:"test_model"`
 	Priority       int    `json:"priority"`
+	Weight         int    `json:"weight"`
 	MaxConcurrency int    `json:"max_concurrency"`
 	// PassthroughModels forwards unmapped model names to this account unchanged.
 	PassthroughModels bool   `json:"passthrough_models"`
@@ -56,7 +57,7 @@ func (s *Server) accountView(a *model.Account) gin.H {
 		"id": a.ID, "name": a.Name, "provider": a.Provider, "account_type": a.AccountType, "type": a.Type,
 		"base_url": a.BaseURL, "has_key": key != "", "api_key_masked": maskKey(key),
 		"protocols": a.Protocols, "mappings": a.Mappings, "test_model": a.TestModel,
-		"priority": a.Priority, "max_concurrency": a.MaxConcurrency, "passthrough_models": a.PassthroughModels, "enabled": a.Enabled,
+		"priority": a.Priority, "weight": a.Weight, "max_concurrency": a.MaxConcurrency, "passthrough_models": a.PassthroughModels, "enabled": a.Enabled,
 		"health": a.Health, "cooldown_until": a.CooldownUntil, "last_error": a.LastError,
 		"note": a.Note, "created_at": a.CreatedAt, "updated_at": a.UpdatedAt,
 	}
@@ -215,6 +216,12 @@ func (s *Server) validateAccountIn(in *accountIn, existing *model.Account) strin
 	if in.Priority < 0 || in.Priority > 1000 {
 		return "优先级范围 0-1000"
 	}
+	if in.Weight == 0 {
+		in.Weight = 1
+	}
+	if in.Weight < 1 || in.Weight > 1000 {
+		return "权重范围 1-1000"
+	}
 	if in.MaxConcurrency < 0 || in.MaxConcurrency > 100000 {
 		return "最大并发范围 0-100000"
 	}
@@ -250,7 +257,7 @@ func (s *Server) createAccount(c *gin.Context) {
 		return
 	}
 	a := model.Account{Name: in.Name, Provider: in.Provider, AccountType: in.AccountType, Type: in.Type, BaseURL: in.BaseURL,
-		APIKeyEnc: enc, Protocols: in.Protocols, TestModel: in.TestModel, Priority: in.Priority, MaxConcurrency: in.MaxConcurrency, PassthroughModels: in.PassthroughModels,
+		APIKeyEnc: enc, Protocols: in.Protocols, TestModel: in.TestModel, Priority: in.Priority, Weight: in.Weight, MaxConcurrency: in.MaxConcurrency, PassthroughModels: in.PassthroughModels,
 		Enabled: in.Enabled == nil || *in.Enabled, Health: model.HealthAvailable, Note: in.Note}
 	for _, m := range in.Mappings {
 		a.Mappings = append(a.Mappings, model.ModelMapping{RequestModel: m.RequestModel, UpstreamModel: m.UpstreamModel})
@@ -309,7 +316,7 @@ func (s *Server) updateAccount(c *gin.Context) {
 			// A plain []string in an Updates map is rendered by gorm as a SQL row value "(?, ?)"
 			// ("row value misused" on SQLite); StringList serialises to its JSON column form.
 			"api_key_enc": enc, "protocols": model.StringList(in.Protocols), "test_model": in.TestModel, "priority": in.Priority,
-			"max_concurrency": in.MaxConcurrency, "passthrough_models": in.PassthroughModels, "note": in.Note}
+			"weight": in.Weight, "max_concurrency": in.MaxConcurrency, "passthrough_models": in.PassthroughModels, "note": in.Note}
 		if in.Enabled != nil {
 			upd["enabled"] = *in.Enabled
 		}

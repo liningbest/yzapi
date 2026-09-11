@@ -96,7 +96,9 @@
     "enabled": "Enabled",
     "enabledExtra": "When disabled the gateway will not dispatch requests to this account.",
     "passthrough": "Pass through unmapped models",
-    "passthroughExtra": "When on, model names that have no mapping are forwarded to this account unchanged. Useful when teammates use assorted coding clients with varying default model names."
+    "passthroughExtra": "When on, model names that have no mapping are forwarded to this account unchanged. Useful when teammates use assorted coding clients with varying default model names.",
+    "weight": "Weight",
+    "weightExtra": "Accounts sharing a priority are drawn in weighted-random order (default 1); weight 5 next to 95 is a 5% canary."
   },
   "test": {
     "success": "Connection succeeded",

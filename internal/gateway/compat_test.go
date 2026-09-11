@@ -440,3 +440,14 @@ func TestCompatClientWriteTimeIsSeparate(t *testing.T) {
 		t.Fatalf("client write time must not absorb upstream waiting: %d ms of %d ms", l.ClientWriteMs, l.UpstreamLatencyMs)
 	}
 }
+
+// Successful responses name the upstream that served them.
+func TestCompatUpstreamHeaders(t *testing.T) {
+	up := newRecorder(respondJSON(200, ok200))
+	defer up.srv.Close()
+	e := newE2E(t, up.srv.URL)
+	w := e.chat(t, context.Background(), false)
+	if w.Code != 200 || w.Header().Get("X-Upstream-Account") != "acc0" || w.Header().Get("X-Upstream-Model") != "m" || w.Header().Get("X-Upstream-Protocol") != model.ProtoOpenAIChat {
+		t.Fatalf("headers: %v", w.Header())
+	}
+}

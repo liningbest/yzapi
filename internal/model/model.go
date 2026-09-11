@@ -139,18 +139,21 @@ type ModelGroup struct {
 
 // Account is an upstream provider account (账号池).
 type Account struct {
-	ID             uint           `gorm:"primaryKey" json:"id"`
-	Name           string         `gorm:"size:64" json:"name"`
-	Provider       string         `gorm:"size:32;index" json:"provider"`
-	AccountType    string         `gorm:"size:32" json:"account_type"`
-	Type           string         `gorm:"size:16;index" json:"type"`
-	BaseURL        string         `gorm:"size:512" json:"base_url"`
-	APIKeyEnc      string         `gorm:"size:1024" json:"-"`
-	Protocols      StringList     `gorm:"type:text" json:"protocols"`
-	Mappings       []ModelMapping `gorm:"constraint:OnDelete:CASCADE" json:"mappings"`
-	TestModel      string         `gorm:"size:128" json:"test_model"`
-	Priority       int            `gorm:"index" json:"priority"`
-	MaxConcurrency int            `json:"max_concurrency"`
+	ID          uint           `gorm:"primaryKey" json:"id"`
+	Name        string         `gorm:"size:64" json:"name"`
+	Provider    string         `gorm:"size:32;index" json:"provider"`
+	AccountType string         `gorm:"size:32" json:"account_type"`
+	Type        string         `gorm:"size:16;index" json:"type"`
+	BaseURL     string         `gorm:"size:512" json:"base_url"`
+	APIKeyEnc   string         `gorm:"size:1024" json:"-"`
+	Protocols   StringList     `gorm:"type:text" json:"protocols"`
+	Mappings    []ModelMapping `gorm:"constraint:OnDelete:CASCADE" json:"mappings"`
+	TestModel   string         `gorm:"size:128" json:"test_model"`
+	Priority    int            `gorm:"index" json:"priority"`
+	// Weight orders accounts that share a priority: they are tried in weighted-random
+	// order, so a weight of 5 next to a weight of 95 is a 5% canary. Default 1.
+	Weight         int `gorm:"not null;default:1" json:"weight"`
+	MaxConcurrency int `json:"max_concurrency"`
 	// PassthroughModels: any model name without an explicit mapping is forwarded to this
 	// account unchanged (typed by the account). Lets unknown coding clients use their
 	// default model names without a mapping per name.
