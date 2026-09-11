@@ -57,21 +57,26 @@ func (f *firstContentWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// hasNonEmptyString reports whether a decoded JSON value contains any non-empty string
-// (used for object- or array-shaped deltas, whose exact schema is not fixed).
-func hasNonEmptyString(v any) bool {
+// deltaPayloadFields are the keys an object-shaped Responses delta may carry its
+// generated payload in. Everything else (type, kind, status, id, ...) is metadata.
+var deltaPayloadFields = []string{"text", "delta", "arguments", "partial_json", "refusal", "value", "content"}
+
+// deltaHasPayload reports whether an object- or array-shaped delta carries a non-empty
+// generated payload. Only the payload fields count, and only when they hold a non-empty
+// string (or an array/object that does, recursively); metadata strings never count.
+func deltaHasPayload(v any) bool {
 	switch x := v.(type) {
 	case string:
 		return x != ""
 	case []any:
 		for _, e := range x {
-			if hasNonEmptyString(e) {
+			if deltaHasPayload(e) {
 				return true
 			}
 		}
 	case map[string]any:
-		for _, e := range x {
-			if hasNonEmptyString(e) {
+		for _, k := range deltaPayloadFields {
+			if e, ok := x[k]; ok && deltaHasPayload(e) {
 				return true
 			}
 		}
@@ -163,7 +168,7 @@ func eventHasContent(proto string, raw []byte) bool {
 				return s != ""
 			}
 			var v any
-			return json.Unmarshal(e.Delta, &v) == nil && hasNonEmptyString(v)
+			return json.Unmarshal(e.Delta, &v) == nil && deltaHasPayload(v)
 		}
 		return false
 	case model.ProtoGemini:

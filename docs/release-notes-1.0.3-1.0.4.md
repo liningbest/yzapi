@@ -234,3 +234,7 @@
 ## 1.0.23：Coding 性能观测第四版（`docs/coding-performance-acceptance-d199ab8.md`）
 
 工具调用名称事件计入首内容：Anthropic `content_block_start`（`tool_use` 且有 `name`）、Responses `response.output_item.added`（`function_call` 且有 `name`）；对象形 `delta` 递归检查非空字符串。新增端到端 `TestToolNameIsFirstContent`。详见 `docs/coding-performance-changes-2026-09-11.md` 第 9 节。
+
+## 1.0.24：Coding 性能观测第五版（`docs/coding-performance-acceptance-5f8236e.md`）
+
+对象形 Responses `delta` 只按载荷字段（`text` / `delta` / `arguments` / `partial_json` / `refusal` / `value` / `content`）判定，元数据字符串、数字、布尔不算；成对正反用例入库。详见 `docs/coding-performance-changes-2026-09-11.md` 第 10 节。

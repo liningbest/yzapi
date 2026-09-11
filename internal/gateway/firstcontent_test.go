@@ -50,8 +50,15 @@ func TestEventHasContentPerProtocol(t *testing.T) {
 		{model.ProtoAnthropicMessages, "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"\"}}", false},
 		{model.ProtoOpenAIResponses, "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"function_call\",\"name\":\"shell\",\"arguments\":\"\"}}", true},
 		{model.ProtoOpenAIResponses, "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[]}}", false},
-		// Object-shaped deltas count only when something inside is non-empty.
+		// Object-shaped deltas count only by their payload fields; metadata strings never count.
 		{model.ProtoOpenAIResponses, "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":{\"text\":\"\"}}", false},
+		{model.ProtoOpenAIResponses, "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":{\"type\":\"text\",\"text\":\"\"}}", false},
+		{model.ProtoOpenAIResponses, "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":{\"id\":\"msg_1\",\"status\":\"in_progress\",\"text\":\"\"}}", false},
+		{model.ProtoOpenAIResponses, "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":{\"type\":\"text\",\"text\":\"h\"}}", true},
+		{model.ProtoOpenAIResponses, "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":[{\"kind\":\"text\",\"value\":\"\"}]}", false},
+		{model.ProtoOpenAIResponses, "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":[{\"kind\":\"text\",\"value\":\"h\"}]}", true},
+		{model.ProtoOpenAIResponses, "event: response.function_call_arguments.delta\ndata: {\"type\":\"response.function_call_arguments.delta\",\"delta\":{\"arguments\":\"{\"}}", true},
+		{model.ProtoOpenAIResponses, "event: response.function_call_arguments.delta\ndata: {\"type\":\"response.function_call_arguments.delta\",\"delta\":{\"arguments\":42}}", false},
 		// CRLF-delimited streams are parsed too.
 		{model.ProtoOpenAIChat, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"x\"}}]}\r", true},
 	}
