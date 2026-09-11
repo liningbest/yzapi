@@ -92,7 +92,9 @@
       "prompt": "輸入 Token",
       "completion": "輸出 Token",
       "total": "總 Token",
-      "cached": "快取 Token"
+      "cached": "快取 Token",
+      "cost": "估算費用",
+      "costHint": "按管理員設定的單價估算，未定價模型不計入"
     },
     "trend": "Token 趨勢",
     "trendHint": "按{{group}}堆疊顯示每日 Token，折線為請求量",
@@ -106,7 +108,8 @@
       "requests": "請求量",
       "totalTokens": "總 Token",
       "cachedTokens": "快取 Token",
-      "proportion": "占比"
+      "proportion": "占比",
+      "cost": "估算費用"
     }
   },
   "logs": {
@@ -127,7 +130,8 @@
       "result": "結果",
       "statusCode": "狀態碼",
       "latency": "耗時",
-      "time": "時間"
+      "time": "時間",
+      "cost": "估算費用"
     },
     "in": "輸入",
     "out": "輸出",
@@ -148,10 +152,13 @@
       "statusCode": "狀態碼",
       "latency": "總耗時",
       "firstByte": "首位元組耗時",
-      "error": "錯誤訊息"
+      "error": "錯誤訊息",
+      "cost": "估算費用"
     },
     "empty": "暫無呼叫記錄",
-    "emptyHint": "所選時間範圍內沒有符合的呼叫"
+    "emptyHint": "所選時間範圍內沒有符合的呼叫",
+    "costUnpriced": "該模型沒有設定單價，費用未計入",
+    "unpriced": "未計價"
   },
   "group": {
     "title": "我的使用者組",

@@ -92,7 +92,9 @@
       "prompt": "Input tokens",
       "completion": "Output tokens",
       "total": "Total tokens",
-      "cached": "Cached tokens"
+      "cached": "Cached tokens",
+      "cost": "Est. cost",
+      "costHint": "Estimated from the prices set by the administrator; unpriced models are not counted"
     },
     "trend": "Token trend",
     "trendHint": "Daily tokens stacked by {{group}}; the line shows requests",
@@ -106,7 +108,8 @@
       "requests": "Requests",
       "totalTokens": "Total tokens",
       "cachedTokens": "Cached tokens",
-      "proportion": "Share"
+      "proportion": "Share",
+      "cost": "Est. cost"
     }
   },
   "logs": {
@@ -127,7 +130,8 @@
       "result": "Result",
       "statusCode": "Status",
       "latency": "Latency",
-      "time": "Time"
+      "time": "Time",
+      "cost": "Est. cost"
     },
     "in": "In",
     "out": "Out",
@@ -148,10 +152,13 @@
       "statusCode": "Status code",
       "latency": "Total latency",
       "firstByte": "Time to first byte",
-      "error": "Error"
+      "error": "Error",
+      "cost": "Est. cost"
     },
     "empty": "No call records",
-    "emptyHint": "No matching calls in the selected time range"
+    "emptyHint": "No matching calls in the selected time range",
+    "costUnpriced": "No price configured for this model; cost not counted",
+    "unpriced": "Unpriced"
   },
   "group": {
     "title": "My User Group",

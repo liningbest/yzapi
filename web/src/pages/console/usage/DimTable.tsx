@@ -4,10 +4,11 @@ import type { ColumnsType } from 'antd/es/table';
 import { useTranslation } from 'react-i18next';
 import { EmptyState, NeutralTag, ProportionBar, TokenText, useChartTheme } from '@/components';
 import type { UsageDim } from '@/types';
-import { formatNumber } from '@/utils/format';
+import { formatMoney, formatNumber } from '@/utils/format';
 
 interface Props {
   rows: UsageDim[] | undefined;
+  currency?: string;
   loading?: boolean;
 }
 
@@ -19,8 +20,8 @@ function parseName(name: string): { label: string; deleted: boolean } {
   return { label: deleted ? name.replace(DELETED_RE, '') : name, deleted };
 }
 
-/** Compact per-dimension breakdown: name / requests / tokens / cached / share. */
-export default function DimTable({ rows, loading }: Props) {
+/** Compact per-dimension breakdown: name / requests / tokens / cached / cost / share. */
+export default function DimTable({ rows, currency, loading }: Props) {
   const { t } = useTranslation(['console', 'common']);
   const { palette } = useChartTheme();
 
@@ -70,6 +71,14 @@ export default function DimTable({ rows, loading }: Props) {
       width: 100,
       sorter: (a, b) => a.cached_tokens - b.cached_tokens,
       render: (v: number) => <TokenText value={v} />,
+    },
+    {
+      title: t('console:usage.dim.cost'),
+      dataIndex: 'cost',
+      align: 'right',
+      width: 100,
+      sorter: (a, b) => (a.cost ?? 0) - (b.cost ?? 0),
+      render: (v: number | undefined) => <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatMoney(v ?? 0, currency)}</span>,
     },
     {
       title: t('console:usage.dim.proportion'),

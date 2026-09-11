@@ -92,7 +92,9 @@
       "prompt": "输入 Token",
       "completion": "输出 Token",
       "total": "总 Token",
-      "cached": "缓存 Token"
+      "cached": "缓存 Token",
+      "cost": "估算费用",
+      "costHint": "按管理员配置的单价估算，未定价模型不计入"
     },
     "trend": "Token 趋势",
     "trendHint": "按{{group}}堆叠展示每日 Token，折线为请求量",
@@ -106,7 +108,8 @@
       "requests": "请求量",
       "totalTokens": "总 Token",
       "cachedTokens": "缓存 Token",
-      "proportion": "占比"
+      "proportion": "占比",
+      "cost": "估算费用"
     }
   },
   "logs": {
@@ -127,7 +130,8 @@
       "result": "结果",
       "statusCode": "状态码",
       "latency": "耗时",
-      "time": "时间"
+      "time": "时间",
+      "cost": "估算费用"
     },
     "in": "输入",
     "out": "输出",
@@ -148,10 +152,13 @@
       "statusCode": "状态码",
       "latency": "总耗时",
       "firstByte": "首字节耗时",
-      "error": "错误信息"
+      "error": "错误信息",
+      "cost": "估算费用"
     },
     "empty": "暂无调用记录",
-    "emptyHint": "所选时间范围内没有匹配的调用"
+    "emptyHint": "所选时间范围内没有匹配的调用",
+    "costUnpriced": "该模型没有配置单价，费用未计入",
+    "unpriced": "未计价"
   },
   "group": {
     "title": "我的用户组",

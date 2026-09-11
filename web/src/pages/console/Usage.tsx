@@ -6,6 +6,7 @@ import {
   ExportOutlined,
   ImportOutlined,
   ThunderboltOutlined,
+  WalletOutlined,
 } from '@ant-design/icons';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -14,7 +15,7 @@ import { FilterBar, PageHeader, RangeSelector, StatCard, StatGroup } from '@/com
 import { useRange } from '@/hooks/useRange';
 import type { ModelType, UserUsageParams } from '@/types';
 import { MODEL_TYPES } from '@/utils/constants';
-import { formatNumber, formatTokens } from '@/utils/format';
+import { formatMoney, formatNumber, formatTokens } from '@/utils/format';
 import DimTable from './usage/DimTable';
 import TrendChart from './usage/TrendChart';
 
@@ -49,6 +50,7 @@ export default function Usage() {
   });
 
   const summary = usage.data?.summary;
+  const currency = usage.data?.currency;
   const loading = usage.isLoading;
 
   const stats = [
@@ -90,6 +92,13 @@ export default function Usage() {
       value: formatTokens(summary?.cached_tokens ?? 0),
       tooltip: formatNumber(summary?.cached_tokens ?? 0),
       icon: <ThunderboltOutlined />,
+    },
+    {
+      key: 'cost',
+      title: t('console:usage.stats.cost'),
+      value: summary ? formatMoney(summary.cost, currency) : '-',
+      hint: t('console:usage.stats.costHint'),
+      icon: <WalletOutlined />,
     },
   ];
 
@@ -186,17 +195,17 @@ export default function Usage() {
       <Row gutter={[16, 16]}>
         <Col xl={8} md={12} xs={24}>
           <Card className="yz-card" title={t('console:usage.byModel')} styles={{ body: { padding: 12 } }}>
-            <DimTable rows={usage.data?.by_model} loading={loading} />
+            <DimTable rows={usage.data?.by_model} currency={currency} loading={loading} />
           </Card>
         </Col>
         <Col xl={8} md={12} xs={24}>
           <Card className="yz-card" title={t('console:usage.byApiKey')} styles={{ body: { padding: 12 } }}>
-            <DimTable rows={usage.data?.by_api_key} loading={loading} />
+            <DimTable rows={usage.data?.by_api_key} currency={currency} loading={loading} />
           </Card>
         </Col>
         <Col xl={8} md={12} xs={24}>
           <Card className="yz-card" title={t('console:usage.byProvider')} styles={{ body: { padding: 12 } }}>
-            <DimTable rows={usage.data?.by_provider} loading={loading} />
+            <DimTable rows={usage.data?.by_provider} currency={currency} loading={loading} />
           </Card>
         </Col>
       </Row>

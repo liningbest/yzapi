@@ -10,7 +10,8 @@ import { useIsMobile } from '@/hooks/useMediaQuery';
 import { useRange } from '@/hooks/useRange';
 import { useTableQuery } from '@/hooks/useTableQuery';
 import type { CallLog, LogResult, UserLogParams } from '@/types';
-import { formatDateTime, formatMs, formatNumber, shortId } from '@/utils/format';
+import { useSiteStore } from '@/stores/site';
+import { formatDateTime, formatMoney, formatMs, formatNumber, shortId } from '@/utils/format';
 
 const RESULTS: LogResult[] = ['success', 'client_error', 'upstream_error', 'blocked', 'rate_limited'];
 
@@ -44,6 +45,7 @@ export default function Logs() {
   const [selected, setSelected] = useState<CallLog | null>(null);
 
   const keys = useQuery({ queryKey: ['user', 'keys'], queryFn: userApi.keys });
+  const currency = useSiteStore((s) => s.currency);
 
   const params = useMemo<UserLogParams>(() => ({ ...tq.params, ...rangeParams }), [tq.params, rangeParams]);
   const logs = useQuery({
@@ -94,6 +96,20 @@ export default function Logs() {
       key: 'tokens',
       align: 'right',
       render: (_, row) => <TokenCell log={row} inLabel={inLabel} outLabel={outLabel} />,
+    },
+    {
+      title: t('console:logs.columns.cost'),
+      key: 'cost',
+      width: 100,
+      align: 'right',
+      render: (_, r) =>
+        r.cost_known === false && (r.total_tokens ?? 0) > 0 ? (
+          <Tooltip title={t('console:logs.costUnpriced')}>
+            <span style={{ color: 'var(--yz-text-tertiary)', cursor: 'help', borderBottom: '1px dotted currentColor' }}>-</span>
+          </Tooltip>
+        ) : (
+          <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatMoney(r.cost ?? 0, currency)}</span>
+        ),
     },
     {
       title: t('console:logs.columns.result'),
@@ -265,6 +281,17 @@ export default function Logs() {
                       {t('console:logs.cached')} <strong>{formatNumber(selected.cached_tokens)}</strong>
                     </span>
                   </Space>
+                )}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('console:logs.fields.cost')}>
+                {selected.cost_known === false && selected.total_tokens > 0 ? (
+                  <Tooltip title={t('console:logs.costUnpriced')}>
+                    <span style={{ color: 'var(--yz-text-tertiary)', cursor: 'help', borderBottom: '1px dotted currentColor' }}>
+                      {t('console:logs.unpriced')}
+                    </span>
+                  </Tooltip>
+                ) : (
+                  formatMoney(selected.cost ?? 0, currency)
                 )}
               </Descriptions.Item>
               <Descriptions.Item label={t('console:logs.fields.result')}>
