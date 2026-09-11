@@ -185,7 +185,8 @@
     "deleted": "deleted",
     "inUse": "In use",
     "topK": "Top K",
-    "empty": "-"
+    "empty": "-",
+    "cost": "Est. cost"
   },
   "type": {
     "text": "Text",

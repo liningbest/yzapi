@@ -7,7 +7,8 @@
     "vector": "Vector service",
     "smartRoute": "Smart routing",
     "compliance": "Compliance",
-    "elasticsearch": "Elasticsearch"
+    "elasticsearch": "Elasticsearch",
+    "pricing": "Pricing"
   },
   "unit": {
     "days": "days",
@@ -219,6 +220,38 @@
       "lastSuccessAt": "Last successful write",
       "failingSince": "Failing since",
       "healthy": "Healthy"
+    }
+  },
+  "pricing": {
+    "notice": "Built-in prices are reference values checked in {{date}} (per 1M tokens). Providers change prices at any time: verify against their price pages and edit as needed. Models without a price are marked unpriced and excluded from cost.",
+    "anyProvider": "Any provider",
+    "builtin": "Built-in",
+    "custom": "Custom",
+    "pattern": "Model name / prefix",
+    "patternExtra": "Exact model name, or a prefix (gpt-5 matches gpt-5-2026-03-01 but not gpt-5-mini, which has its own row); longest wins",
+    "input": "Input /M",
+    "output": "Output /M",
+    "cached": "Cache read /M",
+    "cachedExtra": "Price of prompt tokens served from the prompt cache",
+    "cacheWrite": "Cache write /M",
+    "cacheWriteExtra": "Anthropic only; not metered separately yet, billed at input price",
+    "rowCurrency": "Row currency",
+    "unit": "All prices are per 1M tokens",
+    "unitHint": "Reports convert to the base currency",
+    "table": "Model price table",
+    "search": "Search model or provider",
+    "reset": "Restore built-in",
+    "resetConfirm": "Restore every built-in row to the reference value and drop retired built-ins; custom rows are kept. Continue?",
+    "resetDone": "Built-in prices restored",
+    "add": "Add price",
+    "edit": "Edit price",
+    "currency": {
+      "label": "Base currency",
+      "extra": "Reports and logs show all costs in this currency"
+    },
+    "rate": {
+      "label": "USD → CNY rate",
+      "extra": "Used when a row's currency differs from the base currency"
     }
   }
 }

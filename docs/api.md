@@ -158,6 +158,13 @@
 - `PUT /elasticsearch {enabled,url,auth_type,api_key,username,password,index_prefix,request_kb,response_kb,retention_days}`；`POST /elasticsearch/test` → `{ok, version, message}`；`GET /elasticsearch/status` → `{configured, queue_count, queue_bytes, dropped, last_success_at, failing_since}`
 - 密钥字段传 `"******"` 表示保持不变。
 
+### 计价 `/api/admin/prices`
+- 对象：`{id, pattern, provider, input_per_m, output_per_m, cached_input_per_m, cache_write_per_m, currency:"USD"|"CNY", builtin, enabled, note, updated_at}`，单价均为每百万 Token。`pattern` 精确匹配模型名或作为前缀匹配（分隔符 `-`、`:`、`@`），越长越优先；`provider` 为空表示任意供应商。匹配顺序：账号供应商专属行 → 任意供应商行 → 其他供应商的行（自定义中转站转发的 claude/gpt 模型也能计价）。
+- `GET ?q=` → `{items, total, builtin_updated, currency}`；`POST`、`PUT /:id`、`DELETE /:id`；`POST /reset-builtin` 恢复内置参考价（自定义行保留）；`GET /lookup?provider=&model=` → `{found, price}`。
+- 内置表随版本更新，启动时只补充缺失的内置行，不覆盖已编辑的行。
+- `PUT /api/admin/settings/pricing {currency:"CNY"|"USD", usd_to_cny}`：报表计价货币与换算汇率；`GET /api/public/info` 同时返回 `currency`。
+- 费用在每次尝试结束时按当时单价估算并冻结：`call_logs.cost_micros`（计价货币的百万分之一单位）、`cost_known`（任一有 Token 的尝试无单价则为 false，费用不计入）；小时聚合 `cost_micros` 按尝试账号归属。用量报表 `summary.cost`、各分布项 `cost`、趋势点 `cost` 以及 `currency`；概览 `cost.total`。缓存读 Token 按缓存价，其余输入按输入价；Anthropic 的缓存写目前按输入价计入。单价修改后不回溯历史记录。
+
 ### 系统
 - `GET /api/admin/system/info` → `{version, go_version, db_driver, uptime_sec, started_at, data_dir}`
 

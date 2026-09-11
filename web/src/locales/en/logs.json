@@ -20,5 +20,7 @@
     "noAttempts": "No upstream attempts recorded (the request may have been blocked or rate-limited at the gateway)",
     "clientWrite": "Client write blocking",
     "clientWriteHint": "Time blocked writing/flushing to the client during streaming; upstream latency minus this approximates pure upstream wait. A large value points at the client or reverse proxy"
-  }
+  },
+  "unpriced": "Unpriced",
+  "costUnpriced": "No matching price for this model; add one under Settings → Pricing"
 }

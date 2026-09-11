@@ -4,7 +4,8 @@
   "apiKeyId": "API Key ID",
   "stats": {
     "requestsHint": "成功 {{success}} · 失敗 {{failed}}",
-    "cacheRate": "快取命中率 {{rate}}%"
+    "cacheRate": "快取命中率 {{rate}}%",
+    "costHint": "按「設定 → 計價」單價估算，未定價模型不計入"
   },
   "trend": {
     "title": "用量趨勢",

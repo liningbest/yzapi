@@ -17,6 +17,15 @@ export function formatTokens(n: number | null | undefined, digits = 1): string {
 }
 
 /** Full number with thousands separators. */
+/** Money in the gateway's base currency: 2 decimals normally, more for sub-cent values. */
+export function formatMoney(v: number | null | undefined, currency = 'CNY'): string {
+  if (v == null || Number.isNaN(v)) return '-';
+  const sym = currency === 'USD' ? '$' : '¥';
+  const abs = Math.abs(v);
+  const digits = abs === 0 ? 2 : abs < 0.01 ? 4 : 2;
+  return `${sym}${v.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+}
+
 export function formatNumber(n: number | null | undefined): string {
   if (n === null || n === undefined || Number.isNaN(n)) return '-';
   return n.toLocaleString();

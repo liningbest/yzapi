@@ -35,6 +35,7 @@ type usageRow struct {
 	CachedTokens     int64
 	UnknownUsage     int64
 	LatencyMs        int64
+	CostMicros       int64
 }
 
 type dist struct {
@@ -47,6 +48,8 @@ type dist struct {
 	PromptTokens     int64  `json:"prompt_tokens"`
 	CompletionTokens int64  `json:"completion_tokens"`
 	UnknownUsage     int64  `json:"unknown_usage"`
+	costMicros       int64
+	Cost             float64 `json:"cost"` // base currency
 }
 
 type trendPoint struct {
@@ -58,6 +61,7 @@ type trendPoint struct {
 	PromptTokens     int64            `json:"prompt_tokens"`
 	CompletionTokens int64            `json:"completion_tokens"`
 	CachedTokens     int64            `json:"cached_tokens"`
+	Cost             float64          `json:"cost"`
 	Series           map[string]int64 `json:"series"`
 }
 
@@ -159,6 +163,8 @@ func (s *Server) usageReport(c *gin.Context, scopedUser uint) gin.H {
 		d.PromptTokens += r.PromptTokens
 		d.CompletionTokens += r.CompletionTokens
 		d.UnknownUsage += r.UnknownUsage
+		d.costMicros += r.CostMicros
+		d.Cost = costOut(d.costMicros)
 	}
 	for i := range rows {
 		r := &rows[i]
@@ -168,6 +174,7 @@ func (s *Server) usageReport(c *gin.Context, scopedUser uint) gin.H {
 		summary.PromptTokens += r.PromptTokens
 		summary.CompletionTokens += r.CompletionTokens
 		summary.UnknownUsage += r.UnknownUsage
+		summary.costMicros += r.CostMicros
 
 		bucket := r.Hour
 		if byDay {
@@ -186,6 +193,7 @@ func (s *Server) usageReport(c *gin.Context, scopedUser uint) gin.H {
 		tp.PromptTokens += r.PromptTokens
 		tp.CompletionTokens += r.CompletionTokens
 		tp.CachedTokens += r.CachedTokens
+		tp.Cost += costOut(r.CostMicros)
 		sk := r.RequestModel
 		if groupBy == "api_key" {
 			sk = nameOr(nm.keys, r.APIKeyID, "(已删除)")
@@ -243,7 +251,8 @@ func (s *Server) usageReport(c *gin.Context, scopedUser uint) gin.H {
 	return gin.H{
 		"summary": gin.H{"requests": summary.Requests, "success": success, "failed": failed, "prompt_tokens": summary.PromptTokens,
 			"completion_tokens": summary.CompletionTokens, "total_tokens": summary.TotalTokens, "cached_tokens": summary.CachedTokens,
-			"unknown_usage": summary.UnknownUsage},
+			"unknown_usage": summary.UnknownUsage, "cost": costOut(summary.costMicros)},
+		"currency":       s.st.Get().Pricing.Currency,
 		"trend":          tl,
 		"by_provider":    toList("provider"),
 		"by_model":       toList("model"),
@@ -293,6 +302,7 @@ func (s *Server) overviewUsage(c *gin.Context) {
 	}
 	c.JSON(200, gin.H{
 		"tokens":       gin.H{"total": total, "prompt": sum["prompt_tokens"], "completion": sum["completion_tokens"], "cached": cached, "cache_rate": cacheRate},
+		"cost":         gin.H{"total": sum["cost"], "currency": rep["currency"]},
 		"requests":     gin.H{"total": reqs, "success": sum["success"], "failed": failed, "fail_rate": failRate},
 		"active_users": activeUsers,
 		"active_keys":  activeKeys,

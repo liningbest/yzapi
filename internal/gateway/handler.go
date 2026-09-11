@@ -118,6 +118,7 @@ func (g *Gateway) finish(req *request) {
 		g.Metrics.Tokens.With(metrics.Label("kind", "completion")).Add(l.CompletionTokens)
 		g.Metrics.Tokens.With(metrics.Label("kind", "cached")).Add(l.CachedTokens)
 	}
+	g.priceAttempts(req)
 	if len(req.attempts) > 0 {
 		b, _ := json.Marshal(req.attempts)
 		l.Attempts = model.JSON(b)
@@ -722,6 +723,45 @@ func (g *Gateway) forward(req *request, cands []string) {
 		status = 400 // conversion refused the request (e.g. stateful Responses fields)
 	}
 	g.fail(req, newErr(status, "upstream_failed", "All upstream attempts failed: "+truncate(lastMsg, 300)))
+}
+
+// priceAttempts estimates each attempt's cost with the configured price table and folds
+// the sum into the request. Cached prompt tokens belong to the attempt that produced the
+// response (the last one with usage). A request is "cost known" only when every attempt
+// that consumed tokens had a price.
+func (g *Gateway) priceAttempts(req *request) {
+	pp := g.pricer.Load()
+	if pp == nil || *pp == nil {
+		return
+	}
+	l := req.log
+	last := -1
+	for i, a := range req.attempts {
+		if a.PromptTokens+a.CompletionTokens > 0 {
+			last = i
+		}
+	}
+	if last < 0 {
+		return
+	}
+	known := true
+	var total int64
+	for i := range req.attempts {
+		a := &req.attempts[i]
+		if a.PromptTokens+a.CompletionTokens == 0 {
+			continue
+		}
+		if i == last {
+			a.CachedTokens = l.CachedTokens
+		}
+		micros, ok := (*pp).Cost(a.Provider, a.Model, a.PromptTokens, a.CompletionTokens, a.CachedTokens)
+		a.CostMicros, a.CostKnown = micros, ok
+		if !ok {
+			known = false
+		}
+		total += micros
+	}
+	l.CostMicros, l.CostKnown = total, known
 }
 
 // setUpstreamHeaders tells the client which upstream actually served the request, so

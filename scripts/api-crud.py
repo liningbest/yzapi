@@ -231,6 +231,30 @@ try:
         req("GET", "/api/admin/settings/elasticsearch/status", expect=200)
     check("elasticsearch settings mask/keep + test failure is graceful", t_es)
 
+    # ---------- pricing ----------
+    def t_prices():
+        lst = req("GET", "/api/admin/prices", expect=200)
+        eq(lst["total"] > 30, True, "builtin prices seeded")
+        p = req("POST", "/api/admin/prices", {"pattern": "mock-mini", "provider": "custom", "input_per_m": 1, "output_per_m": 2, "cached_input_per_m": 0.5, "currency": "USD"}, expect=200)
+        eq(req("PUT", f"/api/admin/prices/{p['id']}", {"pattern": "mock-mini", "provider": "custom", "input_per_m": 1.5, "output_per_m": 2, "cached_input_per_m": 0.5, "currency": "USD"}, expect=200)["input_per_m"], 1.5)
+        eq(req("GET", "/api/admin/prices/lookup?provider=custom&model=mock-mini-2026", expect=200)["found"], True)
+        req("POST", "/api/admin/prices", {"pattern": "", "currency": "USD"}, expect=400)
+        req("PUT", "/api/admin/settings/pricing", {"currency": "USD", "usd_to_cny": 7.1}, expect=200)
+        eq(req("GET", "/api/public/info", token="", expect=200)["currency"], "USD")
+        req("PUT", "/api/admin/settings/pricing", {"currency": "EUR", "usd_to_cny": 7.1}, expect=400)
+        # a priced call shows a cost in logs and reports
+        k2 = req("POST", "/api/user/keys", {"name": "k-cost"}, token=BT, expect=200)["key"]
+        req("POST", "/v1/chat/completions", {"model": "solo", "messages": [{"role": "user", "content": "cost"}]}, token=k2, expect=200)
+        time.sleep(1.5)
+        lg = req("GET", "/api/admin/logs?range=24h", expect=200)["items"][0]
+        eq(lg["cost_known"], True, "cost known"); eq(lg["cost_micros"] > 0, True, "cost > 0")
+        eq(req("GET", "/api/admin/usage?range=24h", expect=200)["summary"]["cost"] > 0, True, "report cost")
+        req("POST", "/api/admin/prices/reset-builtin", {}, expect=200)
+        eq(req("GET", "/api/admin/prices/lookup?provider=custom&model=mock-mini", expect=200)["found"], True, "custom row survives reset")
+        req("DELETE", f"/api/admin/prices/{p['id']}", expect=200)
+        req("DELETE", f"/api/admin/prices/{p['id']}", expect=404)
+    check("price table CRUD, lookup, settings and cost in logs/report", t_prices)
+
     # ---------- compliance resources ----------
     pg = req("POST", "/api/admin/compliance/policy-groups", {"name": "pg", "action": "block", "risk_level": "high", "enabled": True, "description": "d"}, expect=200); PG = pg["id"]
     check("policy group update", lambda: eq(req("PUT", f"/api/admin/compliance/policy-groups/{PG}", {"name": "pg2", "action": "audit", "risk_level": "low", "enabled": True, "description": "d2"}, expect=200)["action"], "audit"))

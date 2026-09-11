@@ -38,7 +38,7 @@ import {
 import { useRange } from '@/hooks/useRange';
 import type { LiveAccount, LiveGroup } from '@/types';
 import { CHART_PALETTE, PRIMARY, SEMANTIC } from '@/utils/constants';
-import { dayjs, formatNumber, formatPercent, formatTokens } from '@/utils/format';
+import { dayjs, formatNumber, formatPercent, formatTokens, formatMoney } from '@/utils/format';
 
 const LIVE_INTERVAL = 5000;
 
@@ -395,6 +395,12 @@ export default function Overview() {
           <StatCard
             title={t('common:common.cachedTokens')}
             value={<TokenText value={usageData?.tokens.cached} />}
+            icon={<DatabaseOutlined />}
+            loading={usage.isLoading}
+          />
+          <StatCard
+            title={t('common:common.cost')}
+            value={usageData ? formatMoney(usageData.cost?.total, usageData.cost?.currency) : '-'}
             icon={<DatabaseOutlined />}
             loading={usage.isLoading}
           />

@@ -4,7 +4,8 @@
   "apiKeyId": "API Key ID",
   "stats": {
     "requestsHint": "{{success}} succeeded · {{failed}} failed",
-    "cacheRate": "Cache hit rate {{rate}}%"
+    "cacheRate": "Cache hit rate {{rate}}%",
+    "costHint": "Estimated from Settings → Pricing; unpriced models excluded"
   },
   "trend": {
     "title": "Usage trend",

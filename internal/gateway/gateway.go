@@ -81,6 +81,7 @@ type Gateway struct {
 
 	router  atomic.Pointer[Router]
 	checker atomic.Pointer[Checker]
+	pricer  atomic.Pointer[Pricer]
 
 	activeUsers    activeSet
 	streamCount    atomic.Int64
@@ -111,6 +112,11 @@ func newMetrics() Metrics {
 		Latency:          metrics.NewHistogram([]float64{0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 120}),
 		UpstreamAttempts: metrics.NewLabeledCounter(),
 	}
+}
+
+// Pricer estimates the cost of an attempt in the base currency (micro-units).
+type Pricer interface {
+	Cost(provider, model string, prompt, completion, cached int64) (micros int64, known bool)
 }
 
 // BodySink receives request/response bodies for external audit storage.
@@ -202,6 +208,7 @@ func (g *Gateway) InvalidateKeys()          { g.keys.invalidate() }
 func (g *Gateway) ResetHealth(id uint)      { g.health.reset(id) }
 func (g *Gateway) SetRouter(r Router)       { g.router.Store(&r) }
 func (g *Gateway) SetChecker(c Checker)     { g.checker.Store(&c) }
+func (g *Gateway) SetPricer(p Pricer)       { g.pricer.Store(&p) }
 func (g *Gateway) Snapshot() *Snapshot      { return g.snap.get() }
 func (g *Gateway) HTTPClient() *http.Client { return g.client.Load() }
 func (g *Gateway) Cipher() *crypto.Cipher   { return g.cipher }

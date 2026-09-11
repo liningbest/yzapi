@@ -1,9 +1,10 @@
 import { Descriptions, Drawer, Space, Timeline, Typography, Tooltip } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { useSiteStore } from '@/stores/site';
 import { NeutralTag, ProtocolTag, ProviderAvatar, ResultTag, SectionTitle, StatusCodeTag, TypeTag, UsageStatusTag } from '@/components';
 import { useIsMobile } from '@/hooks/useMediaQuery';
 import type { CallLog, LogAttempt } from '@/types';
-import { formatDateTime, formatMs, formatNumber } from '@/utils/format';
+import { formatDateTime, formatMs, formatNumber, formatMoney } from '@/utils/format';
 
 interface Props {
   open: boolean;
@@ -17,6 +18,7 @@ function Secondary({ children }: { children: React.ReactNode }) {
 
 export default function LogDetailDrawer({ open, log, onClose }: Props) {
   const { t } = useTranslation(['logs', 'common']);
+  const currency = useSiteStore((s) => s.currency);
   const mobile = useIsMobile();
   const dash = '-';
 
@@ -124,6 +126,15 @@ export default function LogDetailDrawer({ open, log, onClose }: Props) {
             </Descriptions.Item>
             <Descriptions.Item label={t('common:common.statusCode')}>
               <StatusCodeTag code={log.status_code} />
+            </Descriptions.Item>
+            <Descriptions.Item label={t('common:common.cost')}>
+              {log.cost_known === false && log.total_tokens > 0 ? (
+                <Tooltip title={t('logs:costUnpriced')}>
+                  <NeutralTag>{t('logs:unpriced')}</NeutralTag>
+                </Tooltip>
+              ) : (
+                formatMoney((log.cost_micros ?? 0) / 1e6, currency)
+              )}
             </Descriptions.Item>
             <Descriptions.Item label={t('common:common.totalLatency')}>{formatMs(log.latency_ms)}</Descriptions.Item>
             <Descriptions.Item label={t('common:common.upstreamLatency')}>{formatMs(log.upstream_latency_ms)}</Descriptions.Item>

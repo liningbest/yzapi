@@ -55,6 +55,9 @@ import type {
   VectorSettings,
   VectorTestResult,
   WordListParams,
+  ModelPrice,
+  ModelPriceInput,
+  PricingSettings
 } from '@/types';
 
 const A = '/api/admin';
@@ -167,8 +170,17 @@ export const usageApi = {
   query: (params: UsageParams) => get<UsageResponse>(`${A}/usage`, params),
 };
 
+export const pricesApi = {
+  list: (q?: string) => get<{ items: ModelPrice[]; total: number; builtin_updated: string; currency: string }>(`${A}/prices`, q ? { q } : undefined),
+  create: (body: ModelPriceInput) => post<ModelPrice>(`${A}/prices`, body),
+  update: (id: number, body: ModelPriceInput) => put<ModelPrice>(`${A}/prices/${id}`, body),
+  remove: (id: number) => del(`${A}/prices/${id}`),
+  resetBuiltin: () => post<{ builtin_updated: string }>(`${A}/prices/reset-builtin`, {}),
+};
+
 export const settingsApi = {
   all: () => get<AllSettings>(`${A}/settings`),
+  savePricing: (body: PricingSettings) => put<PricingSettings>(`${A}/settings/pricing`, body),
   saveBasic: (body: BasicSettings) => put<BasicSettings>(`${A}/settings/basic`, body),
   savePerformance: (body: PerformanceSettings) => put<PerformanceSettings>(`${A}/settings/performance`, body),
   saveVector: (body: VectorSettings) => put<VectorSettings>(`${A}/settings/vector`, body),

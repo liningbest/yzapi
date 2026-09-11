@@ -7,7 +7,8 @@
     "vector": "向量服务",
     "smartRoute": "智能路由",
     "compliance": "内容合规",
-    "elasticsearch": "Elasticsearch"
+    "elasticsearch": "Elasticsearch",
+    "pricing": "计价"
   },
   "unit": {
     "days": "天",
@@ -219,6 +220,38 @@
       "lastSuccessAt": "最近写入成功",
       "failingSince": "连续失败开始",
       "healthy": "正常"
+    }
+  },
+  "pricing": {
+    "notice": "内置单价为 {{date}} 核对的参考价（每百万 Token），供应商随时可能调价，请以各家官网为准并按需修改；未定价的模型在报表中标记为“未定价”，不计入费用。",
+    "anyProvider": "任意供应商",
+    "builtin": "内置",
+    "custom": "自定义",
+    "pattern": "模型名 / 前缀",
+    "patternExtra": "精确匹配模型名，或作为前缀匹配（gpt-5 匹配 gpt-5-2026-03-01，但不匹配 gpt-5-mini，它有自己的行）；越长越优先",
+    "input": "输入 /M",
+    "output": "输出 /M",
+    "cached": "缓存读 /M",
+    "cachedExtra": "命中提示缓存的输入 Token 单价",
+    "cacheWrite": "缓存写 /M",
+    "cacheWriteExtra": "仅 Anthropic 计费，当前不单独计量，按输入价计入",
+    "rowCurrency": "单价货币",
+    "unit": "单价均为每百万 Token",
+    "unitHint": "报表按「计价货币」换算展示",
+    "table": "模型单价表",
+    "search": "搜索模型或供应商",
+    "reset": "恢复内置价格",
+    "resetConfirm": "恢复所有内置行为参考价并删除已废弃的内置行，自定义行保留。继续？",
+    "resetDone": "已恢复内置价格",
+    "add": "新增单价",
+    "edit": "编辑单价",
+    "currency": {
+      "label": "计价货币",
+      "extra": "报表和日志统一按此货币展示"
+    },
+    "rate": {
+      "label": "美元兑人民币汇率",
+      "extra": "单价货币与计价货币不同时用于换算"
     }
   }
 }

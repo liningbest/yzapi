@@ -474,6 +474,7 @@ type logAttempt struct {
 	UsageStatus      string `json:"usage_status"`
 	PromptTokens     int64  `json:"prompt_tokens"`
 	CompletionTokens int64  `json:"completion_tokens"`
+	CostMicros       int64  `json:"cost_micros"`
 }
 
 // Aggregate folds call logs into hourly rows. Request-level counters go to the account
@@ -513,7 +514,7 @@ func Aggregate(batch []*model.CallLog) []*model.UsageHourly {
 		if len(l.Attempts) > 0 {
 			_ = json.Unmarshal([]byte(l.Attempts), &attempts)
 		}
-		var ap, ac int64
+		var ap, ac, acost int64
 		for _, a := range attempts {
 			au := row(l, h, a.AccountID, a.Provider)
 			au.Attempts++
@@ -523,8 +524,13 @@ func Aggregate(batch []*model.CallLog) []*model.UsageHourly {
 			au.PromptTokens += a.PromptTokens
 			au.CompletionTokens += a.CompletionTokens
 			au.TotalTokens += a.PromptTokens + a.CompletionTokens
+			au.CostMicros += a.CostMicros
 			ap += a.PromptTokens
 			ac += a.CompletionTokens
+			acost += a.CostMicros
+		}
+		if rcost := l.CostMicros - acost; rcost > 0 {
+			u.CostMicros += rcost // cost not attributable to an attempt stays on the answering account
 		}
 		// Whatever the request knows beyond its attempts is booked on the answering
 		// account: prompt / completion remainders (legacy logs without per-attempt usage)
@@ -561,6 +567,7 @@ func applyRollup(tx *gorm.DB, batch []*model.CallLog) error {
 				"cached_tokens":     gorm.Expr("usage_hourlies.cached_tokens + ?", u.CachedTokens),
 				"unknown_usage":     gorm.Expr("usage_hourlies.unknown_usage + ?", u.UnknownUsage),
 				"latency_ms":        gorm.Expr("usage_hourlies.latency_ms + ?", u.LatencyMs),
+				"cost_micros":       gorm.Expr("COALESCE(usage_hourlies.cost_micros, 0) + ?", u.CostMicros),
 			}),
 		}).Create(u).Error
 		if err != nil {

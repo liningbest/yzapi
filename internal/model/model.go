@@ -237,14 +237,18 @@ type CallLog struct {
 	//                     streams this interleaves upstream reads and client writes
 	//   ClientWriteMs     time spent blocked in Write/Flush towards the client (streams);
 	//                     UpstreamLatencyMs - ClientWriteMs approximates pure upstream wait
-	UpstreamLatencyMs int64     `json:"upstream_latency_ms"`
-	FirstByteMs       int64     `json:"first_byte_ms"`
-	ClientWriteMs     int64     `json:"client_write_ms"`
-	Error             string    `gorm:"size:1024" json:"error"`
-	Attempts          JSON      `gorm:"type:text" json:"attempts"`
-	RouteLabel        string    `gorm:"size:16" json:"route_label"`
-	ClientIP          string    `gorm:"size:64" json:"client_ip"`
-	CreatedAt         time.Time `gorm:"index" json:"created_at"`
+	UpstreamLatencyMs int64 `json:"upstream_latency_ms"`
+	FirstByteMs       int64 `json:"first_byte_ms"`
+	ClientWriteMs     int64 `json:"client_write_ms"`
+	// Estimated cost in the base currency, micro-units (1e-6), summed over attempts and
+	// frozen at record time. CostKnown is false when any attempt with tokens had no price.
+	CostMicros int64     `gorm:"not null;default:0" json:"cost_micros"`
+	CostKnown  bool      `gorm:"not null;default:false" json:"cost_known"`
+	Error      string    `gorm:"size:1024" json:"error"`
+	Attempts   JSON      `gorm:"type:text" json:"attempts"`
+	RouteLabel string    `gorm:"size:16" json:"route_label"`
+	ClientIP   string    `gorm:"size:64" json:"client_ip"`
+	CreatedAt  time.Time `gorm:"index" json:"created_at"`
 }
 
 // UsageHourly is a pre-aggregated rollup used by dashboards.
@@ -273,6 +277,25 @@ type UsageHourly struct {
 	CachedTokens     int64 `json:"cached_tokens"`
 	UnknownUsage     int64 `json:"unknown_usage"` // requests whose usage is partial or unknown
 	LatencyMs        int64 `json:"latency_ms"`
+	CostMicros       int64 `gorm:"not null;default:0" json:"cost_micros"` // booked like tokens: on the attempt's account
+}
+
+// ModelPrice is one row of the price table (per 1M tokens in Currency). Pattern
+// matches a model name exactly or as a prefix before "-", ":" or "@"; Provider "" applies
+// to any provider. Builtin rows are seeded and can be edited or reset.
+type ModelPrice struct {
+	ID              uint      `gorm:"primaryKey" json:"id"`
+	Pattern         string    `gorm:"size:128;index" json:"pattern"`
+	Provider        string    `gorm:"size:32;index" json:"provider"`
+	InputPerM       float64   `json:"input_per_m"`
+	OutputPerM      float64   `json:"output_per_m"`
+	CachedInputPerM float64   `json:"cached_input_per_m"`
+	CacheWritePerM  float64   `json:"cache_write_per_m"`
+	Currency        string    `gorm:"size:8" json:"currency"`
+	Builtin         bool      `gorm:"not null;default:false" json:"builtin"`
+	Enabled         bool      `gorm:"not null;default:true" json:"enabled"`
+	Note            string    `gorm:"size:255" json:"note"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // RouteSample is a labelled example used by smart routing.
@@ -372,6 +395,6 @@ func All() []any {
 	return []any{
 		&User{}, &UserGroup{}, &ModelGroup{}, &Account{}, &ModelMapping{}, &APIKey{},
 		&CallLog{}, &UsageHourly{}, &RouteSample{}, &RouteDecision{},
-		&PolicyGroup{}, &SensitiveWord{}, &AuditSample{}, &AuditLog{}, &Setting{},
+		&PolicyGroup{}, &SensitiveWord{}, &AuditSample{}, &AuditLog{}, &Setting{}, &ModelPrice{},
 	}
 }

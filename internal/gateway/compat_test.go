@@ -451,3 +451,52 @@ func TestCompatUpstreamHeaders(t *testing.T) {
 		t.Fatalf("headers: %v", w.Header())
 	}
 }
+
+type testPricer struct{ table map[string]float64 } // model -> price per token (micros), same for in/out
+
+func (p testPricer) Cost(_, m string, prompt, completion, _ int64) (int64, bool) {
+	v, ok := p.table[m]
+	if !ok {
+		return 0, false
+	}
+	return int64(float64(prompt+completion) * v), true
+}
+
+// Cost is estimated per attempt and summed; an unpriced attempt marks the request's
+// cost as unknown; the rollup books each attempt's cost on its own account.
+func TestCostPerAttemptAndRollup(t *testing.T) {
+	bad := jsonUpstream(500, err500WithUsage) // 13 tokens on acc0
+	defer bad.Close()
+	good := jsonUpstream(200, ok200) // 25 tokens on acc1
+	defer good.Close()
+	e := newE2E(t, bad.URL, good.URL)
+	e.g.SetPricer(testPricer{table: map[string]float64{"m": 100}}) // 100 micros per token
+	if w := e.chat(t, context.Background(), false); w.Code != 200 {
+		t.Fatalf("status %d", w.Code)
+	}
+	l, att := e.callLog(t)
+	if l.CostMicros != 3800 || !l.CostKnown || att[0].CostMicros != 1300 || att[1].CostMicros != 2500 {
+		t.Fatalf("cost: log=%d known=%v attempts=%d/%d", l.CostMicros, l.CostKnown, att[0].CostMicros, att[1].CostMicros)
+	}
+	var rows []model.UsageHourly
+	e.db.Find(&rows)
+	byAcc := map[uint]int64{}
+	for _, r := range rows {
+		byAcc[r.AccountID] += r.CostMicros
+	}
+	if byAcc[att[0].AccountID] != 1300 || byAcc[att[1].AccountID] != 2500 {
+		t.Fatalf("rollup cost by account: %v", byAcc)
+	}
+}
+
+func TestCostUnknownWhenUnpriced(t *testing.T) {
+	up := jsonUpstream(200, ok200)
+	defer up.Close()
+	e := newE2E(t, up.URL)
+	e.g.SetPricer(testPricer{table: map[string]float64{}})
+	e.chat(t, context.Background(), false)
+	l, _ := e.callLog(t)
+	if l.CostKnown || l.CostMicros != 0 {
+		t.Fatalf("unpriced model must be cost_known=false with 0, got known=%v cost=%d", l.CostKnown, l.CostMicros)
+	}
+}

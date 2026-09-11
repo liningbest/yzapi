@@ -4,13 +4,14 @@ import type { ColumnsType } from 'antd/es/table';
 import { ArrowRightOutlined, EyeOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { useSiteStore } from '@/stores/site';
 import { logsApi } from '@/api';
 import { EmptyState, FilterBar, PageHeader, ProviderAvatar, RangeSelector, ResultTag, StatusCodeTag, TimeCell, UsageStatusTag } from '@/components';
 import { useRange } from '@/hooks/useRange';
 import { useTableQuery } from '@/hooks/useTableQuery';
 import type { CallLog, LogResult } from '@/types';
 import { MODEL_TYPES } from '@/utils/constants';
-import { formatMs, formatNumber, formatTokens, shortId } from '@/utils/format';
+import { formatMs, formatNumber, formatTokens, shortId, formatMoney } from '@/utils/format';
 import LogDetailDrawer from './logs/LogDetailDrawer';
 
 interface Filters {
@@ -37,6 +38,7 @@ function Small({ children, secondary }: { children: React.ReactNode; secondary?:
 
 export default function Logs() {
   const { t } = useTranslation(['logs', 'common']);
+  const currency = useSiteStore((s) => s.currency);
   const { filters, setFilters, params, pagination } = useTableQuery<Filters>({});
   const { range, setRange, custom, setCustom, params: rangeParams } = useRange('24h');
   const [detail, setDetail] = useState<CallLog | null>(null);
@@ -166,6 +168,20 @@ export default function Logs() {
               </div>
             </div>
           </Tooltip>
+        ),
+    },
+    {
+      title: t('common:common.cost'),
+      key: 'cost',
+      width: 90,
+      align: 'right',
+      render: (_, r) =>
+        r.cost_known === false && (r.total_tokens ?? 0) > 0 ? (
+          <Tooltip title={t('logs:costUnpriced')}>
+            <span style={{ color: 'var(--yz-text-secondary)' }}>{t('logs:unpriced')}</span>
+          </Tooltip>
+        ) : (
+          <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatMoney((r.cost_micros ?? 0) / 1e6, currency)}</span>
         ),
     },
     {

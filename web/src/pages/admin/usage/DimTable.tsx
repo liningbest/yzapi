@@ -5,12 +5,13 @@ import { useTranslation } from 'react-i18next';
 import { EmptyState, NeutralTag, ProportionBar, ProviderAvatar, TokenText } from '@/components';
 import type { UsageDim } from '@/types';
 import { CHART_PALETTE } from '@/utils/constants';
-import { formatNumber } from '@/utils/format';
+import { formatMoney, formatNumber } from '@/utils/format';
 
 interface Props {
   title: React.ReactNode;
   icon?: React.ReactNode;
   items: UsageDim[] | undefined;
+  currency?: string;
   loading?: boolean;
   /** Render a provider avatar next to the name (for by_provider). */
   provider?: boolean;
@@ -26,7 +27,7 @@ export function splitDeleted(name: string): { label: string; deleted: boolean } 
 }
 
 /** Compact distribution table shared by all six usage dimensions. */
-export default function DimTable({ title, icon, items, loading, provider, color = CHART_PALETTE[0] }: Props) {
+export default function DimTable({ title, icon, items, currency, loading, provider, color = CHART_PALETTE[0] }: Props) {
   const { t } = useTranslation(['usage', 'common']);
   const rows = useMemo(() => [...(items ?? [])].sort((a, b) => b.total_tokens - a.total_tokens), [items]);
   const totalTokens = useMemo(() => rows.reduce((s, r) => s + (r.total_tokens || 0), 0), [rows]);
@@ -85,6 +86,14 @@ export default function DimTable({ title, icon, items, loading, provider, color 
       align: 'right',
       sorter: (a, b) => a.cached_tokens - b.cached_tokens,
       render: (v: number) => <TokenText value={v} />,
+    },
+    {
+      title: t('common:common.cost'),
+      dataIndex: 'cost',
+      width: 100,
+      align: 'right',
+      sorter: (a, b) => (a.cost ?? 0) - (b.cost ?? 0),
+      render: (v: number | undefined) => <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatMoney(v ?? 0, currency)}</span>,
     },
     {
       title: t('common:common.proportion'),

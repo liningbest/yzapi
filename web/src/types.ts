@@ -58,6 +58,7 @@ export interface PublicInfo {
   site_name: string;
   version: string;
   base_url: string;
+  currency?: string;
 }
 
 // ---------- Overview ----------
@@ -106,6 +107,7 @@ export interface TrendPoint {
 
 export interface OverviewUsage {
   tokens: { total: number; prompt: number; completion: number; cached: number; cache_rate: number };
+  cost: { total: number; currency: string };
   requests: { total: number; success: number; failed: number; fail_rate: number };
   active_users: number;
   active_keys: number;
@@ -548,6 +550,10 @@ export interface CallLog {
   tokens_known: boolean;
   /** Request-level usage was re-derived from attempt records during an upgrade. */
   usage_corrected?: boolean;
+  /** Estimated cost in the base currency (micro-units); cost_known=false means some attempt had no price. */
+  cost_micros?: number;
+  cost_known?: boolean;
+  cost?: number;
   usage_status?: UsageStatus;
   est_prompt_tokens?: number;
   result: LogResult;
@@ -592,6 +598,7 @@ export interface UsageSummary {
   completion_tokens: number;
   total_tokens: number;
   cached_tokens: number;
+  cost: number;
 }
 
 export interface UsageTrendPoint {
@@ -609,10 +616,12 @@ export interface UsageDim {
   attempts?: number;
   total_tokens: number;
   cached_tokens: number;
+  cost?: number;
 }
 
 export interface UsageResponse {
   summary: UsageSummary;
+  currency?: string;
   trend: UsageTrendPoint[];
   by_provider?: UsageDim[];
   by_model?: UsageDim[];
@@ -695,7 +704,30 @@ export interface ElasticsearchSettings {
   retention_days: number;
 }
 
+export interface PricingSettings {
+  currency: 'CNY' | 'USD';
+  usd_to_cny: number;
+}
+
+export interface ModelPrice {
+  id: number;
+  pattern: string;
+  provider: string;
+  input_per_m: number;
+  output_per_m: number;
+  cached_input_per_m: number;
+  cache_write_per_m: number;
+  currency: 'USD' | 'CNY';
+  builtin: boolean;
+  enabled: boolean;
+  note: string;
+  updated_at: string;
+}
+
+export type ModelPriceInput = Omit<ModelPrice, 'id' | 'builtin' | 'updated_at'>;
+
 export interface AllSettings {
+  pricing: PricingSettings;
   basic: BasicSettings;
   performance: PerformanceSettings;
   vector: VectorSettings;

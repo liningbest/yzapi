@@ -7,7 +7,8 @@
     "vector": "向量服務",
     "smartRoute": "智慧路由",
     "compliance": "內容合規",
-    "elasticsearch": "Elasticsearch"
+    "elasticsearch": "Elasticsearch",
+    "pricing": "計價"
   },
   "unit": {
     "days": "天",
@@ -219,6 +220,38 @@
       "lastSuccessAt": "最近寫入成功",
       "failingSince": "連續失敗開始",
       "healthy": "正常"
+    }
+  },
+  "pricing": {
+    "notice": "內建單價為 {{date}} 核對的參考價（每百萬 Token），供應商隨時可能調價，請以各家官網為準並按需修改；未定價的模型在報表中標記為「未定價」，不計入費用。",
+    "anyProvider": "任意供應商",
+    "builtin": "內建",
+    "custom": "自訂",
+    "pattern": "模型名 / 前綴",
+    "patternExtra": "精確匹配模型名，或作為前綴匹配（gpt-5 匹配 gpt-5-2026-03-01，但不匹配 gpt-5-mini）；越長越優先",
+    "input": "輸入 /M",
+    "output": "輸出 /M",
+    "cached": "快取讀 /M",
+    "cachedExtra": "命中提示快取的輸入 Token 單價",
+    "cacheWrite": "快取寫 /M",
+    "cacheWriteExtra": "僅 Anthropic 計費，目前不單獨計量，按輸入價計入",
+    "rowCurrency": "單價貨幣",
+    "unit": "單價均為每百萬 Token",
+    "unitHint": "報表按「計價貨幣」換算顯示",
+    "table": "模型單價表",
+    "search": "搜尋模型或供應商",
+    "reset": "恢復內建價格",
+    "resetConfirm": "恢復所有內建行為參考價並刪除已廢棄的內建行，自訂行保留。繼續？",
+    "resetDone": "已恢復內建價格",
+    "add": "新增單價",
+    "edit": "編輯單價",
+    "currency": {
+      "label": "計價貨幣",
+      "extra": "報表和日誌統一按此貨幣顯示"
+    },
+    "rate": {
+      "label": "美元兌人民幣匯率",
+      "extra": "單價貨幣與計價貨幣不同時用於換算"
     }
   }
 }

@@ -57,6 +57,9 @@ type attemptRecord struct {
 	UsageStatus      string `json:"usage_status"`
 	PromptTokens     int64  `json:"prompt_tokens,omitempty"`
 	CompletionTokens int64  `json:"completion_tokens,omitempty"`
+	CachedTokens     int64  `json:"cached_tokens,omitempty"`
+	CostMicros       int64  `json:"cost_micros,omitempty"` // base currency, 1e-6 units
+	CostKnown        bool   `json:"cost_known,omitempty"`
 }
 
 // doUpstream sends the request and returns the response without reading the body.

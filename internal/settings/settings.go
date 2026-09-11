@@ -75,7 +75,14 @@ type Elasticsearch struct {
 	RetentionDays int    `json:"retention_days"`
 }
 
+// Pricing controls how token usage is turned into money in reports.
+type Pricing struct {
+	Currency string  `json:"currency"`   // base currency for all reported costs: CNY | USD
+	USDToCNY float64 `json:"usd_to_cny"` // exchange rate used when a price row is in the other currency
+}
+
 type All struct {
+	Pricing       Pricing       `json:"pricing"`
 	Basic         Basic         `json:"basic"`
 	Performance   Performance   `json:"performance"`
 	Vector        Vector        `json:"vector"`
@@ -119,6 +126,7 @@ func Defaults() All {
 			SemanticThreshold: 0.85,
 			OnFailure:         "allow",
 		},
+		Pricing: Pricing{Currency: "CNY", USDToCNY: 7.2},
 		Elasticsearch: Elasticsearch{
 			AuthType:      "apikey",
 			IndexPrefix:   "yzapi",
@@ -169,6 +177,8 @@ func (s *Store) Reload() error {
 			_ = json.Unmarshal([]byte(r.Value), &all.Compliance)
 		case "elasticsearch":
 			_ = json.Unmarshal([]byte(r.Value), &all.Elasticsearch)
+		case "pricing":
+			_ = json.Unmarshal([]byte(r.Value), &all.Pricing)
 		}
 	}
 	s.cur.Store(&all)
@@ -226,3 +236,4 @@ func (s *Store) SetVector(v Vector) error               { return s.save("vector"
 func (s *Store) SetSmartRoute(v SmartRoute) error       { return s.save("smart_route", v) }
 func (s *Store) SetCompliance(v Compliance) error       { return s.save("compliance", v) }
 func (s *Store) SetElasticsearch(v Elasticsearch) error { return s.save("elasticsearch", v) }
+func (s *Store) SetPricing(v Pricing) error             { return s.save("pricing", v) }

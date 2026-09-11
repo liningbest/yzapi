@@ -28,7 +28,7 @@ func (s *Server) getSettings(c *gin.Context) {
 		es.Password = masked
 	}
 	c.JSON(200, gin.H{"basic": all.Basic, "performance": all.Performance, "vector": all.Vector,
-		"smart_route": all.SmartRoute, "compliance": all.Compliance, "elasticsearch": es})
+		"smart_route": all.SmartRoute, "compliance": all.Compliance, "elasticsearch": es, "pricing": all.Pricing})
 }
 
 func (s *Server) putBasic(c *gin.Context) {

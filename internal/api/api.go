@@ -4,11 +4,13 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"yzapi/internal/pricing"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -68,6 +70,7 @@ type Server struct {
 	st      *settings.Store
 	cipher  *crypto.Cipher
 	eng     Engines
+	pricer  *pricing.Service
 	auth    *authService
 	version string
 	started time.Time
@@ -79,7 +82,16 @@ func New(cfg *config.Config, db *gorm.DB, gw *gateway.Gateway, st *settings.Stor
 	if err != nil {
 		return nil, err
 	}
-	return &Server{cfg: cfg, db: db, gw: gw, st: st, cipher: cipher, eng: eng, auth: a, version: version, started: time.Now()}, nil
+	if err := pricing.Seed(db); err != nil {
+		return nil, fmt.Errorf("seed price table: %w", err)
+	}
+	pr, err := pricing.New(db, st)
+	if err != nil {
+		return nil, fmt.Errorf("load price table: %w", err)
+	}
+	gw.SetPricer(pr)
+	st.OnApply(func(settings.All) { _ = pr.Reload() })
+	return &Server{cfg: cfg, db: db, gw: gw, st: st, cipher: cipher, eng: eng, auth: a, version: version, started: time.Now(), pricer: pr}, nil
 }
 
 // SetEngines installs subsystems after construction (they need the server's embed func).
@@ -148,6 +160,13 @@ func (s *Server) Register(r *gin.Engine) {
 		lg.GET("/:id", s.getLog)
 
 		admin.GET("/usage", s.adminUsage)
+		pr := admin.Group("/prices")
+		pr.GET("", s.listPrices)
+		pr.POST("", s.createPrice)
+		pr.PUT("/:id", s.updatePrice)
+		pr.DELETE("/:id", s.deletePrice)
+		pr.POST("/reset-builtin", s.resetBuiltinPrices)
+		pr.GET("/lookup", s.lookupPrice)
 		admin.POST("/usage/rebuild", s.rebuildUsage)
 		admin.GET("/usage/reconcile", s.reconcileUsage)
 		admin.GET("/usage/metering", s.meteringStatus)
@@ -155,6 +174,7 @@ func (s *Server) Register(r *gin.Engine) {
 		se := admin.Group("/settings")
 		se.GET("", s.getSettings)
 		se.PUT("/basic", s.putBasic)
+		se.PUT("/pricing", s.putPricing)
 		se.PUT("/performance", s.putPerformance)
 		se.PUT("/vector", s.putVector)
 		se.POST("/vector/test", s.testVector)
@@ -295,7 +315,7 @@ func likeEscape(s string) string {
 
 func (s *Server) publicInfo(c *gin.Context) {
 	b := s.st.Get().Basic
-	c.JSON(200, gin.H{"site_name": b.SiteName, "version": s.version, "base_url": b.BaseURL})
+	c.JSON(200, gin.H{"site_name": b.SiteName, "version": s.version, "base_url": b.BaseURL, "currency": s.st.Get().Pricing.Currency})
 }
 
 func (s *Server) systemInfo(c *gin.Context) {

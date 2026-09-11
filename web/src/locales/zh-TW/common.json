@@ -185,7 +185,8 @@
     "deleted": "已刪除",
     "inUse": "使用中",
     "topK": "Top K",
-    "empty": "-"
+    "empty": "-",
+    "cost": "估算費用"
   },
   "type": {
     "text": "文字",

@@ -21,7 +21,7 @@ import { FilterBar, PageHeader, ProviderAvatar, RangeSelector, SectionTitle, Sta
 import { useRange } from '@/hooks/useRange';
 import type { UsageParams } from '@/types';
 import { CHART_PALETTE, MODEL_TYPES } from '@/utils/constants';
-import { formatNumber, formatTokens } from '@/utils/format';
+import { formatNumber, formatTokens, formatMoney } from '@/utils/format';
 import DimTable from './usage/DimTable';
 import TrendChart from './usage/TrendChart';
 
@@ -108,6 +108,13 @@ export default function Usage() {
       key: 'total',
       title: t('common:common.totalTokens'),
       value: stat(s?.total_tokens),
+      icon: <DatabaseOutlined />,
+    },
+    {
+      key: 'cost',
+      title: t('common:common.cost'),
+      value: s ? formatMoney(s.cost, data?.currency) : '-',
+      hint: t('usage:stats.costHint'),
       icon: <DatabaseOutlined />,
     },
     {
@@ -258,6 +265,7 @@ export default function Usage() {
               title={d.title}
               icon={d.icon}
               items={d.items}
+              currency={data?.currency}
               loading={loading}
               provider={'provider' in d ? d.provider : false}
               color={CHART_PALETTE[i % CHART_PALETTE.length]}
