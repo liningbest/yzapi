@@ -171,7 +171,7 @@
 - `GET ?q=` → `{items, total, builtin_updated, currency}`；`POST`、`PUT /:id`、`DELETE /:id`；`POST /reset-builtin` 恢复内置参考价（自定义行保留）；`GET /lookup?provider=&model=` → `{found, price}`。
 - 内置表随版本更新，启动时只补充缺失的内置行，不覆盖已编辑的行。
 - `PUT /api/admin/settings/pricing {currency:"CNY"|"USD", usd_to_cny}`：**显示币种**与汇率。账本固定为美元：人民币单价行按汇率折成美元入账，展示时再按显示币种换算；切换显示币种或汇率只改变展示，历史金额随之整体换算，不会被换标签或混币种累加。`GET /api/public/info`、价目表与用量报表都返回当前 `currency`，价目表另带 `ledger:"USD"`。
-- 费用在每次尝试结束时按当时单价估算并冻结：`call_logs.cost_micros`（美元账本的百万分之一单位）、`cost_known`（任一有 Token 的尝试无单价、或任一尝试用量为 unknown / partial，则为 false：此时金额只是已知部分的下限）；小时聚合 `cost_micros` 按尝试账号归属。管理端日志列表 / 详情与用户日志都带按显示币种换算后的 `cost`；用量报表 `summary.cost`、各分布项 `cost`、趋势点 `cost` 以及 `currency`；概览 `cost.total`。输入 Token 分三段计价：缓存读（`cached_tokens`，缓存价）、缓存写（`cache_write_tokens`，来自 Anthropic `cache_creation_input_tokens`，按 `cache_write_per_m`，该行没填则按输入价）、其余按输入价。单价修改后不回溯历史记录。
+- 费用在每次尝试结束时按当时单价估算并冻结：`call_logs.cost_micros`（美元账本的百万分之一单位，`cost_ledger:"USD"` 标记该行已按账本记账；无标记的旧行由启动迁移与 journal 回放各转换一次）、`cost_known`（任一有 Token 的尝试无单价、或任一尝试用量为 unknown / partial，则为 false：此时金额只是已知部分的下限）；小时聚合 `cost_micros` 按尝试账号归属。管理端日志列表 / 详情与用户日志都带按显示币种换算后的 `cost`；用量报表 `summary.cost`、各分布项 `cost`、趋势点 `cost` 以及 `currency`；概览 `cost.total`。输入 Token 分三段计价：缓存读（`cached_tokens`，缓存价）、缓存写（`cache_write_tokens`，来自 Anthropic `cache_creation_input_tokens`，按 `cache_write_per_m`，该行没填则按输入价）、其余按输入价。单价修改后不回溯历史记录。
 
 ### 系统
 - `GET /api/admin/system/info` → `{version, go_version, db_driver, uptime_sec, started_at, data_dir}`

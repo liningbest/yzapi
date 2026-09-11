@@ -158,7 +158,8 @@
     "empty": "No call records",
     "emptyHint": "No matching calls in the selected time range",
     "costUnpriced": "No price configured for this model; cost not counted",
-    "unpriced": "Unpriced"
+    "unpriced": "Unpriced",
+    "costPartial": "Partially priced: an attempt had unknown or incomplete usage; the actual cost is at least this"
   },
   "group": {
     "title": "My User Group",

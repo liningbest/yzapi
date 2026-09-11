@@ -152,3 +152,16 @@
 | R112-05 P2 | 空价目表不能正确回滚 | 快照 `prices` 改为指针：字段存在即整体恢复（空集合也恢复为空），只有 v1 快照缺字段才不动 | `TestR112RestoreEmptyPrices`；api-crud 空价目表恢复用例 |
 
 评审方 `docs/review-repros/accept112/run.py` 六个断言全部通过（`TestReview112SnapshotContainsEncryptedKey` 的夹具因持久化结构改名改为经 `captureConfig` 断言）。全量 race、smoke 56 项、api-crud 90 项通过。「设置 → 计价」的文案改为"显示币种"，并说明账本固定为美元。
+
+## 1.0.14：第二轮复核 R113-01…03 与并行评审意见（`docs/acceptance-review-1.0.13-2026-09-11.md`）
+
+| 编号 | 问题 | 修改 | 验收方式 |
+|---|---|---|---|
+| R113-01 P1 | 账本迁移遗漏尝试记录内的金额，重建聚合回到旧币种数值 | 迁移逐行处理 `call_logs`：请求金额与 `attempts[].cost_micros` 一起折算并打 `cost_ledger="USD"`；标记升为 `usd-v2`，已跑过 1.0.13 第一版迁移（标记 `usd`）的库只补转尝试金额 | `TestR113MigrationRollupConsistency`（迁移后 `logstore.Aggregate` 与请求金额一致）、`TestLedgerV1Upgrade` |
+| R113-02 P1 | 迁移与标记不在同一事务，失败重试重复折算 | 整个迁移在一个事务内：先占位标记（并发实例只有一个成功）、再改数据、最后写版本；读标记只把 RecordNotFound 当"未迁移"；逐行标记使重复运行天然幂等。迁移移到 journal 写入线程启动之前，旧二进制留下的 journal 记录在提交时经 `LegacyCostFixer` 转换一次 | `TestR113MigrationRetryAtomic`（触发器注入失败，回滚后重试只除一次）、`TestLedgerUSDDisplayStampsOnly`、`TestLegacyCostFixer`、`TestCostFixerAppliedOnCommit` |
+| R113-03 P2 | 快照恢复把禁用的价格变成启用 | 恢复价目在 Create 前记下 Enabled，Create 后显式写回 false | `TestR113RestoreDisabledPrice`（禁用行保持禁用、启用行恢复启用、禁用行不参与计价） |
+| 并行评审 | Anthropic → Chat → Responses 串联流偶发丢缓存写 | `chainStream` 等第一段 goroutine 结束再合并用量（第二段看到终止事件时第一段可能尚未写入） | `TestR112CacheWritePricing` 第五条路径在 `-race` 下稳定 |
+| 并行评审 | 部分已知费用显示成"未计价" | 四处日志视图：`cost_known=false` 且金额 >0 显示 "≥ 金额" 并提示"部分计价"，金额为 0 才显示"未计价" | 人工：让一次尝试 500 无 usage 后成功，日志费用显示 ≥ |
+| 并行评审 | Postgres 恢复后不重置序列 | 恢复事务末尾按方言对 accounts / model_mappings / model_groups / model_prices 执行 `setval` | 代码审查；SQLite 不受影响 |
+
+两轮评审的 `docs/review-repros/accept112/run.py`、`accept113/run.py` 全部通过；全量 `go test -race`、smoke 56、api-crud 90 通过。真实客户端与真实供应商的端到端验收仍未执行。

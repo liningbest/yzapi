@@ -727,3 +727,36 @@ func TestUpgradeVersionBumpRebuildsOnce(t *testing.T) {
 		t.Fatal("current-version marker must not trigger another rebuild")
 	}
 }
+
+// A record replayed from a journal written by an older binary passes through the cost
+// fixer before it is committed; a stamped record is left alone.
+func TestCostFixerAppliedOnCommit(t *testing.T) {
+	db := testDB(t)
+	s, err := New(db, t.TempDir(), func() int { return 30 })
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetCostFixer(func(l *model.CallLog) {
+		if l.CostLedger == "" {
+			l.CostMicros /= 2
+			l.CostLedger = "USD"
+		}
+	})
+	defer s.Close(context.Background())
+	old := sample("old", 10)
+	old.CostMicros = 1000
+	fresh := sample("fresh", 10)
+	fresh.CostMicros, fresh.CostLedger = 1000, "USD"
+	s.Record(old)
+	s.Record(fresh)
+	waitFor(t, func() bool {
+		var n int64
+		db.Model(&model.CallLog{}).Count(&n)
+		return n == 2
+	})
+	var rows []model.CallLog
+	db.Order("request_id").Find(&rows)
+	if rows[0].RequestID != "fresh" || rows[0].CostMicros != 1000 || rows[1].CostMicros != 500 || rows[1].CostLedger != "USD" {
+		t.Fatalf("fixer: %+v", rows)
+	}
+}

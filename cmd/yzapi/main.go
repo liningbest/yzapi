@@ -24,6 +24,7 @@ import (
 	"yzapi/internal/logstore"
 	"yzapi/internal/metrics"
 	"yzapi/internal/model"
+	"yzapi/internal/pricing"
 	"yzapi/internal/routing"
 	"yzapi/internal/server"
 	"yzapi/internal/settings"
@@ -71,11 +72,18 @@ func main() {
 		slog.Error("settings", "err", err)
 		os.Exit(1)
 	}
+	// Convert stored costs into the USD ledger before anything can replay or commit
+	// journal records, then let the replay convert whatever an older binary left behind.
+	if err := pricing.MigrateLedger(database, st); err != nil {
+		slog.Error("cost ledger migration failed", "err", err)
+		os.Exit(1)
+	}
 	logs, err := logstore.New(database, cfg.DataDir, func() int { return st.Get().Basic.LogRetentionDays })
 	if err != nil {
 		slog.Error("open metering journal", "err", err)
 		os.Exit(1)
 	}
+	logs.SetCostFixer(pricing.LegacyCostFixer(st))
 
 	gw, err := gateway.New(cfg, database, cipher, st, logs)
 	if err != nil {

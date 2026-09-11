@@ -128,7 +128,11 @@ export default function LogDetailDrawer({ open, log, onClose }: Props) {
               <StatusCodeTag code={log.status_code} />
             </Descriptions.Item>
             <Descriptions.Item label={t('common:common.cost')}>
-              {log.cost_known === false && log.total_tokens > 0 ? (
+              {log.cost_known === false && (log.cost ?? 0) > 0 ? (
+                <Tooltip title={t('logs:costPartial')}>
+                  <span style={{ borderBottom: '1px dotted currentColor', cursor: 'help' }}>≥ {formatMoney(log.cost ?? 0, currency)}</span>
+                </Tooltip>
+              ) : log.cost_known === false && log.total_tokens > 0 ? (
                 <Tooltip title={t('logs:costUnpriced')}>
                   <NeutralTag>{t('logs:unpriced')}</NeutralTag>
                 </Tooltip>

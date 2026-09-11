@@ -317,7 +317,22 @@ func (s *Server) restoreConfigSnapshot(c *gin.Context) {
 			}
 			for i := range *p.Prices {
 				pr := (*p.Prices)[i]
+				disabled := !pr.Enabled // read before Create: gorm writes the default:true back into the struct
 				if err := tx.Create(&pr).Error; err != nil {
+					return err
+				}
+				if disabled {
+					if err := tx.Model(&model.ModelPrice{}).Where("id = ?", pr.ID).Update("enabled", false).Error; err != nil {
+						return err
+					}
+				}
+			}
+		}
+		// Rows were inserted with their original ids; on Postgres the serial sequences do
+		// not follow explicit ids, so move them past the highest id in use.
+		if tx.Dialector.Name() == "postgres" {
+			for _, table := range []string{"accounts", "model_mappings", "model_groups", "model_prices"} {
+				if err := tx.Exec("SELECT setval(pg_get_serial_sequence('" + table + "', 'id'), COALESCE((SELECT MAX(id) FROM " + table + "), 0) + 1, false)").Error; err != nil {
 					return err
 				}
 			}

@@ -158,7 +158,8 @@
     "empty": "暫無呼叫記錄",
     "emptyHint": "所選時間範圍內沒有符合的呼叫",
     "costUnpriced": "該模型沒有設定單價，費用未計入",
-    "unpriced": "未計價"
+    "unpriced": "未計價",
+    "costPartial": "部分計價：有嘗試的用量未知或不完整，實際費用不低於此數"
   },
   "group": {
     "title": "我的使用者組",

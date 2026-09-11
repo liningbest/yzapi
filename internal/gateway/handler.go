@@ -813,7 +813,7 @@ func (g *Gateway) priceAttempts(req *request) {
 		}
 		total += micros
 	}
-	l.CostMicros, l.CostKnown = total, known
+	l.CostMicros, l.CostKnown, l.CostLedger = total, known, model.CostLedgerUSD
 }
 
 // setUpstreamHeaders tells the client which upstream actually served the request, so
@@ -1219,12 +1219,17 @@ func chainStream(body io.Reader, w io.Writer, flush func(), model string,
 	pr, pw := io.Pipe()
 	var firstUsage *convert.Usage
 	var firstErr error
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		firstUsage, firstErr = first(body, pw)
 		pw.Close()
 	}()
 	u, err := second(pr)
+	// The second stage may return on the terminal event before the first stage has
+	// stored its usage; closing the read end unblocks the first stage, then wait for it.
 	pr.Close()
+	<-done
 	if err == nil && firstErr != nil {
 		err = firstErr
 	}

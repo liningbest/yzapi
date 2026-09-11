@@ -176,7 +176,11 @@ export default function Logs() {
       width: 90,
       align: 'right',
       render: (_, r) =>
-        r.cost_known === false && (r.total_tokens ?? 0) > 0 ? (
+        r.cost_known === false && (r.cost ?? 0) > 0 ? (
+          <Tooltip title={t('logs:costPartial')}>
+            <span style={{ fontVariantNumeric: 'tabular-nums', borderBottom: '1px dotted currentColor', cursor: 'help' }}>≥ {formatMoney(r.cost ?? 0, currency)}</span>
+          </Tooltip>
+        ) : r.cost_known === false && (r.total_tokens ?? 0) > 0 ? (
           <Tooltip title={t('logs:costUnpriced')}>
             <span style={{ color: 'var(--yz-text-secondary)' }}>{t('logs:unpriced')}</span>
           </Tooltip>

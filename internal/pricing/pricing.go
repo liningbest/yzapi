@@ -4,6 +4,8 @@
 package pricing
 
 import (
+	"encoding/json"
+	"errors"
 	"math"
 	"strings"
 	"sync"
@@ -199,7 +201,7 @@ func (s *Service) Lookup(provider, modelName string) (model.ModelPrice, bool) {
 // Ledger is the immutable currency every stored cost is denominated in. Costs are
 // converted into it when a request is priced and out of it into the display currency
 // when reported, so changing the display currency or the rate never relabels history.
-const Ledger = "USD"
+const Ledger = model.CostLedgerUSD
 
 // Cost returns the estimated cost in ledger micro-units (1e-6 USD) and whether a price
 // was found. cached and cacheWrite are disjoint parts of prompt: read from the prompt
@@ -258,29 +260,149 @@ func (s *Service) Currency() string {
 	return c
 }
 
-// ledgerMarker records that stored costs are denominated in the ledger currency.
-const ledgerMarker = "cost_ledger"
+// Ledger migration (R112-02, R113-01, R113-02).
+//
+// Early 1.0.12 builds stored cost_micros in the then-display currency. Every row written
+// since carries cost_ledger="USD"; rows without it are converted exactly once, request
+// amount and the per-attempt amounts inside call_logs.attempts together, in one
+// transaction with the version marker, so a failed or repeated run never divides twice.
+// Rows still arriving from an older binary's journal are converted at commit by
+// LegacyCostFixer under the same rule.
+const (
+	ledgerMarker    = "cost_ledger"
+	ledgerVersion   = "usd-v2"    // v2: attempts converted too
+	ledgerV1        = "usd"       // 1.0.13 marker: request/hourly amounts converted, attempts not
+	ledgerMigrating = "migrating" // placeholder held inside the migration transaction
+)
 
-// MigrateLedger converts costs written by 1.0.12 builds that stored amounts in the
-// then-configured base currency into the fixed USD ledger. It runs once: the marker
-// row is written afterwards, so later changes of the display currency never touch
-// stored values. Attempt-level amounts inside call_logs.attempts are left as written.
+var errLedgerDone = errors.New("ledger migration already applied")
+
+// MigrateLedger converts stored costs into the USD ledger. Safe to call on every start.
 func MigrateLedger(db *gorm.DB, st *settings.Store) error {
 	var row model.Setting
-	if err := db.Where("key = ?", ledgerMarker).First(&row).Error; err == nil {
+	err := db.Where("key = ?", ledgerMarker).First(&row).Error
+	switch {
+	case err == nil && row.Value == ledgerVersion:
 		return nil
+	case err != nil && !errors.Is(err, gorm.ErrRecordNotFound):
+		return err // a read failure must not be mistaken for "not migrated"
 	}
+	v1Done := err == nil && row.Value == ledgerV1
 	pr := st.Get().Pricing
-	if strings.ToUpper(pr.Currency) == "CNY" {
-		rate := pr.USDToCNY
-		if rate <= 0 {
-			rate = 7.2
+	rate := pr.USDToCNY
+	if rate <= 0 {
+		rate = 7.2
+	}
+	divide := strings.ToUpper(pr.Currency) == "CNY"
+	txErr := db.Transaction(func(tx *gorm.DB) error {
+		// Claim the marker first: a second instance racing on the same database either
+		// blocks on the row and then finds it claimed, or fails the insert.
+		if v1Done {
+			res := tx.Model(&model.Setting{}).Where("key = ? AND value = ?", ledgerMarker, ledgerV1).Update("value", ledgerMigrating)
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected == 0 {
+				return errLedgerDone
+			}
+		} else if err := tx.Create(&model.Setting{Key: ledgerMarker, Value: ledgerMigrating, UpdatedAt: time.Now()}).Error; err != nil {
+			return err
 		}
-		for _, table := range []string{"call_logs", "usage_hourlies"} {
-			if err := db.Exec("UPDATE "+table+" SET cost_micros = CAST(ROUND(cost_micros / ?) AS INTEGER) WHERE cost_micros <> 0", rate).Error; err != nil {
+		if divide && !v1Done {
+			if err := tx.Exec("UPDATE usage_hourlies SET cost_micros = CAST(ROUND(cost_micros / ?) AS INTEGER) WHERE cost_micros <> 0", rate).Error; err != nil {
 				return err
 			}
 		}
+		lastID := uint(0)
+		for {
+			var rows []model.CallLog
+			if err := tx.Select("id", "cost_micros", "attempts").Where("id > ? AND (cost_ledger IS NULL OR cost_ledger = '')", lastID).
+				Order("id").Limit(500).Find(&rows).Error; err != nil {
+				return err
+			}
+			if len(rows) == 0 {
+				break
+			}
+			for i := range rows {
+				r := &rows[i]
+				micros := r.CostMicros
+				if divide && !v1Done {
+					micros = int64(math.Round(float64(micros) / rate))
+				}
+				upd := map[string]any{"cost_micros": micros, "cost_ledger": Ledger}
+				if att, changed := convertAttempts(r.Attempts, rate, divide); changed {
+					upd["attempts"] = att
+				}
+				if err := tx.Model(&model.CallLog{}).Where("id = ?", r.ID).Updates(upd).Error; err != nil {
+					return err
+				}
+			}
+			lastID = rows[len(rows)-1].ID
+		}
+		return tx.Model(&model.Setting{}).Where("key = ?", ledgerMarker).Updates(map[string]any{"value": ledgerVersion, "updated_at": time.Now()}).Error
+	})
+	if errors.Is(txErr, errLedgerDone) {
+		return nil
 	}
-	return db.Save(&model.Setting{Key: ledgerMarker, Value: Ledger, UpdatedAt: time.Now()}).Error
+	if txErr != nil {
+		// The claim may have failed because another instance already migrated.
+		var again model.Setting
+		if e := db.Where("key = ?", ledgerMarker).First(&again).Error; e == nil && again.Value == ledgerVersion {
+			return nil
+		}
+		return txErr
+	}
+	return nil
+}
+
+// convertAttempts divides every attempt's cost_micros by rate (when divide is set) and
+// reports whether the JSON changed. Unknown shapes are left untouched.
+func convertAttempts(raw model.JSON, rate float64, divide bool) (model.JSON, bool) {
+	if !divide || len(raw) == 0 {
+		return raw, false
+	}
+	var atts []map[string]any
+	if err := json.Unmarshal([]byte(raw), &atts); err != nil || len(atts) == 0 {
+		return raw, false
+	}
+	changed := false
+	for _, a := range atts {
+		v, ok := a["cost_micros"].(float64)
+		if !ok || v == 0 {
+			continue
+		}
+		a["cost_micros"] = int64(math.Round(v / rate))
+		changed = true
+	}
+	if !changed {
+		return raw, false
+	}
+	b, err := json.Marshal(atts)
+	if err != nil {
+		return raw, false
+	}
+	return model.JSON(b), true
+}
+
+// LegacyCostFixer returns the commit-time hook for journal records written by an older
+// binary: a record without a ledger stamp is converted from the display currency it was
+// priced in (unchanged by the upgrade) into the USD ledger, once.
+func LegacyCostFixer(st *settings.Store) func(*model.CallLog) {
+	return func(l *model.CallLog) {
+		if l.CostLedger != "" {
+			return
+		}
+		pr := st.Get().Pricing
+		if strings.ToUpper(pr.Currency) == "CNY" {
+			rate := pr.USDToCNY
+			if rate <= 0 {
+				rate = 7.2
+			}
+			l.CostMicros = int64(math.Round(float64(l.CostMicros) / rate))
+			if att, changed := convertAttempts(l.Attempts, rate, true); changed {
+				l.Attempts = att
+			}
+		}
+		l.CostLedger = Ledger
+	}
 }

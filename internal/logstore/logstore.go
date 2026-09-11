@@ -53,6 +53,7 @@ type Store struct {
 	dirty    bool  // bytes written since last fsync
 	syncEach bool  // fsync on every Record (YZAPI_JOURNAL_FSYNC=always)
 	overflow []*model.CallLog
+	fixCost  func(*model.CallLog) // converts records journaled by an older binary into the cost ledger
 
 	ckpt         atomic.Int64 // committed offset
 	notify       chan struct{}
@@ -247,6 +248,10 @@ func (s *Store) Record(l *model.CallLog) {
 	default:
 	}
 }
+
+// SetCostFixer installs the hook applied to every record before it is committed; it
+// must be set before the first commit (i.e. before the writer can drain the journal).
+func (s *Store) SetCostFixer(fn func(*model.CallLog)) { s.fixCost = fn }
 
 // Stats for /metrics and the settings page.
 type Stats struct {
@@ -451,6 +456,9 @@ func (s *Store) commit(batch []*model.CallLog) error {
 		}
 		for _, l := range fresh {
 			normalizeLegacyUsage(l) // journal written by an older binary
+			if s.fixCost != nil {
+				s.fixCost(l)
+			}
 		}
 		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "request_id"}}, DoNothing: true}).
 			CreateInBatches(fresh, 256).Error; err != nil {

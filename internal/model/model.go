@@ -81,8 +81,11 @@ const (
 	ProtoOpenAIResponses   = "openai-responses"
 	ProtoAnthropicMessages = "anthropic-messages"
 	ProtoGemini            = "gemini-generate" // Google generateContent / streamGenerateContent
-	ProtoOpenAIEmbeddings  = "openai-embeddings"
-	ProtoOpenAIImages      = "openai-images"
+
+	// CostLedgerUSD is the fixed currency every stored cost is denominated in.
+	CostLedgerUSD         = "USD"
+	ProtoOpenAIEmbeddings = "openai-embeddings"
+	ProtoOpenAIImages     = "openai-images"
 )
 
 const (
@@ -258,6 +261,11 @@ type CallLog struct {
 	// partial, so a true value means the figure is complete.
 	CostMicros int64 `gorm:"not null;default:0" json:"cost_micros"`
 	CostKnown  bool  `gorm:"not null;default:false" json:"cost_known"`
+	// CostLedger names the currency CostMicros (and the attempts' cost_micros) are in:
+	// "USD" for everything written by 1.0.13+; empty on rows written by the first 1.0.12
+	// builds in their then-display currency, which the startup migration and the journal
+	// replay convert exactly once.
+	CostLedger string `gorm:"size:8" json:"cost_ledger,omitempty"`
 	// Cost is CostMicros in the display currency, filled by the API (not stored).
 	Cost       float64   `gorm:"-" json:"cost"`
 	Error      string    `gorm:"size:1024" json:"error"`

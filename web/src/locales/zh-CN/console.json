@@ -158,7 +158,8 @@
     "empty": "暂无调用记录",
     "emptyHint": "所选时间范围内没有匹配的调用",
     "costUnpriced": "该模型没有配置单价，费用未计入",
-    "unpriced": "未计价"
+    "unpriced": "未计价",
+    "costPartial": "部分计价：有尝试的用量未知或不完整，实际费用不低于此数"
   },
   "group": {
     "title": "我的用户组",
