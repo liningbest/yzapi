@@ -9,16 +9,19 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 YZBIN=${YZBIN:?gateway binary path}; D=$(mktemp -d); PORT=${PORT:-18120}; MPORT=${MPORT:-19950}; N=${N:-20}
 MOCKBIN="$D/mock"; go build -o "$MOCKBIN" ./tools/mockupstream
-echo "gateway=$YZBIN commit=$(git rev-parse --short HEAD) N=$N proxy=${HTTP_PROXY:-none} $(date '+%F %T')"
+RAW=${RAW:-}   # file to append every sample line to (kb target status seconds)
+echo "gateway=$YZBIN sha256=$(shasum -a 256 "$YZBIN" | cut -c1-12) label=${LABEL:-} worktree=$(git rev-parse --short HEAD) N=$N proxy=${HTTP_PROXY:-none} $(date '+%F %T')"
 "$MOCKBIN" -addr 127.0.0.1:$MPORT -delay 0 >"$D/mock.log" 2>&1 & MP=$!
 YZAPI_DATA_DIR=$D YZAPI_LISTEN=127.0.0.1:$PORT YZAPI_INITIAL_ADMIN_PASSWORD='Admin123456!' "$YZBIN" >"$D/yz.log" 2>&1 & GP=$!
 trap 'kill $GP $MP 2>/dev/null' EXIT
 B=http://127.0.0.1:$PORT
 for i in $(seq 1 50); do curl -fsS $B/health/ready >/dev/null 2>&1 && break; sleep 0.2; done
+for i in $(seq 1 50); do curl -fsS -H 'Authorization: Bearer x' http://127.0.0.1:$MPORT/v1/models >/dev/null 2>&1 && break; sleep 0.2; done
 j() { python3 -c "import json,sys; d=json.load(sys.stdin); print(eval('d'+sys.argv[1]))" "$1"; }
 T=$(curl -fsS -X POST $B/api/auth/login -H 'Content-Type: application/json' -d '{"username":"admin","password":"Admin123456!"}' | j "['token']")
 A="Authorization: Bearer $T"
-curl -fsS -X POST $B/api/admin/accounts -H "$A" -H 'Content-Type: application/json' -d "{\"name\":\"a\",\"provider\":\"custom-anthropic\",\"type\":\"text\",\"base_url\":\"http://127.0.0.1:$MPORT/v1\",\"api_key\":\"sk-mock\",\"protocols\":[\"anthropic-messages\"],\"mappings\":[{\"request_model\":\"claude\",\"upstream_model\":\"mock-pro\"}]}" >/dev/null
+ACC=$(curl -sS -X POST $B/api/admin/accounts -H "$A" -H 'Content-Type: application/json' -d "{\"name\":\"a\",\"provider\":\"custom-anthropic\",\"type\":\"text\",\"base_url\":\"http://127.0.0.1:$MPORT/v1\",\"api_key\":\"sk-mock\",\"protocols\":[\"anthropic-messages\"],\"mappings\":[{\"request_model\":\"claude\",\"upstream_model\":\"mock-pro\"}]}")
+echo "$ACC" | j "['id']" >/dev/null 2>&1 || { echo "account creation failed: $ACC"; exit 1; }
 curl -fsS -X POST $B/api/admin/users -H "$A" -H 'Content-Type: application/json' -d '{"username":"bob","password":"BobPass12345"}' >/dev/null
 UT=$(curl -fsS -X POST $B/api/auth/login -H 'Content-Type: application/json' -d '{"username":"bob","password":"BobPass12345"}' | j "['token']")
 KEY=$(curl -fsS -X POST $B/api/user/keys -H "Authorization: Bearer $UT" -H 'Content-Type: application/json' -d '{"name":"b"}' | j "['key']")
@@ -36,7 +39,11 @@ PY
   for target in "gateway $B/v1/messages x-api-key:$KEY" "direct http://127.0.0.1:$MPORT/v1/messages x-api-key:sk-mock"; do
     set -- $target; name=$1; url=$2; hdr=$3
     for i in $(seq 1 3); do curl -s -o /dev/null "$url" -H "${hdr/:/: }" -H 'Content-Type: application/json' --data-binary @"$D/body.json"; done
-    med=$(for i in $(seq 1 $N); do curl -s -o /dev/null -w '%{time_starttransfer}\n' "$url" -H "${hdr/:/: }" -H 'Content-Type: application/json' --data-binary @"$D/body.json"; done | sort -n | awk '{a[NR]=$1} END{print a[int((NR+1)/2)]}')
-    printf "%5s KB  %-7s ttfb_p50=%.1f ms\n" "$((SZ/1024))" "$name" "$(echo "$med*1000" | bc -l)"
+    # one line per sample: http_code time_starttransfer; non-200 samples are dropped from the median
+    samples=$(for i in $(seq 1 $N); do curl -s -o /dev/null -w '%{http_code} %{time_starttransfer}\n' "$url" -H "${hdr/:/: }" -H 'Content-Type: application/json' --data-binary @"$D/body.json"; done)
+    if [ -n "$RAW" ]; then echo "$samples" | sed "s/^/$((SZ/1024))KB $name /" >> "$RAW"; fi
+    ok=$(echo "$samples" | awk '$1==200' | wc -l | tr -d ' ')
+    med=$(echo "$samples" | awk '$1==200 {print $2}' | sort -n | awk '{a[NR]=$1} END{print a[int((NR+1)/2)]}')
+    printf "%5s KB  %-7s ttfb_p50=%.1f ms  (ok=%s/%s)\n" "$((SZ/1024))" "$name" "$(echo "$med*1000" | bc -l)" "$ok" "$N"
   done
 done

@@ -3,6 +3,7 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -137,4 +138,62 @@ func TestTimingsRecorded(t *testing.T) {
 	if l.FirstContentMs < l.FirstByteMs {
 		t.Fatalf("non-stream timings: first_byte=%d first_content=%d", l.FirstByteMs, l.FirstContentMs)
 	}
+}
+
+type failAfterPrefix struct{ n int }
+
+func (w failAfterPrefix) Write(p []byte) (int, error) { return w.n, io.ErrClosedPipe }
+
+// Review perf-298cdd9: a Write that accepted a complete content event but then failed
+// must not record first content; the return values pass through unchanged.
+func TestFailedWriteMustNotSetFirstContent(t *testing.T) {
+	event := []byte("data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n")
+	payload := append(append([]byte{}, event...), []byte("data: trailing")...)
+	fired := 0
+	w := firstContentWriter{w: failAfterPrefix{len(event)}, proto: model.ProtoOpenAIChat, onFirst: func() { fired++ }}
+	n, err := w.Write(payload)
+	if n != len(event) || err != io.ErrClosedPipe {
+		t.Fatalf("write result changed: %d %v", n, err)
+	}
+	if fired != 0 || w.found {
+		t.Fatalf("callback fired %d time on failed Write", fired)
+	}
+}
+
+func TestResponsesObjectDelta(t *testing.T) {
+	if !eventHasContent(model.ProtoOpenAIResponses, []byte("event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":{\"text\":\"h\"}}")) {
+		t.Fatal("object-shaped delta with content must count")
+	}
+	if eventHasContent(model.ProtoOpenAIResponses, []byte("event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":null}")) {
+		t.Fatal("null delta must not count")
+	}
+}
+
+// Cost of the observer: N empty (non-content) events before the first content event,
+// then a long tail of content events that pass straight through.
+func BenchmarkFirstContentWriter(b *testing.B) {
+	empty := []byte("data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\"}}]}\n\n")
+	content := []byte("data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello world\"}}]}\n\n")
+	for _, emptyN := range []int{0, 10, 100} {
+		b.Run(fmt.Sprintf("empty=%d", emptyN), func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				fc := &firstContentWriter{w: io.Discard, proto: model.ProtoOpenAIChat, onFirst: func() {}}
+				for j := 0; j < emptyN; j++ {
+					_, _ = fc.Write(empty)
+				}
+				for j := 0; j < 200; j++ {
+					_, _ = fc.Write(content)
+				}
+			}
+		})
+	}
+	b.Run("plain-writer-200-events", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			for j := 0; j < 200; j++ {
+				_, _ = io.Discard.Write(content)
+			}
+		}
+	})
 }

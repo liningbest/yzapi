@@ -226,3 +226,7 @@
 ## 1.0.21：Coding 性能观测的验收修正（`docs/coding-performance-acceptance-bd68104.md`、`docs/acceptance-review-coding-perf-canvas-chat.md`）
 
 三个 P2 与材料缺口全部处理：首内容判定读取实际字段（空增量、签名、`null` 不算）；观测器只挂 SSE 分支，流式与非流式统一为"Write 成功返回之后"打点；`docs/api.md` 区分时间点与时长并收紧差值的解释；识别 CRLF 分隔；基准脚本 `scripts/bench-bigbody.sh` 与原始结果 `docs/perf/bigbody-2026-09-11.txt` 入库，含观测器开关前后对比（差异在噪声内）。评审夹具 `perf-bd68104/run.py` 通过。详见 `docs/coding-performance-changes-2026-09-11.md` 第 7 节。
+
+## 1.0.22：Coding 性能观测第三版（`docs/coding-performance-acceptance-298cdd9.md`）
+
+失败的 Write（含部分写入后出错）不再记录首内容；Responses 对象形 `delta` 也能判定；基准脚本记录二进制哈希、剔除非 200 样本、可记逐次样本；新增观测器微基准（首内容前每个非内容事件约 1.5 µs，之后直通 0 分配）；报告首段、第 5 节与第 3 节结论按验收收窄。详见 `docs/coding-performance-changes-2026-09-11.md` 第 8 节。

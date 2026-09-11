@@ -27,7 +27,9 @@ type firstContentWriter struct {
 
 func (f *firstContentWriter) Write(p []byte) (int, error) {
 	n, err := f.w.Write(p)
-	if f.found || n == 0 {
+	if f.found || n == 0 || err != nil {
+		// Only a Write that returned success counts (a partial write that then failed is
+		// not "content accepted by the connection"); the stream is over after an error.
 		return n, err
 	}
 	f.buf = append(f.buf, p[:n]...)
@@ -107,8 +109,8 @@ func eventHasContent(proto string, raw []byte) bool {
 		return false
 	case model.ProtoOpenAIResponses:
 		var e struct {
-			Type  string `json:"type"`
-			Delta string `json:"delta"`
+			Type  string          `json:"type"`
+			Delta json.RawMessage `json:"delta"` // a string; tolerate an object/array shape too
 		}
 		if json.Unmarshal([]byte(data), &e) != nil {
 			return false
@@ -119,7 +121,12 @@ func eventHasContent(proto string, raw []byte) bool {
 		switch event {
 		case "response.output_text.delta", "response.reasoning_text.delta", "response.reasoning_summary_text.delta",
 			"response.function_call_arguments.delta", "response.refusal.delta":
-			return e.Delta != ""
+			var s string
+			if json.Unmarshal(e.Delta, &s) == nil {
+				return s != ""
+			}
+			d := strings.TrimSpace(string(e.Delta))
+			return d != "" && d != "null" && d != "{}" && d != "[]"
 		}
 		return false
 	case model.ProtoGemini:
