@@ -8,7 +8,8 @@
     "smartRoute": "Smart routing",
     "compliance": "Compliance",
     "elasticsearch": "Elasticsearch",
-    "pricing": "Pricing"
+    "pricing": "Pricing",
+    "config": "Config versions"
   },
   "unit": {
     "days": "days",
@@ -32,6 +33,10 @@
       "label": "Protocol conversion",
       "extra": "When enabled, requests are converted automatically if the client protocol differs from the upstream protocol (e.g. OpenAI Chat ↔ Anthropic Messages).",
       "warning": "Protocol conversion is not lossless: special fields, tool calls, reasoning content and multimodal content may fail to convert."
+    },
+    "reasoningToContent": {
+      "label": "Thinking as content",
+      "extra": "When a response is converted to OpenAI Chat format, wrap the upstream's thinking in <think>…</think> inside the content instead of the non-standard reasoning_content field. Conversion paths only; same-protocol pass-through is untouched."
     }
   },
   "performance": {
@@ -253,5 +258,24 @@
       "label": "USD → CNY rate",
       "extra": "Used when a row's currency differs from the base currency"
     }
+  },
+  "config": {
+    "title": "Configuration snapshots",
+    "notice": "A snapshot of the routing configuration (accounts with encrypted keys, mappings, model groups, group bindings, price table) and every settings section is saved automatically before each change; the last 50 are kept. A restore saves the current state first, so it can itself be undone. Users, groups, keys and logs are not part of snapshots.",
+    "snapshotNow": "Snapshot now",
+    "created": "Snapshot saved",
+    "restored": "Restored and applied",
+    "time": "Time",
+    "actor": "Actor",
+    "reason": "Reason",
+    "manual": "Manual",
+    "view": "View",
+    "restore": "Restore",
+    "restoreConfirm": "Overwrite the current accounts, model groups, price table and settings with snapshot #{{id}}? The current state is saved first.",
+    "detailTitle": "Snapshot #{{id}}",
+    "accounts": "Accounts",
+    "modelGroups": "Model groups",
+    "mappings": "Mappings",
+    "settings": "Settings"
   }
 }

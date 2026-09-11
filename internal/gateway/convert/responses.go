@@ -619,6 +619,7 @@ func ResponsesToChatResponse(raw []byte, model string) (*ChatResponse, error) {
 	}
 	c, _ := json.Marshal(text.String())
 	msg.Content = c
+	foldReasoning(msg)
 	fr := "stop"
 	if len(msg.ToolCalls) > 0 {
 		fr = "tool_calls"
@@ -661,6 +662,7 @@ func ResponsesStreamToChat(r io.Reader, w io.Writer, flush func(), model string,
 		flush()
 		return nil
 	}
+	var think thinkState
 	hasTool := false
 	for {
 		ev, err := rd.Next()
@@ -694,11 +696,11 @@ func ResponsesStreamToChat(r io.Reader, w io.Writer, flush func(), model string,
 		}
 		switch e.Type {
 		case "response.output_text.delta":
-			if err := emitChunk(map[string]any{"content": e.Delta}, nil); err != nil {
+			if err := emitChunk(think.text(e.Delta), nil); err != nil {
 				return usage, err
 			}
 		case "response.reasoning_summary_text.delta":
-			if err := emitChunk(map[string]any{"reasoning_content": e.Delta}, nil); err != nil {
+			if err := emitChunk(think.reasoning(e.Delta), nil); err != nil {
 				return usage, err
 			}
 		case "response.output_item.added":
@@ -718,6 +720,11 @@ func ResponsesStreamToChat(r io.Reader, w io.Writer, flush func(), model string,
 				return usage, err
 			}
 		case "response.completed", "response.incomplete", "response.failed":
+			if cl := think.closing(); cl != nil {
+				if err := emitChunk(cl, nil); err != nil {
+					return usage, err
+				}
+			}
 			finish := "stop"
 			if hasTool {
 				finish = "tool_calls"

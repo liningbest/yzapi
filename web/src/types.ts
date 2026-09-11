@@ -653,6 +653,7 @@ export interface BasicSettings {
   log_retention_days: number;
   protocol_conversion: boolean;
   site_name: string;
+  reasoning_to_content?: boolean;
 }
 
 export interface PerformanceSettings {
@@ -706,6 +707,20 @@ export interface ElasticsearchSettings {
   request_kb: number;
   response_kb: number;
   retention_days: number;
+}
+
+export interface ConfigSnapshotRow {
+  id: number;
+  actor: string;
+  reason: string;
+  created_at: string;
+}
+
+export interface ConfigSnapshotDetail extends ConfigSnapshotRow {
+  accounts: { id: number; name: string; provider: string; base_url: string; enabled: boolean; mappings: number; priority: number; weight: number }[];
+  model_groups: { id: number; name: string; type: string; models: string[] }[];
+  settings: Record<string, string>;
+  meta: Record<string, number>;
 }
 
 export interface PricingSettings {

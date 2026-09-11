@@ -8,7 +8,8 @@
     "smartRoute": "智能路由",
     "compliance": "内容合规",
     "elasticsearch": "Elasticsearch",
-    "pricing": "计价"
+    "pricing": "计价",
+    "config": "配置版本"
   },
   "unit": {
     "days": "天",
@@ -32,6 +33,10 @@
       "label": "协议转换",
       "extra": "开启后允许客户端协议与上游协议不一致时自动转换（如 OpenAI Chat ↔ Anthropic Messages）。",
       "warning": "协议转换并非无损，特殊字段、工具调用、思考内容、多模态内容可能转换失败。"
+    },
+    "reasoningToContent": {
+      "label": "思考内容转正文",
+      "extra": "跨协议转换为 OpenAI Chat 格式时，把上游的思考过程放进正文并以 <think>…</think> 包裹，而不是放在非标准的 reasoning_content 字段；只影响转换路径，同协议直连不改动。"
     }
   },
   "performance": {
@@ -253,5 +258,24 @@
       "label": "美元兑人民币汇率",
       "extra": "单价货币与计价货币不同时用于换算"
     }
+  },
+  "config": {
+    "title": "配置快照",
+    "notice": "每次修改账号池、模型组、单价或设置前都会自动保存一份配置快照（含加密的上游密钥、模型映射、用户组的模型组授权与全部设置），最多保留 50 份。回滚会先保存当前状态，因此回滚本身也可以撤销。用户、用户组、Key 和日志不在快照范围内。",
+    "snapshotNow": "立即保存快照",
+    "created": "已保存快照",
+    "restored": "已回滚，配置已生效",
+    "time": "时间",
+    "actor": "操作人",
+    "reason": "原因",
+    "manual": "手动",
+    "view": "查看",
+    "restore": "回滚到此版本",
+    "restoreConfirm": "用快照 #{{id}} 覆盖当前的账号池、模型组、单价表和设置？当前状态会先被保存。",
+    "detailTitle": "快照 #{{id}}",
+    "accounts": "账号",
+    "modelGroups": "模型组",
+    "mappings": "映射",
+    "settings": "设置"
   }
 }

@@ -17,6 +17,10 @@ type Basic struct {
 	BaseURL            string `json:"base_url"`
 	LogRetentionDays   int    `json:"log_retention_days"`
 	ProtocolConversion bool   `json:"protocol_conversion"`
+	// ReasoningToContent: when a response is converted to OpenAI Chat format, put the
+	// upstream's thinking inside the assistant content as <think>…</think> instead of
+	// the non-standard reasoning_content field, for clients that only render content.
+	ReasoningToContent bool   `json:"reasoning_to_content"`
 	SiteName           string `json:"site_name"`
 }
 

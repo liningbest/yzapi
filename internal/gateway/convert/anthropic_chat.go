@@ -14,6 +14,8 @@ import (
 
 func AnthropicToChatRequest(in *AnthropicRequest, upstreamModel string) (*ChatRequest, error) {
 	out := &ChatRequest{Model: upstreamModel, Stream: in.Stream, Temperature: in.Temperature, TopP: in.TopP}
+	// thinking.budget_tokens -> reasoning_effort, the inverse of the chat->anthropic mapping.
+	out.ReasoningEffort = thinkingToEffort(in.Thinking)
 	if in.MaxTokens > 0 {
 		mt := in.MaxTokens
 		out.MaxTokens = &mt

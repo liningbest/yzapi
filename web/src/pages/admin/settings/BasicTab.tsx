@@ -73,6 +73,18 @@ export default function BasicTab({ data }: Props) {
           </Form.Item>
         </Col>
       </Row>
+      <Row gutter={[24, 0]}>
+        <Col xs={24} lg={12}>
+          <Form.Item
+            name="reasoning_to_content"
+            label={t('settings:basic.reasoningToContent.label')}
+            extra={t('settings:basic.reasoningToContent.extra')}
+            valuePropName="checked"
+          >
+            <Switch />
+          </Form.Item>
+        </Col>
+      </Row>
       <Alert type="warning" showIcon message={t('settings:basic.protocolConversion.warning')} style={{ marginBottom: 16 }} />
       <SaveBar loading={save.isPending} />
     </Form>

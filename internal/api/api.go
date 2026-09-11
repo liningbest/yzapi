@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"yzapi/internal/gateway/convert"
 	"yzapi/internal/pricing"
 
 	"github.com/gin-gonic/gin"
@@ -90,7 +91,11 @@ func New(cfg *config.Config, db *gorm.DB, gw *gateway.Gateway, st *settings.Stor
 		return nil, fmt.Errorf("load price table: %w", err)
 	}
 	gw.SetPricer(pr)
-	st.OnApply(func(settings.All) { _ = pr.Reload() })
+	convert.SetReasoningToContent(st.Get().Basic.ReasoningToContent)
+	st.OnApply(func(all settings.All) {
+		_ = pr.Reload()
+		convert.SetReasoningToContent(all.Basic.ReasoningToContent)
+	})
 	return &Server{cfg: cfg, db: db, gw: gw, st: st, cipher: cipher, eng: eng, auth: a, version: version, started: time.Now(), pricer: pr}, nil
 }
 
@@ -110,13 +115,18 @@ func (s *Server) Register(r *gin.Engine) {
 
 	admin := r.Group("/api/admin", s.requireAuth(), s.requireAdmin())
 	{
+		cs := admin.Group("/config/snapshots")
+		cs.GET("", s.listConfigSnapshots)
+		cs.POST("", s.createConfigSnapshot)
+		cs.GET("/:id", s.getConfigSnapshot)
+		cs.POST("/:id/restore", s.restoreConfigSnapshot)
 		admin.GET("/overview/live", s.overviewLive)
 		admin.GET("/overview/usage", s.overviewUsage)
 		admin.GET("/providers", s.listProviders)
 		admin.GET("/models", s.listModels)
 		admin.GET("/system/info", s.systemInfo)
 
-		acc := admin.Group("/accounts")
+		acc := admin.Group("/accounts", s.autoSnapshot())
 		acc.GET("", s.listAccounts)
 		acc.POST("", s.createAccount)
 		acc.POST("/discover", s.discoverModels)
@@ -130,7 +140,7 @@ func (s *Server) Register(r *gin.Engine) {
 		acc.POST("/:id/cache-check", s.cacheCheckAccount)
 		acc.PUT("/:id/mappings", s.updateAccountMappings)
 
-		mg := admin.Group("/model-groups")
+		mg := admin.Group("/model-groups", s.autoSnapshot())
 		mg.GET("", s.listModelGroups)
 		mg.POST("", s.createModelGroup)
 		mg.GET("/:id", s.getModelGroup)
@@ -161,7 +171,7 @@ func (s *Server) Register(r *gin.Engine) {
 		lg.GET("/:id", s.getLog)
 
 		admin.GET("/usage", s.adminUsage)
-		pr := admin.Group("/prices")
+		pr := admin.Group("/prices", s.autoSnapshot())
 		pr.GET("", s.listPrices)
 		pr.POST("", s.createPrice)
 		pr.PUT("/:id", s.updatePrice)
@@ -172,7 +182,7 @@ func (s *Server) Register(r *gin.Engine) {
 		admin.GET("/usage/reconcile", s.reconcileUsage)
 		admin.GET("/usage/metering", s.meteringStatus)
 
-		se := admin.Group("/settings")
+		se := admin.Group("/settings", s.autoSnapshot())
 		se.GET("", s.getSettings)
 		se.PUT("/basic", s.putBasic)
 		se.PUT("/pricing", s.putPricing)

@@ -290,6 +290,17 @@ type UsageHourly struct {
 	CostMicros       int64 `gorm:"not null;default:0" json:"cost_micros"` // booked like tokens: on the attempt's account
 }
 
+// ConfigSnapshot is a point-in-time copy of the routing configuration (accounts with
+// encrypted keys, mappings, model groups, group bindings, price table) and all settings
+// sections, taken automatically before every change and on demand, for one-click rollback.
+type ConfigSnapshot struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Actor     string    `gorm:"size:64" json:"actor"`
+	Reason    string    `gorm:"size:255" json:"reason"`
+	Data      JSON      `gorm:"type:text" json:"-"`
+	CreatedAt time.Time `gorm:"index" json:"created_at"`
+}
+
 // ModelPrice is one row of the price table (per 1M tokens in Currency). Pattern
 // matches a model name exactly or as a prefix before "-", ":" or "@"; Provider "" applies
 // to any provider. Builtin rows are seeded and can be edited or reset.
@@ -405,6 +416,6 @@ func All() []any {
 	return []any{
 		&User{}, &UserGroup{}, &ModelGroup{}, &Account{}, &ModelMapping{}, &APIKey{},
 		&CallLog{}, &UsageHourly{}, &RouteSample{}, &RouteDecision{},
-		&PolicyGroup{}, &SensitiveWord{}, &AuditSample{}, &AuditLog{}, &Setting{}, &ModelPrice{},
+		&PolicyGroup{}, &SensitiveWord{}, &AuditSample{}, &AuditLog{}, &Setting{}, &ModelPrice{}, &ConfigSnapshot{},
 	}
 }

@@ -153,13 +153,17 @@
 
 ### 设置 `/api/admin/settings`
 - `GET` → `{basic, performance, vector, smart_route, compliance, elasticsearch}`（密钥字段脱敏为 `"******"`）
-- `PUT /basic {base_url, log_retention_days, protocol_conversion, site_name}`
+- `PUT /basic {base_url, log_retention_days, protocol_conversion, reasoning_to_content, site_name}`。`reasoning_to_content` 开启后，跨协议转换成 OpenAI Chat 的响应把思考内容以 `<think>…</think>` 放进正文而不是 `reasoning_content`（流式与非流式），同协议直连不受影响
 - `PUT /performance {max_concurrency, queue_size, queue_timeout_sec, request_timeout_sec, stream_idle_timeout_sec, max_body_kb, cooldown_sec, max_retries, upstream_connect_timeout_sec, max_body_memory_mb, vector_max_concurrency, vector_timeout_sec}`；所有字段不得为负（400），`max_retries / max_body_kb / max_body_memory_mb / vector_max_concurrency / vector_timeout_sec` 传 0 恢复默认值
 - `PUT /vector {account_id, model}`；`POST /vector/test {account_id, model}` → `{ok, dim, latency_ms, message}`
 - `PUT /smart_route {enabled, virtual_model, simple_group_id, complex_group_id, threshold, confidence_gap, top_k}`
 - `PUT /compliance {enabled, semantic_threshold, check_system_prompt, on_failure:"allow"|"block"}`
 - `PUT /elasticsearch {enabled,url,auth_type,api_key,username,password,index_prefix,request_kb,response_kb,retention_days}`；`POST /elasticsearch/test` → `{ok, version, message}`；`GET /elasticsearch/status` → `{configured, queue_count, queue_bytes, dropped, last_success_at, failing_since}`
 - 密钥字段传 `"******"` 表示保持不变。
+
+### 配置版本 `/api/admin/config/snapshots`
+- 修改账号池、模型组、单价表、设置的任何写接口（探测类除外）执行前自动保存一份快照：账号（含加密密钥）与映射、模型组、用户组的模型组授权、单价表、全部设置节；最多保留 50 份。
+- `GET` → `{items:[{id,actor,reason,created_at}], total}`；`POST {reason}` 手动快照；`GET /:id` → 摘要（账号不含密钥）；`POST /:id/restore` 在一个事务里用快照覆盖当前配置（先自动保存当前状态），随后重载设置、单价、网关快照、路由与合规引擎。用户、用户组、Key、日志不在范围内。
 
 ### 计价 `/api/admin/prices`
 - 对象：`{id, pattern, provider, input_per_m, output_per_m, cached_input_per_m, cache_write_per_m, currency:"USD"|"CNY", builtin, enabled, note, updated_at}`，单价均为每百万 Token。`pattern` 精确匹配模型名或作为前缀匹配（分隔符 `-`、`:`、`@`），越长越优先；`provider` 为空表示任意供应商。匹配顺序：账号供应商专属行 → 任意供应商行 → 其他供应商的行（自定义中转站转发的 claude/gpt 模型也能计价）。

@@ -186,3 +186,82 @@ func TestSSEReader(t *testing.T) {
 		t.Fatalf("ev=%+v err=%v", ev, err)
 	}
 }
+
+// Anthropic thinking budgets map onto reasoning_effort when converting to chat.
+func TestThinkingBudgetToEffort(t *testing.T) {
+	for _, tc := range []struct {
+		raw  string
+		want string
+	}{{`{"type":"enabled","budget_tokens":1024}`, "low"}, {`{"type":"enabled","budget_tokens":8000}`, "medium"}, {`{"type":"enabled","budget_tokens":32000}`, "high"}, {`{"type":"disabled"}`, ""}, {``, ""}} {
+		if got := thinkingToEffort(json.RawMessage(tc.raw)); got != tc.want {
+			t.Fatalf("%s -> %q want %q", tc.raw, got, tc.want)
+		}
+	}
+	out, err := AnthropicToChatRequest(&AnthropicRequest{Model: "m", MaxTokens: 10, Thinking: json.RawMessage(`{"type":"enabled","budget_tokens":4000}`)}, "up")
+	if err != nil || out.ReasoningEffort != "medium" {
+		t.Fatalf("request mapping: %v %q", err, out.ReasoningEffort)
+	}
+}
+
+// With the setting on, converted chat output carries thinking as <think>…</think> in the
+// content (non-stream and stream, including a stream that ends while still thinking).
+func TestReasoningToContentMode(t *testing.T) {
+	SetReasoningToContent(true)
+	defer SetReasoningToContent(false)
+	resp := AnthropicToChatResponse(&AnthropicResponse{Content: []AnthropicContentBlock{{Type: "thinking", Thinking: "plan"}, {Type: "text", Text: "answer"}}}, "m")
+	var content string
+	_ = json.Unmarshal(resp.Choices[0].Message.Content, &content)
+	if content != "<think>\nplan\n</think>\nanswer" || resp.Choices[0].Message.Reasoning != "" {
+		t.Fatalf("non-stream fold: %q reasoning=%q", content, resp.Choices[0].Message.Reasoning)
+	}
+	sse := "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":3}}}\n\n" +
+		"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"hmm\"}}\n\n" +
+		"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n\n" +
+		"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":2}}\n\n" +
+		"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+	var buf bytes.Buffer
+	if _, err := AnthropicStreamToChat(strings.NewReader(sse), &buf, func() {}, "m", false); err != nil {
+		t.Fatal(err)
+	}
+	joinContent := func(raw string) (content, reasoning string) {
+		for _, line := range strings.Split(raw, "\n") {
+			if !strings.HasPrefix(line, "data: {") {
+				continue
+			}
+			var ch struct {
+				Choices []struct {
+					Delta struct {
+						Content   string `json:"content"`
+						Reasoning string `json:"reasoning_content"`
+					} `json:"delta"`
+				} `json:"choices"`
+			}
+			if json.Unmarshal([]byte(line[6:]), &ch) == nil && len(ch.Choices) > 0 {
+				content += ch.Choices[0].Delta.Content
+				reasoning += ch.Choices[0].Delta.Reasoning
+			}
+		}
+		return
+	}
+	if content, reasoning := joinContent(buf.String()); content != "<think>\nhmm\n</think>\nhi" || reasoning != "" {
+		t.Fatalf("stream fold: content=%q reasoning=%q", content, reasoning)
+	}
+	// Stream that ends inside thinking closes the block before finishing.
+	sse2 := "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"m2\",\"usage\":{\"input_tokens\":3}}}\n\n" +
+		"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"only\"}}\n\n" +
+		"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":1}}\n\n" +
+		"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+	buf.Reset()
+	if _, err := AnthropicStreamToChat(strings.NewReader(sse2), &buf, func() {}, "m", false); err != nil {
+		t.Fatal(err)
+	}
+	if content, _ := joinContent(buf.String()); content != "<think>\nonly\n</think>\n" {
+		t.Fatalf("open think block must be closed at end: %q", content)
+	}
+	SetReasoningToContent(false)
+	buf.Reset()
+	_, _ = AnthropicStreamToChat(strings.NewReader(sse), &buf, func() {}, "m", false)
+	if content, reasoning := joinContent(buf.String()); reasoning != "hmm" || content != "hi" {
+		t.Fatalf("default mode must keep reasoning_content: content=%q reasoning=%q", content, reasoning)
+	}
+}

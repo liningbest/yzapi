@@ -236,6 +236,7 @@ func AnthropicToChatResponse(in *AnthropicResponse, model string) *ChatResponse 
 	}
 	c, _ := json.Marshal(text.String())
 	msg.Content = c
+	foldReasoning(msg)
 	fr := "stop"
 	if in.StopReason != nil {
 		fr = mapStopToFinish(*in.StopReason)
@@ -297,6 +298,7 @@ func AnthropicStreamToChat(r io.Reader, w io.Writer, flush func(), model string,
 		flush()
 		return nil
 	}
+	var think thinkState
 
 	for {
 		ev, err := rd.Next()
@@ -360,11 +362,11 @@ func AnthropicStreamToChat(r io.Reader, w io.Writer, flush func(), model string,
 			}
 			switch e.Delta.Type {
 			case "text_delta":
-				if err := emitChunk(map[string]any{"content": e.Delta.Text}, nil, nil); err != nil {
+				if err := emitChunk(think.text(e.Delta.Text), nil, nil); err != nil {
 					return usage, err
 				}
 			case "thinking_delta":
-				if err := emitChunk(map[string]any{"reasoning_content": e.Delta.Thinking}, nil, nil); err != nil {
+				if err := emitChunk(think.reasoning(e.Delta.Thinking), nil, nil); err != nil {
 					return usage, err
 				}
 			case "input_json_delta":
@@ -394,6 +396,11 @@ func AnthropicStreamToChat(r io.Reader, w io.Writer, flush func(), model string,
 			flush()
 			return usage, fmt.Errorf("upstream error: %s", msg)
 		case "message_stop":
+			if cl := think.closing(); cl != nil {
+				if err := emitChunk(cl, nil, nil); err != nil {
+					return usage, err
+				}
+			}
 			usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 			f := finish
 			if err := emitChunk(map[string]any{}, &f, nil); err != nil {

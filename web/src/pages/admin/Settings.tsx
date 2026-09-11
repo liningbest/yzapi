@@ -8,6 +8,7 @@ import {
   DashboardOutlined,
   SafetyCertificateOutlined,
   SettingOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -21,11 +22,12 @@ import { SETTINGS_KEY } from './settings/shared';
 import SmartRouteTab from './settings/SmartRouteTab';
 import VectorTab from './settings/VectorTab';
 import PricingTab from './settings/PricingTab';
+import ConfigTab from './settings/ConfigTab';
 
 export default function Settings() {
   const { t } = useTranslation(['settings', 'common']);
   const [params, setParams] = useSearchParams();
-  const VALID = ['basic', 'performance', 'vector', 'smart_route', 'compliance', 'pricing', 'elasticsearch'];
+  const VALID = ['basic', 'performance', 'vector', 'smart_route', 'compliance', 'pricing', 'config', 'elasticsearch'];
   const initial = params.get('tab');
   const [tab, setTabState] = useState(initial && VALID.includes(initial) ? initial : 'basic');
   const setTab = (k: string) => {
@@ -76,6 +78,12 @@ export default function Settings() {
       label: t('settings:tabs.pricing'),
       icon: <DatabaseOutlined />,
       children: <PricingTab data={data?.pricing} />,
+    },
+    {
+      key: 'config',
+      label: t('settings:tabs.config'),
+      icon: <HistoryOutlined />,
+      children: <ConfigTab />,
     },
     {
       key: 'elasticsearch',

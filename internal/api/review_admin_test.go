@@ -313,3 +313,55 @@ func TestAccountTypeNarrowsProtocols(t *testing.T) {
 		t.Fatalf("protocol override must be dropped: %d %v", w.Code, out.Protocols)
 	}
 }
+
+// A snapshot is taken before a mutating routing change, and restoring it brings the
+// previous configuration (accounts, mappings, settings) back in one transaction.
+func TestConfigSnapshotAndRestore(t *testing.T) {
+	s := auditServer(t)
+	admin := auditUser(s, "admin-s")
+	w := auditCall(s.createAccount, admin, 0, map[string]any{"name": "keep-me", "provider": "custom", "type": "text", "base_url": "http://127.0.0.1:1", "api_key": "sk-x",
+		"mappings": []map[string]string{{"request_model": "m", "upstream_model": "m"}}, "skip_test": true})
+	if w.Code != 200 {
+		t.Fatalf("create: %d %s", w.Code, w.Body.String())
+	}
+	var acc struct {
+		ID uint `json:"id"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &acc)
+	if err := s.snapshotConfig("admin-s", "test"); err != nil {
+		t.Fatal(err)
+	}
+	var snap model.ConfigSnapshot
+	s.db.Order("id DESC").First(&snap)
+	// Destroy the config: delete the account, change a setting.
+	if w := auditCall(s.deleteAccount, admin, acc.ID, nil); w.Code != 200 {
+		t.Fatalf("delete: %d", w.Code)
+	}
+	if err := s.st.SetBasic(settings.Basic{BaseURL: "http://x/v1", LogRetentionDays: 9, SiteName: "changed"}); err != nil {
+		t.Fatal(err)
+	}
+	var n int64
+	s.db.Model(&model.Account{}).Count(&n)
+	if n != 0 {
+		t.Fatal("setup: account should be gone")
+	}
+	w = auditCall(s.restoreConfigSnapshot, admin, snap.ID, nil)
+	if w.Code != 200 {
+		t.Fatalf("restore: %d %s", w.Code, w.Body.String())
+	}
+	var back model.Account
+	if err := s.db.Preload("Mappings").First(&back, acc.ID).Error; err != nil || back.Name != "keep-me" || len(back.Mappings) != 1 {
+		t.Fatalf("account not restored: %v %+v", err, back)
+	}
+	if s.st.Get().Basic.SiteName == "changed" {
+		t.Fatal("settings not restored")
+	}
+	if s.gw.Snapshot().Accounts[acc.ID] == nil {
+		t.Fatal("gateway snapshot not reloaded after restore")
+	}
+	var cnt int64
+	s.db.Model(&model.ConfigSnapshot{}).Count(&cnt)
+	if cnt < 2 {
+		t.Fatalf("restore must snapshot the pre-restore state too, have %d", cnt)
+	}
+}

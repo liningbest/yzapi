@@ -285,6 +285,22 @@ try:
         req("DELETE", f"/api/admin/prices/{p['id']}", expect=404)
     check("price table CRUD, lookup, settings and cost in logs/report", t_prices)
 
+    # ---------- config snapshots ----------
+    def t_snapshots():
+        before = req("GET", "/api/admin/config/snapshots", expect=200)["total"]
+        req("POST", "/api/admin/config/snapshots", {"reason": "crud-manual"}, expect=200)
+        lst = req("GET", "/api/admin/config/snapshots", expect=200)
+        eq(lst["total"], before + 1); sid = lst["items"][0]["id"]; eq(lst["items"][0]["reason"], "crud-manual")
+        det = req("GET", f"/api/admin/config/snapshots/{sid}", expect=200)
+        eq(any(a["name"] == "mock-a2" or a["name"] == "mock-a" for a in det["accounts"]), True, "snapshot lists accounts")
+        # a mutating change auto-snapshots first
+        req("PUT", "/api/admin/settings/basic", dict(st0["basic"], site_name="Snap GW", base_url=f"http://127.0.0.1:{PORT}/v1"), expect=200)
+        eq(req("GET", "/api/admin/config/snapshots", expect=200)["total"], before + 2, "auto snapshot before change")
+        req("POST", f"/api/admin/config/snapshots/{sid}/restore", {}, expect=200)
+        eq(req("GET", "/api/admin/settings", expect=200)["basic"]["site_name"], "My GW", "settings restored")
+        req("POST", "/api/admin/config/snapshots/999999/restore", {}, expect=404)
+    check("config snapshots: manual, auto-before-change, restore", t_snapshots)
+
     # ---------- compliance resources ----------
     pg = req("POST", "/api/admin/compliance/policy-groups", {"name": "pg", "action": "block", "risk_level": "high", "enabled": True, "description": "d"}, expect=200); PG = pg["id"]
     check("policy group update", lambda: eq(req("PUT", f"/api/admin/compliance/policy-groups/{PG}", {"name": "pg2", "action": "audit", "risk_level": "low", "enabled": True, "description": "d2"}, expect=200)["action"], "audit"))
