@@ -69,7 +69,15 @@ type Store struct {
 // New opens (or creates) the journal under dataDir/data/journal and starts the writer.
 // The uncommitted journal tail is replayed before New returns so restarts never lose
 // records that reached the journal.
-func New(db *gorm.DB, dataDir string, retentionDays func() int) (*Store, error) {
+// Option configures a Store before it replays the journal or starts any goroutine.
+type Option func(*Store)
+
+// WithCostFixer installs the hook applied to every record before it is committed. It is
+// a constructor option, not a setter, so the very first replay (which happens inside
+// New) already goes through it and nothing can race the background writer.
+func WithCostFixer(fn func(*model.CallLog)) Option { return func(s *Store) { s.fixCost = fn } }
+
+func New(db *gorm.DB, dataDir string, retentionDays func() int, opts ...Option) (*Store, error) {
 	dir := filepath.Join(dataDir, "data", "journal")
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, err
@@ -77,6 +85,9 @@ func New(db *gorm.DB, dataDir string, retentionDays func() int) (*Store, error) 
 	s := &Store{db: db, retDays: retentionDays, path: filepath.Join(dir, journalFile),
 		ckptPath: filepath.Join(dir, checkpointFile), notify: make(chan struct{}, 1), stop: make(chan struct{}),
 		syncEach: os.Getenv("YZAPI_JOURNAL_FSYNC") == "always"}
+	for _, o := range opts {
+		o(s)
+	}
 	if err := s.openJournal(); err != nil {
 		return nil, err
 	}
@@ -248,10 +259,6 @@ func (s *Store) Record(l *model.CallLog) {
 	default:
 	}
 }
-
-// SetCostFixer installs the hook applied to every record before it is committed; it
-// must be set before the first commit (i.e. before the writer can drain the journal).
-func (s *Store) SetCostFixer(fn func(*model.CallLog)) { s.fixCost = fn }
 
 // Stats for /metrics and the settings page.
 type Stats struct {

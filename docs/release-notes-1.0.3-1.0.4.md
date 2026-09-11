@@ -165,3 +165,12 @@
 | 并行评审 | Postgres 恢复后不重置序列 | 恢复事务末尾按方言对 accounts / model_mappings / model_groups / model_prices 执行 `setval` | 代码审查；SQLite 不受影响 |
 
 两轮评审的 `docs/review-repros/accept112/run.py`、`accept113/run.py` 全部通过；全量 `go test -race`、smoke 56、api-crud 90 通过。真实客户端与真实供应商的端到端验收仍未执行。
+
+## 1.0.15：第三轮复核 R114-01/02（`docs/acceptance-review-1.0.14-2026-09-11.md`）
+
+| 编号 | 问题 | 修改 | 验收方式 |
+|---|---|---|---|
+| R114-01 P1 | `logstore.New` 内部已同步回放 journal，之后才装费用修正函数，旧记录原样入库且永远不再被改 | 修正函数改为构造参数 `logstore.WithCostFixer`，在打开 journal、首次 drain、后台协程之前安装；`SetCostFixer` 删除，不再存在与后台提交并发的 setter | `TestR114StartupReplay`（按主程序顺序：迁移 → 带修正函数构造 → 关闭，journal 里的 720 万微人民币入库为 100 万微美元并打标记）、`TestCostFixerAppliedOnCommit`（启动回放与后续提交都经过修正函数） |
+| R114-02 P1 | 1.0.13 期间新产生的美元记录（两边都是美元、无逐行标记）被当作旧人民币尝试再除一次 | 迁移记录库的来源版本（`cost_ledger_origin`），对无标记行按证据逐行判定：尝试之和远大于请求金额的是 1.0.13 迁移过的旧行，按比例把尝试缩放到请求金额上（不依赖当时汇率）；两边一致且早于 1.0.13 迁移时刻的是回放进来的 1.0.12 记录，两边折算；其余只打标记。早期 1.0.14 库里无法判定的行标 `unverified` 并告警，不折算。journal 修正函数按同一来源规则，只对来自 1.0.12 的库、且早于迁移时刻的记录折算 | `TestLedgerV1Upgrade`（三类行各自结果）、`TestR114V113NewUSDRecords`（评审形状）、`TestLedgerV2UnverifiedRows`、`TestLegacyCostFixer`（来源 v0 折算、v1 不折算、迁移后创建的不折算） |
+
+三轮评审的 `run.py` 全部通过（第三轮夹具里 `SetCostFixer` 改为构造参数写法，语义不变）。全量 `go test -race`、smoke 56、api-crud 90 通过。真实客户端、Postgres 多实例仍未实测。

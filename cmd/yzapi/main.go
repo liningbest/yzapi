@@ -78,12 +78,12 @@ func main() {
 		slog.Error("cost ledger migration failed", "err", err)
 		os.Exit(1)
 	}
-	logs, err := logstore.New(database, cfg.DataDir, func() int { return st.Get().Basic.LogRetentionDays })
+	logs, err := logstore.New(database, cfg.DataDir, func() int { return st.Get().Basic.LogRetentionDays },
+		logstore.WithCostFixer(pricing.LegacyCostFixer(database, st)))
 	if err != nil {
 		slog.Error("open metering journal", "err", err)
 		os.Exit(1)
 	}
-	logs.SetCostFixer(pricing.LegacyCostFixer(st))
 
 	gw, err := gateway.New(cfg, database, cipher, st, logs)
 	if err != nil {

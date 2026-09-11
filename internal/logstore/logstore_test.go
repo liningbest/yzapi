@@ -732,17 +732,34 @@ func TestUpgradeVersionBumpRebuildsOnce(t *testing.T) {
 // fixer before it is committed; a stamped record is left alone.
 func TestCostFixerAppliedOnCommit(t *testing.T) {
 	db := testDB(t)
-	s, err := New(db, t.TempDir(), func() int { return 30 })
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.SetCostFixer(func(l *model.CallLog) {
+	fix := func(l *model.CallLog) {
 		if l.CostLedger == "" {
 			l.CostMicros /= 2
 			l.CostLedger = "USD"
 		}
-	})
+	}
+	// A record left in the journal by a previous run is replayed inside New, through the fixer.
+	dir := t.TempDir()
+	pre, err := New(db, dir, func() int { return 30 })
+	if err != nil {
+		t.Fatal(err)
+	}
+	pre.Close(context.Background())
+	pending := sample("pending", 10)
+	pending.CostMicros = 2000
+	pb, _ := json.Marshal(pending)
+	f, _ := os.OpenFile(filepath.Join(dir, "data", "journal", journalFile), os.O_APPEND|os.O_WRONLY, 0o640)
+	_, _ = f.Write(append(pb, '\n'))
+	f.Close()
+	s, err := New(db, dir, func() int { return 30 }, WithCostFixer(fix))
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer s.Close(context.Background())
+	var replayed model.CallLog
+	if err := db.Where("request_id = ?", "pending").First(&replayed).Error; err != nil || replayed.CostMicros != 1000 || replayed.CostLedger != "USD" {
+		t.Fatalf("startup replay must go through the fixer: %v %+v", err, replayed)
+	}
 	old := sample("old", 10)
 	old.CostMicros = 1000
 	fresh := sample("fresh", 10)
@@ -752,10 +769,10 @@ func TestCostFixerAppliedOnCommit(t *testing.T) {
 	waitFor(t, func() bool {
 		var n int64
 		db.Model(&model.CallLog{}).Count(&n)
-		return n == 2
+		return n == 3
 	})
 	var rows []model.CallLog
-	db.Order("request_id").Find(&rows)
+	db.Where("request_id IN ?", []string{"fresh", "old"}).Order("request_id").Find(&rows)
 	if rows[0].RequestID != "fresh" || rows[0].CostMicros != 1000 || rows[1].CostMicros != 500 || rows[1].CostLedger != "USD" {
 		t.Fatalf("fixer: %+v", rows)
 	}
