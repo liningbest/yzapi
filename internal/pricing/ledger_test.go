@@ -100,7 +100,7 @@ func TestLedgerV1Upgrade(t *testing.T) {
 	if err := st.SetPricing(settings.Pricing{Currency: "CNY", USDToCNY: 7.2}); err != nil {
 		t.Fatal(err)
 	}
-	db.Create(&model.Setting{Key: ledgerMarker, Value: ledgerV1, UpdatedAt: time.Now()})
+	db.Create(&model.Setting{Key: ledgerMarker, Value: "USD", UpdatedAt: time.Now()}) // exactly what 1.0.13 wrote
 	l := model.CallLog{RequestID: "v1", CostMicros: 1000000, Attempts: model.JSON(`[{"cost_micros":7200000}]`)}
 	db.Create(&l)
 	db.Create(&model.UsageHourly{Hour: time.Now().Truncate(time.Hour), CostMicros: 1000000, Requests: 1})

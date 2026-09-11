@@ -271,7 +271,7 @@ func (s *Service) Currency() string {
 const (
 	ledgerMarker    = "cost_ledger"
 	ledgerVersion   = "usd-v2"    // v2: attempts converted too
-	ledgerV1        = "usd"       // 1.0.13 marker: request/hourly amounts converted, attempts not
+	ledgerV1        = "USD"       // 1.0.13 marker (value of Ledger): request/hourly amounts converted, attempts not
 	ledgerMigrating = "migrating" // placeholder held inside the migration transaction
 )
 
@@ -287,7 +287,7 @@ func MigrateLedger(db *gorm.DB, st *settings.Store) error {
 	case err != nil && !errors.Is(err, gorm.ErrRecordNotFound):
 		return err // a read failure must not be mistaken for "not migrated"
 	}
-	v1Done := err == nil && row.Value == ledgerV1
+	v1Done := err == nil // any pre-v2 marker: the 1.0.13 migration ran, attempts still unconverted
 	pr := st.Get().Pricing
 	rate := pr.USDToCNY
 	if rate <= 0 {
@@ -298,7 +298,7 @@ func MigrateLedger(db *gorm.DB, st *settings.Store) error {
 		// Claim the marker first: a second instance racing on the same database either
 		// blocks on the row and then finds it claimed, or fails the insert.
 		if v1Done {
-			res := tx.Model(&model.Setting{}).Where("key = ? AND value = ?", ledgerMarker, ledgerV1).Update("value", ledgerMigrating)
+			res := tx.Model(&model.Setting{}).Where("key = ? AND value NOT IN ?", ledgerMarker, []string{ledgerVersion, ledgerMigrating}).Update("value", ledgerMigrating)
 			if res.Error != nil {
 				return res.Error
 			}
