@@ -573,7 +573,12 @@ export interface CallLog {
   upstream_latency_ms: number;
   /** Time blocked writing to the client (streams); upstream wait ≈ upstream_latency_ms − client_write_ms. */
   client_write_ms?: number;
+  /** Upstream response headers arrived, from request start (includes queueing and earlier attempts). */
   first_byte_ms: number;
+  /** First event carrying generated content written to the client, from request start. */
+  first_content_ms?: number;
+  /** Time spent waiting for gateway / group / key concurrency slots. */
+  queue_wait_ms?: number;
   error: string;
   attempts: LogAttempt[];
   route_label: string;

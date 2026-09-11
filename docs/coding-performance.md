@@ -1,69 +1,54 @@
 # Coding 场景性能建议
 
-日期：2026-09-11。只建议、不改代码。面向 Claude Code / Codex / Cline / Gemini CLI：关心的是首字延迟（TTFT）和流式顺滑，不是压测吞吐。
-
-对照过 `internal/gateway/handler.go`、`upstream.go`、`convert/`、默认设置、`scripts/bench.sh`。没有重新压测。若要验证，用真实会话大小打一条流式请求，看 `first_byte_ms`，不要只用 `scripts/bench.sh`。
+日期：2026-09-11（依 `docs/coding-performance-review.md` 的评审修订；原稿的诊断表与部分技术解释已按评审更正）。面向 Claude Code / Codex / Cline / Gemini CLI：关心的是首字延迟与流式顺滑，不是压测吞吐。
 
 ## 结论
 
-先配成薄转发，再考虑改热路径。
+编程工具场景优先保证协议完整、计量可靠和首字 / 流式体验。先使用与客户端实际入口匹配的上游协议，减少业务不需要的外部调用，再通过统一口径的分段计时定位瓶颈。同协议请求体复用与跳过无用提取是候选优化，但收益需在真实大小请求和代表性并发下验证。响应头时间不等于客户端首字，写入耗时不能独立判定反代缓冲，tok/s 也不能单独证明转发更快。代理、重试和 fsync 按可达性、成功率与持久性要求选择，不能为跑分统一关闭或降低。
 
-合规语义和智能路由默认关着。同协议直连时，网关在 mock 上大约多 2 ms（非流）/ 6 ms（流 p50）。真实模型是百毫秒到数秒。Coding 体感慢，多半是：跨协议转换、大请求体整包 JSON 重编码、失败重试、或者合规/向量被打开。不是 SSE 逐 token 转发本身。
+## 网关本身加了多少（2026-09-11 实测）
 
-三件事优先：
+同协议 Anthropic 流式直连零延迟 mock，curl 的首个响应字节时间中位数（20 次，本机，代理变量已清除）：
 
-1. Claude Code 用 Anthropic 入口账号（各客户端对原生协议）。
-2. 合规语义 / `yz-auto` 不要走 coding 流量。
-3. 用日志里的 `first_byte_ms` 区分网关前置 vs 上游首字。
+| 请求体 | 直连 mock | 经网关 | 网关多出 |
+|---|---|---|---|
+| 4 KB | 0.6 ms | 0.9 ms | 0.3 ms |
+| 200 KB | 1.7 ms | 4.6 ms | 2.9 ms |
+| 1 MB | 6.1 ms | 19.0 ms | 12.9 ms |
 
-## 现在就能做的（不用改代码）
+多出的部分主要是整包读入、JSON 扫描、模型名改写后的重编码和合规 / 路由用的文本提取。以真实模型首字 500 ms 到数秒计，200 KB 会话体上的 3 ms 低于 1%；1 MB 上下文约 13 ms。这是"不先改热路径"的依据；如果实际会话体普遍在 1 MB 以上，同协议直传请求体值得做，但要用这一组数据做 A/B。
 
-| 优先级 | 做什么 | 为什么 |
-| --- | --- | --- |
-| 1 | 每个客户端用上游的原生协议账号：Claude Code → Anthropic 兼容入口；Codex → OpenAI；Gemini CLI → 原生 Gemini | 同协议只改模型名再转发。跨协议要整包转换，流式还要逐事件 Unmarshal/Marshal；Anthropic ↔ Responses / Gemini 会 `chainStream` 两跳 |
-| 2 | 保持「内容合规」关闭；不要给 coding 请求走虚拟模型 `yz-auto` | 语义审核和智能路由都要打向量服务。Coding 提示词通常 >8KB，进不了嵌入缓存，每次请求多一次嵌入 RTT（上限 `vector_timeout_sec`，默认 10s） |
-| 3 | 账号优先级拉开，MaxRetries 不要靠太大；冷却中的号不要还排在最前 | 默认最多 3 次尝试。慢超时或 5xx 会把整段 RequestTimeout 吃掉再切号。Coding 体感上这比 JSON 解析贵得多 |
-| 4 | 不要设 `YZAPI_HTTP_PROXY` 去打公网模型；`YZAPI_JOURNAL_FSYNC` 保持 `interval`；Elasticsearch 正文审计关掉或把 RequestKB 压小 | 强制代理给每跳加延迟。`always` fsync 伤吞吐不伤 TTFT。正文审计会给响应套 `capWriter`，多拷一份流 |
-| 5 | 个别供应商流式卡顿时再试 `YZAPI_UPSTREAM_HTTP2=0` | 默认 HTTP/2 连接池（每 host 256 idle）。有的上游 HTTP/2 会把 SSE 攒包，首字或逐 token 变钝，这是逃生开关 |
-| 6 | 用日志里的 `first_byte_ms` / `client_write_ms` / `X-Upstream-*` 判断瓶颈 | `first_byte_ms` 接近直连上游 → 网关前置可忽略。`client_write_ms` 高 → 客户端或反向代理在缓冲，不是网关 CPU |
+## 现在就能做的（配置层面）
 
-## 延迟实际加在哪
+| 优先级 | 做什么 | 依据 |
+|---|---|---|
+| 1 | 每个客户端用上游的原生协议账号：Claude Code → Anthropic 兼容入口（`anthropic-messages`）；Codex → OpenAI（`openai-responses`）；OpenAI 兼容工具 → `openai-completions`；Gemini CLI → 原生 Gemini（`gemini-generate`） | 同协议只改模型名（Chat 流式还会注入 `stream_options`）再转发；跨协议要整包转换，流式逐事件编解码，Anthropic ↔ Responses / Gemini 走两跳串联 |
+| 2 | 业务不需要就保持「内容合规」关闭；coding 请求不要走虚拟模型 `yz-auto` | 语义审核与智能路由会调用向量服务；是否真的触发，看路由决策记录和向量调用次数，不要凭请求体大小推断 |
+| 3 | 「最多尝试次数」按需设置，注意它是**含首次的总次数** | 设为 1 表示失败后不切号；调整时对比成功率、重试次数和失败原因，不只看成功请求的平均耗时 |
+| 4 | 出站代理按可达性实测决定；`YZAPI_JOURNAL_FSYNC` 沿用既定持久性要求；正文审计不需要就关 | 强制代理会给每跳加延迟，但直连是否可达要实测；fsync 不是性能开关，改它就是改丢失边界 |
+| 5 | 个别供应商流式卡顿时再试 `YZAPI_UPSTREAM_HTTP2=0`，逐个对照 | 这是诊断开关；先确认该链路确实协商了 HTTP/2 |
 
-Claude Code 流式、同协议 Anthropic：鉴权 → 整包读 body → JSON 解析 → 限流配额 →（可选合规/路由）→ 改模型名再 Marshal → 上游。上游头回来之后按 SSE 事件 Flush。计量 journal 在流结束后才写，不挡首字。
+## 用日志定位瓶颈（1.0.20 起的字段口径）
 
-| 阶段 | 同协议 | 跨协议 | 对 Coding 的影响 |
-| --- | --- | --- | --- |
-| 请求进网关到发上游之前 | `ReadAll` + Unmarshal + 整表再 Marshal（即使只改 `model`） | 再加 Anthropic ↔ Chat（↔ Gemini / Responses）整包转换 | 会话上下文到几百 KB 时，这是网关真正能加上去的 TTFT。`bench.sh` 用的是小 body，测不到 |
-| 上游首字 | HTTP/2 复用，头到了立刻 `WriteHeader` + Flush | 同左，转换不攒整段回复 | 通常是大头。网关已经关了响应压缩（`Accept-Encoding: identity`）和 nginx 缓冲头 |
-| 逐 token | 解析 SSE 事件、抽 usage、再写出并 Flush | 每个 delta 再 JSON 编解码；两跳转换走 pipe | 同协议几乎感觉不到。跨协议在高并发下会拉高 p99，单人 coding 仍远小于模型间隔 |
-| 流结束 | journal 异步、计价、聚合 | 同左 | 不影响 TTFT。`YZAPI_JOURNAL_FSYNC=always` 才会拖提交 |
+| 字段 | 含义 |
+|---|---|
+| `queue_wait_ms` | 等并发槽的时间；不为 0 说明在排队，先查上游慢或账号冷却，不要先加队列 |
+| `first_byte_ms` | 成功那次上游尝试的响应头到达；含排队和之前失败的尝试 |
+| `first_content_ms` | 首个真正的正文 / 思考 / 工具调用增量写向客户端；这才是用户感受的首字 |
+| `client_write_ms` | 向客户端写入被阻塞的累计时间；高了查写入路径（下游接收、网络），结合客户端事件时间线定位，不能直接归咎反代 |
+| attempts | 先有超时 / 5xx 再成功，说明重试在吃首字；看具体失败类型 |
 
-同协议整包再 Marshal 在 `internal/gateway/handler.go` 的 `buildBody`（约 977–989 行）：即使只改模型名也会把整份 raw map 再编码一遍。Gemini 直连已经原样传 `req.body`。
+`first_content_ms − first_byte_ms` 大：上游在响应头之后才出字（推理模型常见），与网关无关。`first_byte_ms − queue_wait_ms` 明显大于直连该供应商：再看请求体大小与是否跨协议。
 
-## 值得以后改的热路径
+## 值得以后改的热路径（要先有证据）
 
-- 同协议且模型名已是上游名、又不必注入 `stream_options` 时，直接传 `req.body`。现在 `buildBody` 即使只改一个字段也会把整份 raw map Marshal 一遍。
-- `extractText`（合规/路由用）会再解析一遍 `messages`。coding 网关若永不开这两项，可以短路掉。
-- 再往后才是：同协议尽量不要把整包 JSON 读进内存再发给上游（要动鉴权/审核的设计）。那是超大上下文才值得做的。
-- SSE 的 `WriteSSE` 每次 new Buffer、转换路径逐 token Marshal，属于微优化。单人 coding 排在整包 JSON 和失败重试后面。
+- 同协议、模型名已是上游名、无需注入字段时直接传 `req.body`；保留完整解析与授权检查。
+- 合规与路由都不使用时跳过文本提取；需确认审计、路由与消息数没有其他依赖。
+- 再往后才是请求体全流式转发，它牵涉鉴权、模型授权、重试、审核和内存预算，改动范围大。
+- SSE 写出的临时缓冲、转换路径逐 token 编码属于微优化，排在最后。
+
+不建议用字符串替换改 JSON，也不建议为了省一次 flush 攒 token。
 
 ## 先别优化这些
 
-- gin 包一层 `WrapF`、CAS 并发槽、配额读锁、atomic 快照，相对大 body 和上游都可以忽略。
-- README 里 128 并发 5000 次的吞吐数字，是零延迟 mock + 小 OpenAI 请求。不能代表 Claude Code 大上下文流式。
-- 多实例进程内限流会影响配额准确性，几乎不影响单请求延迟。
-- 设置里 MaxConcurrency 512、Queue 1024 对几路 IDE 足够。排队变多时先查上游慢和账号冷却，不要先加队列。
-
-## 怎么确认网关不是瓶颈
-
-| 你看到的 | 含义 |
-| --- | --- |
-| `first_byte_ms` 和直连该供应商差不多 | 前置处理可接受，去查模型和网络 |
-| `first_byte_ms` 明显更大，body 很大 | `ReadAll` + 再 Marshal 或跨协议转换；对照是否同协议 |
-| `first_byte_ms` 更大，且开了合规/智能路由 | 嵌入调用在发上游之前，优先关掉 |
-| attempts 里先有一次超时/5xx 再成功 | 重试在吃 TTFT，调优先级和冷却 |
-| `client_write_ms` 高、upstream 正常 | IDE、本机代理或前面的 nginx 在攒 SSE |
-
-## 建议的配置画像
-
-一台专门给 coding 用的网关：合规关、智能路由关、正文审计关；Claude / GPT / Gemini 各用原生协议账号；映射用精确模型名；重试 1–2 次；journal 默认 `interval`。这样网关就是鉴权、选号、计量，剩下的时间交给模型。
+gin 包装、并发槽、配额读锁、快照原子指针，相对大 body 和上游耗时可以忽略。README 的吞吐数字来自零延迟 mock 加小请求，不代表大上下文流式。MaxConcurrency 512 / 队列 1024 对几路 IDE 足够。

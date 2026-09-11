@@ -146,7 +146,21 @@ export default function LogDetailDrawer({ open, log, onClose }: Props) {
             </Descriptions.Item>
             <Descriptions.Item label={t('common:common.totalLatency')}>{formatMs(log.latency_ms)}</Descriptions.Item>
             <Descriptions.Item label={t('common:common.upstreamLatency')}>{formatMs(log.upstream_latency_ms)}</Descriptions.Item>
-            <Descriptions.Item label={t('logs:detail.firstByte')}>{formatMs(log.first_byte_ms)}</Descriptions.Item>
+            <Descriptions.Item label={t('logs:detail.queueWait')}>
+              <Tooltip title={t('logs:detail.queueWaitHint')}>
+                <span style={{ borderBottom: '1px dotted currentColor', cursor: 'help' }}>{formatMs(log.queue_wait_ms ?? 0)}</span>
+              </Tooltip>
+            </Descriptions.Item>
+            <Descriptions.Item label={t('logs:detail.firstByte')}>
+              <Tooltip title={t('logs:detail.firstByteHint')}>
+                <span style={{ borderBottom: '1px dotted currentColor', cursor: 'help' }}>{formatMs(log.first_byte_ms)}</span>
+              </Tooltip>
+            </Descriptions.Item>
+            <Descriptions.Item label={t('logs:detail.firstContent')}>
+              <Tooltip title={t('logs:detail.firstContentHint')}>
+                <span style={{ borderBottom: '1px dotted currentColor', cursor: 'help' }}>{log.first_content_ms ? formatMs(log.first_content_ms) : '-'}</span>
+              </Tooltip>
+            </Descriptions.Item>
             <Descriptions.Item label={t('logs:detail.clientWrite')}>
               <Tooltip title={t('logs:detail.clientWriteHint')}>
                 <span style={{ borderBottom: '1px dotted currentColor', cursor: 'help' }}>{formatMs(log.client_write_ms ?? 0)}</span>

@@ -70,8 +70,8 @@
       "extra": "Seconds an account stays in cooldown after a failure; no requests are assigned to it meanwhile."
     },
     "max_retries": {
-      "label": "Max retries",
-      "extra": "How many other accounts to try after an upstream failure."
+      "label": "Max attempts",
+      "extra": "Total upstream attempts including the first request; 1 means no account switch after a failure."
     },
     "upstream_connect_timeout_sec": {
       "label": "Upstream connect timeout",

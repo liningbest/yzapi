@@ -210,3 +210,15 @@
 两份复核都关闭了费用数据路径上的 R117 与"已扣回再扣"边界。剩余一条 P2：v3 修理成功后仍打"未剔除、请重建"告警，因为计数发生在把 `cost_known` 置 false 之后。现在在修理前计数，本趟结算的行不再被报；告警措辞改为"没有证据，先对账，有差异再重建"。回归：`TestR118RepairMustNotWarnAsUnsettled`（1.0.15 主路径静默、无证据行报数）。七轮评审的 `run.py`（6 + 3 + 2 + 2 + 2 + 4 + 2）全部通过；全量 `go test -race`、smoke 56、api-crud 90 通过。
 
 复核结果（`docs/acceptance-review-1.0.19-canvas-chat.md`、`docs/acceptance-review-1.0.19-2026-09-11.md`）：R118-01 关闭，无新增阻断项；发布包 1.0.19 对应提交 `1c0dd0a` 的业务代码，本节之后只有文档变更。
+
+## 1.0.20：Coding 场景性能——先补观测，不改热路径（`docs/coding-performance-changes-2026-09-11.md`）
+
+| 修改 | 说明 | 验收方式 |
+|---|---|---|
+| 日志新增 `queue_wait_ms` | 等待网关 / 用户组 / Key 并发槽的时间；在取槽前后计时，失败也记录 | `TestTimingsRecorded` |
+| 日志新增 `first_content_ms` | 首个带生成内容（正文、思考或工具调用增量）的事件写向客户端的时刻；按客户端协议判定，角色事件、空增量、心跳、仅 usage 不算；非流式为正文写出时刻；找到后不再解析事件 | `TestEventHasContentPerProtocol`（四协议 16 例）、`TestFirstContentWriterFiresOnce`（事件跨 Write 分片）、`TestTimingsRecorded`（同协议流、转换流、非流式） |
+| `first_byte_ms` 改名展示 | 管理端与用户中心改为"上游响应头到达"并带说明，不再叫"首字节" | 界面 |
+| 「最大重试次数」改为「最多尝试次数」 | 说明它是含首次的总次数 | 界面 |
+| 文档 | `docs/coding-performance.md` 按评审修订；`docs/api.md` 补耗时口径 | |
+
+实测（同协议 Anthropic 流式，零延迟 mock）：网关在 4 KB / 200 KB / 1 MB 请求体上分别多出约 0.3 / 2.9 / 12.9 ms 首字节时间，故本轮不改热路径。

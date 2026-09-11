@@ -256,8 +256,10 @@ type CallLog struct {
 	//   ClientWriteMs     time spent blocked in Write/Flush towards the client (streams);
 	//                     UpstreamLatencyMs - ClientWriteMs approximates pure upstream wait
 	UpstreamLatencyMs int64 `json:"upstream_latency_ms"`
-	FirstByteMs       int64 `json:"first_byte_ms"`
+	FirstByteMs       int64 `json:"first_byte_ms"` // upstream response headers arrived (from request start; includes queueing and earlier attempts)
 	ClientWriteMs     int64 `json:"client_write_ms"`
+	QueueWaitMs       int64 `gorm:"not null;default:0" json:"queue_wait_ms"`    // time spent waiting for gateway / group / key concurrency slots
+	FirstContentMs    int64 `gorm:"not null;default:0" json:"first_content_ms"` // first event with generated content (text, thinking or tool call) written to the client; non-stream: body written
 	// Estimated cost in the ledger currency (USD), micro-units (1e-6), summed over attempts
 	// and frozen at record time; the API converts to the display currency. CostKnown is
 	// false when any attempt with tokens had no price or any attempt's usage is unknown /

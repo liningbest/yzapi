@@ -144,7 +144,7 @@ func (s *Server) userLogs(c *gin.Context) {
 			"client_protocol": l.ClientProtocol, "stream": l.Stream,
 			"prompt_tokens": l.PromptTokens, "completion_tokens": l.CompletionTokens, "total_tokens": l.TotalTokens,
 			"cached_tokens": l.CachedTokens, "tokens_known": l.TokensKnown, "result": l.Result, "status_code": l.StatusCode,
-			"latency_ms": l.LatencyMs, "first_byte_ms": l.FirstByteMs, "error": l.Error, "route_label": l.RouteLabel, "created_at": l.CreatedAt,
+			"latency_ms": l.LatencyMs, "first_byte_ms": l.FirstByteMs, "first_content_ms": l.FirstContentMs, "queue_wait_ms": l.QueueWaitMs, "error": l.Error, "route_label": l.RouteLabel, "created_at": l.CreatedAt,
 			"usage_status": l.UsageStatus, "est_prompt_tokens": l.EstPromptTokens, "usage_corrected": l.UsageCorrected,
 			"cost": s.displayCost(&l), "cost_known": l.CostKnown, "cost_unverified": l.CostLedger == model.CostLedgerUnverified,
 		})

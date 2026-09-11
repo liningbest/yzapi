@@ -152,9 +152,10 @@
       "result": "結果",
       "statusCode": "狀態碼",
       "latency": "總耗時",
-      "firstByte": "首位元組耗時",
+      "firstByte": "上游回應標頭到達",
       "error": "錯誤訊息",
-      "cost": "估算費用"
+      "cost": "估算費用",
+      "firstContent": "首個正文寫出"
     },
     "empty": "暫無呼叫記錄",
     "emptyHint": "所選時間範圍內沒有符合的呼叫",

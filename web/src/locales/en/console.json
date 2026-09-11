@@ -152,9 +152,10 @@
       "result": "Result",
       "statusCode": "Status code",
       "latency": "Total latency",
-      "firstByte": "Time to first byte",
+      "firstByte": "Upstream headers",
       "error": "Error",
-      "cost": "Est. cost"
+      "cost": "Est. cost",
+      "firstContent": "First content out"
     },
     "empty": "No call records",
     "emptyHint": "No matching calls in the selected time range",

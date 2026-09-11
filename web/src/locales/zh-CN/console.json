@@ -152,9 +152,10 @@
       "result": "结果",
       "statusCode": "状态码",
       "latency": "总耗时",
-      "firstByte": "首字节耗时",
+      "firstByte": "上游响应头到达",
       "error": "错误信息",
-      "cost": "估算费用"
+      "cost": "估算费用",
+      "firstContent": "首个正文写出"
     },
     "empty": "暂无调用记录",
     "emptyHint": "所选时间范围内没有匹配的调用",

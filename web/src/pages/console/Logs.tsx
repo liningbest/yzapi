@@ -320,6 +320,9 @@ export default function Logs() {
               <Descriptions.Item label={t('console:logs.fields.firstByte')}>
                 {selected.first_byte_ms ? formatMs(selected.first_byte_ms) : '-'}
               </Descriptions.Item>
+              <Descriptions.Item label={t('console:logs.fields.firstContent')}>
+                {selected.first_content_ms ? formatMs(selected.first_content_ms) : '-'}
+              </Descriptions.Item>
             </Descriptions>
             {selected.error ? (
               <>

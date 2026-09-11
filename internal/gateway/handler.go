@@ -510,7 +510,9 @@ func (g *Gateway) handleTextWith(w http.ResponseWriter, r *http.Request, proto s
 
 	// Concurrency slots are taken before the (potentially expensive) compliance and
 	// routing stages so pre-processing is bounded by the same limits as forwarding.
+	tq := time.Now()
 	release, e := g.acquire(req)
+	req.log.QueueWaitMs = time.Since(tq).Milliseconds()
 	if e != nil {
 		g.fail(req, e)
 		return
@@ -583,7 +585,9 @@ func (g *Gateway) handleSimple(w http.ResponseWriter, r *http.Request, proto str
 		g.fail(req, e)
 		return
 	}
+	tq := time.Now()
 	release, e := g.acquire(req)
+	req.log.QueueWaitMs = time.Since(tq).Milliseconds()
 	if e != nil {
 		g.fail(req, e)
 		return
@@ -1072,6 +1076,11 @@ func (g *Gateway) relay(req *request, resp *http.Response, upProto string, dropU
 	// "upstream was slow" from "client / reverse proxy was slow to accept bytes".
 	tw := &timedWriter{w: dst}
 	dst = tw
+	// The moment the first generated content goes out is what a user perceives as
+	// "first token"; FirstByteMs (upstream headers) is much earlier on reasoning models.
+	dst = &firstContentWriter{w: dst, proto: req.proto, onFirst: func() {
+		req.log.FirstContentMs = time.Since(req.start).Milliseconds()
+	}}
 	flush := func() {
 		if flusher != nil {
 			t := time.Now()
@@ -1206,6 +1215,7 @@ func (g *Gateway) relay(req *request, resp *http.Response, upProto string, dropU
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	req.log.FirstContentMs = time.Since(req.start).Milliseconds()
 	_, _ = dst.Write(out)
 	req.wrote = true
 	req.log.Result, req.log.StatusCode = "success", 200
