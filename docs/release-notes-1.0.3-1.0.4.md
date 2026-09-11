@@ -230,3 +230,7 @@
 ## 1.0.22：Coding 性能观测第三版（`docs/coding-performance-acceptance-298cdd9.md`）
 
 失败的 Write（含部分写入后出错）不再记录首内容；Responses 对象形 `delta` 也能判定；基准脚本记录二进制哈希、剔除非 200 样本、可记逐次样本；新增观测器微基准（首内容前每个非内容事件约 1.5 µs，之后直通 0 分配）；报告首段、第 5 节与第 3 节结论按验收收窄。详见 `docs/coding-performance-changes-2026-09-11.md` 第 8 节。
+
+## 1.0.23：Coding 性能观测第四版（`docs/coding-performance-acceptance-d199ab8.md`）
+
+工具调用名称事件计入首内容：Anthropic `content_block_start`（`tool_use` 且有 `name`）、Responses `response.output_item.added`（`function_call` 且有 `name`）；对象形 `delta` 递归检查非空字符串。新增端到端 `TestToolNameIsFirstContent`。详见 `docs/coding-performance-changes-2026-09-11.md` 第 9 节。

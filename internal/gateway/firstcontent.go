@@ -57,6 +57,28 @@ func (f *firstContentWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
+// hasNonEmptyString reports whether a decoded JSON value contains any non-empty string
+// (used for object- or array-shaped deltas, whose exact schema is not fixed).
+func hasNonEmptyString(v any) bool {
+	switch x := v.(type) {
+	case string:
+		return x != ""
+	case []any:
+		for _, e := range x {
+			if hasNonEmptyString(e) {
+				return true
+			}
+		}
+	case map[string]any:
+		for _, e := range x {
+			if hasNonEmptyString(e) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // eventHasContent reports whether one SSE event (without its trailing blank line)
 // carries generated content in the given client protocol.
 func eventHasContent(proto string, raw []byte) bool {
@@ -88,12 +110,20 @@ func eventHasContent(proto string, raw []byte) bool {
 				Thinking    string `json:"thinking"`
 				PartialJSON string `json:"partial_json"`
 			} `json:"delta"`
+			ContentBlock struct {
+				Type string `json:"type"`
+				Name string `json:"name"`
+			} `json:"content_block"`
 		}
 		if json.Unmarshal([]byte(data), &e) != nil {
 			return false
 		}
 		if event == "" {
 			event = e.Type
+		}
+		// A tool_use block start already tells the client which tool is being called.
+		if event == "content_block_start" {
+			return e.ContentBlock.Type == "tool_use" && e.ContentBlock.Name != ""
 		}
 		if event != "content_block_delta" {
 			return false
@@ -111,6 +141,10 @@ func eventHasContent(proto string, raw []byte) bool {
 		var e struct {
 			Type  string          `json:"type"`
 			Delta json.RawMessage `json:"delta"` // a string; tolerate an object/array shape too
+			Item  struct {
+				Type string `json:"type"`
+				Name string `json:"name"`
+			} `json:"item"`
 		}
 		if json.Unmarshal([]byte(data), &e) != nil {
 			return false
@@ -119,14 +153,17 @@ func eventHasContent(proto string, raw []byte) bool {
 			event = e.Type
 		}
 		switch event {
+		case "response.output_item.added":
+			// A function_call item carries the tool name before any argument delta.
+			return e.Item.Type == "function_call" && e.Item.Name != ""
 		case "response.output_text.delta", "response.reasoning_text.delta", "response.reasoning_summary_text.delta",
 			"response.function_call_arguments.delta", "response.refusal.delta":
 			var s string
 			if json.Unmarshal(e.Delta, &s) == nil {
 				return s != ""
 			}
-			d := strings.TrimSpace(string(e.Delta))
-			return d != "" && d != "null" && d != "{}" && d != "[]"
+			var v any
+			return json.Unmarshal(e.Delta, &v) == nil && hasNonEmptyString(v)
 		}
 		return false
 	case model.ProtoGemini:

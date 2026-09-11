@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,6 +45,13 @@ func TestEventHasContentPerProtocol(t *testing.T) {
 		{model.ProtoGemini, `data: {"candidates":[{"content":{"parts":[{"functionCall":null}]}}]}`, false},
 		{model.ProtoOpenAIChat, `data: {"choices":[{"index":0,"delta":{"tool_calls":null}}]}`, false},
 		{model.ProtoOpenAIChat, `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"name":"","arguments":""}}]}}]}`, false},
+		// Review perf-d199ab8: a tool-call name already sent to the client is content.
+		{model.ProtoAnthropicMessages, "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"Write\",\"input\":{}}}", true},
+		{model.ProtoAnthropicMessages, "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"\"}}", false},
+		{model.ProtoOpenAIResponses, "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"function_call\",\"name\":\"shell\",\"arguments\":\"\"}}", true},
+		{model.ProtoOpenAIResponses, "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[]}}", false},
+		// Object-shaped deltas count only when something inside is non-empty.
+		{model.ProtoOpenAIResponses, "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":{\"text\":\"\"}}", false},
 		// CRLF-delimited streams are parsed too.
 		{model.ProtoOpenAIChat, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"x\"}}]}\r", true},
 	}
@@ -196,4 +204,36 @@ func BenchmarkFirstContentWriter(b *testing.B) {
 			}
 		}
 	})
+}
+
+// A tool call whose name arrives before its arguments: first content is the name event,
+// fired once, not the later argument delta (Anthropic client on a chat upstream, where
+// the converter emits content_block_start tool_use for the name).
+func TestToolNameIsFirstContent(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		fl := w.(http.Flusher)
+		_, _ = io.WriteString(w, "data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"}}]}\n\n")
+		fl.Flush()
+		time.Sleep(40 * time.Millisecond)
+		_, _ = io.WriteString(w, "data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"Write\",\"arguments\":\"\"}}]}}]}\n\n")
+		fl.Flush()
+		time.Sleep(120 * time.Millisecond)
+		_, _ = io.WriteString(w, "data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"path\\\":\\\"a\\\"}\"}}]}}]}\n\n")
+		_, _ = io.WriteString(w, "data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer up.Close()
+	e := newE2E(t, up.URL)
+	w := e.call(t, "/v1/messages", `{"model":"m","max_tokens":10,"stream":true,"tools":[{"name":"Write","input_schema":{"type":"object"}}],"messages":[{"role":"user","content":"hi"}]}`, nil)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"name":"Write"`) {
+		t.Fatalf("status %d %s", w.Code, w.Body.String())
+	}
+	l, _ := e.callLog(t)
+	gap := l.FirstContentMs - l.FirstByteMs
+	if gap < 40 || gap >= 160 {
+		t.Fatalf("first content must be the tool name (~40 ms after headers), not the arguments (~160 ms): gap=%d first_byte=%d first_content=%d", gap, l.FirstByteMs, l.FirstContentMs)
+	}
 }
