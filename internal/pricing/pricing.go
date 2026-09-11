@@ -14,6 +14,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"yzapi/internal/logstore"
 	"yzapi/internal/model"
 	"yzapi/internal/settings"
 )
@@ -283,7 +284,7 @@ const (
 	ledgerVersion   = "usd-v3"
 	ledgerMigrating = "migrating" // placeholder held inside the migration transaction
 
-	LedgerUnverified = "unverified" // stamp for rows whose currency could not be established
+	LedgerUnverified = model.CostLedgerUnverified // stamp for rows whose currency could not be established
 )
 
 var errLedgerDone = errors.New("ledger migration already applied")
@@ -354,7 +355,7 @@ func MigrateLedger(db *gorm.DB, st *settings.Store) error {
 		lastID := uint(0)
 		for {
 			var rows []model.CallLog
-			if err := tx.Select("id", "cost_micros", "attempts", "created_at").Where("id > ? AND (cost_ledger IS NULL OR cost_ledger = '')", lastID).
+			if err := tx.Where("id > ? AND (cost_ledger IS NULL OR cost_ledger = '')", lastID).
 				Order("id").Limit(500).Find(&rows).Error; err != nil {
 				return err
 			}
@@ -364,10 +365,17 @@ func MigrateLedger(db *gorm.DB, st *settings.Store) error {
 			for i := range rows {
 				r := &rows[i]
 				micros, att, stamp := classifyLegacyRow(r, origin, markerTime, rate, divide)
+				upd := map[string]any{"cost_micros": micros, "cost_ledger": stamp}
 				if stamp == LedgerUnverified {
 					unverified++
+					// Its amounts were booked into the hourly rollup as if they were USD
+					// (origin v2 replayed them without a fixer): take them back out and
+					// count the request as unverified there too.
+					if err := unbookUnverified(tx, r); err != nil {
+						return err
+					}
+					upd["cost_known"] = false
 				}
-				upd := map[string]any{"cost_micros": micros, "cost_ledger": stamp}
 				if string(att) != string(r.Attempts) {
 					upd["attempts"] = att
 				}
@@ -409,6 +417,11 @@ func classifyLegacyRow(r *model.CallLog, origin string, markerTime time.Time, ra
 		att, _ := scaleAttempts(r.Attempts, 1/rate)
 		return int64(math.Round(float64(r.CostMicros) / rate)), att, Ledger
 	case "v1":
+		if rate < 4 && priced && sum > 0 && r.CreatedAt.Before(markerTime) {
+			// The ratio rule cannot separate "attempts still in CNY" from "consistent"
+			// when the rate is this small; do not guess.
+			return r.CostMicros, r.Attempts, LedgerUnverified
+		}
 		switch {
 		case r.CostMicros > 0 && priced && float64(sum)/float64(r.CostMicros) > 3:
 			// Migrated by 1.0.13: request already USD, attempts still in the display
@@ -483,10 +496,29 @@ func scaleAttempts(raw model.JSON, factor float64) (model.JSON, bool) {
 	return model.JSON(b), true
 }
 
+// unbookUnverified removes a row's amounts from the hourly rollup it was booked into
+// and counts the request as unverified there, using the same attribution as the rollup.
+func unbookUnverified(tx *gorm.DB, l *model.CallLog) error {
+	for _, u := range logstore.Aggregate([]*model.CallLog{l}) {
+		if u.CostMicros == 0 && u.Requests == 0 {
+			continue
+		}
+		err := tx.Exec("UPDATE usage_hourlies SET cost_micros = COALESCE(cost_micros, 0) - ?, cost_unverified = COALESCE(cost_unverified, 0) + ? "+
+			"WHERE hour = ? AND user_id = ? AND group_id = ? AND api_key_id = ? AND account_id = ? AND provider = ? AND request_model = ? AND model_group = ? AND api_type = ?",
+			u.CostMicros, u.Requests, u.Hour, u.UserID, u.GroupID, u.APIKeyID, u.AccountID, u.Provider, u.RequestModel, u.ModelGroup, u.APIType).Error
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // LegacyCostFixer returns the commit-time hook for journal records without a ledger
-// stamp. Only a database that came straight from 1.0.12 (origin v0) can still hold
-// display-currency records in its journal, and only ones created before that first
-// migration; everything else without a stamp was priced in USD and is stamped as is.
+// stamp, applying the same evidence rule as the migration: a database that came straight
+// from 1.0.12 (origin v0) holds display-currency records created before that first
+// migration, which convert; a 1.0.13 database (origin v1) holds 1.0.13's own USD records;
+// any other origin cannot tell what an unstamped record is, so it is kept as written and
+// marked unverified (never counted as USD).
 func LegacyCostFixer(db *gorm.DB, st *settings.Store) func(*model.CallLog) {
 	origin, migratedAt := "v3", time.Time{}
 	var o, m model.Setting
@@ -500,7 +532,8 @@ func LegacyCostFixer(db *gorm.DB, st *settings.Store) func(*model.CallLog) {
 		if l.CostLedger != "" {
 			return
 		}
-		if origin == "v0" && (migratedAt.IsZero() || l.CreatedAt.Before(migratedAt)) {
+		switch {
+		case origin == "v0" && (migratedAt.IsZero() || l.CreatedAt.Before(migratedAt)):
 			pr := st.Get().Pricing
 			if strings.ToUpper(pr.Currency) == "CNY" {
 				rate := pr.USDToCNY
@@ -512,7 +545,17 @@ func LegacyCostFixer(db *gorm.DB, st *settings.Store) func(*model.CallLog) {
 					l.Attempts = att
 				}
 			}
+			l.CostLedger = Ledger
+		case origin == "v0" || origin == "v1":
+			l.CostLedger = Ledger // created after the migration, or 1.0.13's own USD records
+		default:
+			_, priced := attemptsCostSum(l.Attempts)
+			if l.CostMicros == 0 && !priced {
+				l.CostLedger = Ledger
+				return
+			}
+			l.CostLedger = LedgerUnverified
+			l.CostKnown = false
 		}
-		l.CostLedger = Ledger
 	}
 }

@@ -174,3 +174,13 @@
 | R114-02 P1 | 1.0.13 期间新产生的美元记录（两边都是美元、无逐行标记）被当作旧人民币尝试再除一次 | 迁移记录库的来源版本（`cost_ledger_origin`），对无标记行按证据逐行判定：尝试之和远大于请求金额的是 1.0.13 迁移过的旧行，按比例把尝试缩放到请求金额上（不依赖当时汇率）；两边一致且早于 1.0.13 迁移时刻的是回放进来的 1.0.12 记录，两边折算；其余只打标记。早期 1.0.14 库里无法判定的行标 `unverified` 并告警，不折算。journal 修正函数按同一来源规则，只对来自 1.0.12 的库、且早于迁移时刻的记录折算 | `TestLedgerV1Upgrade`（三类行各自结果）、`TestR114V113NewUSDRecords`（评审形状）、`TestLedgerV2UnverifiedRows`、`TestLegacyCostFixer`（来源 v0 折算、v1 不折算、迁移后创建的不折算） |
 
 三轮评审的 `run.py` 全部通过（第三轮夹具里 `SetCostFixer` 改为构造参数写法，语义不变）。全量 `go test -race`、smoke 56、api-crud 90 通过。真实客户端、Postgres 多实例仍未实测。
+
+## 1.0.16：第四轮复核 R115-01/02（`docs/acceptance-review-1.0.15-2026-09-11.md`）
+
+| 编号 | 问题 | 修改 | 验收方式 |
+|---|---|---|---|
+| R115-01 P1 | 标了 `unverified` 的行仍按美元进入聚合与展示 | 状态贯穿全链路：`UsageHourly` 新增 `cost_unverified` 计数，`Aggregate` 对 unverified 行不累加任何金额、只计数（重建同样生效）；迁移把 1.0.14 回放时按美元记入小时汇总的金额按同一归属扣回并计数，同时置 `cost_known=false`；管理端 / 用户端日志 `cost=0`、`cost_unverified=true`，报表 `summary.cost_unverified` 与各分布项计数；四处日志视图显示"币种待核实"，用量页费用卡提示待核实条数 | `TestR115UnverifiedCostNotReported`（报表 cost=0、计数 1，管理端列表 / 详情与用户日志一致）、`TestLedgerV2UnverifiedRows`（小时汇总扣回、`Aggregate` 不计）、`TestAggregateUnverifiedCost` |
+| R115-02 P1 | 来源不明的 journal 记录被直接标成 USD | 修正函数与库内迁移共用一套判定：v0 来源且早于迁移时刻的记录折算；v1 来源（1.0.13 自己的美元记录）标 USD；其余来源有金额的记录标 `unverified` 且 `cost_known=false`，无金额的标 USD | `TestR115UncertainJournal`、`TestLegacyCostFixer` |
+| 并行评审 | 汇率 ≤ 3 时"尝试 / 请求 > 3"的判定不可靠 | 汇率小于 4 时，v1 来源早于迁移时刻且带尝试金额的行不再套用比例规则，直接标 `unverified` | 代码审查（现实汇率不会低于 4，作为保护） |
+
+四轮评审的 `run.py`（6 + 3 + 2 + 2）全部通过；全量 `go test -race`、smoke 56、api-crud 90 通过。已被早期 1.0.15 回放错误标成 USD 的行（只可能存在于跑过 1.0.15 的库，实际只有本地演示库，其 journal 为空）没有可靠证据可追溯，不做猜测性补救。

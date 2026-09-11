@@ -94,7 +94,8 @@
       "total": "總 Token",
       "cached": "快取 Token",
       "cost": "估算費用",
-      "costHint": "按管理員設定的單價估算，未定價模型不計入"
+      "costHint": "按管理員設定的單價估算，未定價模型不計入",
+      "costUnverified": "另有 {{count}} 條請求的費用幣種待核實，未計入"
     },
     "trend": "Token 趨勢",
     "trendHint": "按{{group}}堆疊顯示每日 Token，折線為請求量",
@@ -159,7 +160,9 @@
     "emptyHint": "所選時間範圍內沒有符合的呼叫",
     "costUnpriced": "該模型沒有設定單價，費用未計入",
     "unpriced": "未計價",
-    "costPartial": "部分計價：有嘗試的用量未知或不完整，實際費用不低於此數"
+    "costPartial": "部分計價：有嘗試的用量未知或不完整，實際費用不低於此數",
+    "unverified": "幣種待核實",
+    "costUnverified": "升級前的這條記錄無法確定金額幣種，原始數值保留在資料庫裡，未計入任何費用合計"
   },
   "group": {
     "title": "我的使用者組",

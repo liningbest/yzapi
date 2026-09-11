@@ -103,7 +103,11 @@ export default function Logs() {
       width: 100,
       align: 'right',
       render: (_, r) =>
-        r.cost_known === false && (r.cost ?? 0) > 0 ? (
+        r.cost_unverified ? (
+          <Tooltip title={t('console:logs.costUnverified')}>
+            <span style={{ color: 'var(--yz-text-secondary)', borderBottom: '1px dotted currentColor', cursor: 'help' }}>{t('console:logs.unverified')}</span>
+          </Tooltip>
+        ) : r.cost_known === false && (r.cost ?? 0) > 0 ? (
           <Tooltip title={t('console:logs.costPartial')}>
             <span style={{ fontVariantNumeric: 'tabular-nums', borderBottom: '1px dotted currentColor', cursor: 'help' }}>≥ {formatMoney(r.cost ?? 0, currency)}</span>
           </Tooltip>
@@ -288,7 +292,11 @@ export default function Logs() {
                 )}
               </Descriptions.Item>
               <Descriptions.Item label={t('console:logs.fields.cost')}>
-                {selected.cost_known === false && (selected.cost ?? 0) > 0 ? (
+                {selected.cost_unverified ? (
+                  <Tooltip title={t('console:logs.costUnverified')}>
+                    <span style={{ color: 'var(--yz-text-secondary)', borderBottom: '1px dotted currentColor', cursor: 'help' }}>{t('console:logs.unverified')}</span>
+                  </Tooltip>
+                ) : selected.cost_known === false && (selected.cost ?? 0) > 0 ? (
                   <Tooltip title={t('console:logs.costPartial')}>
                     <span style={{ borderBottom: '1px dotted currentColor', cursor: 'help' }}>≥ {formatMoney(selected.cost ?? 0, currency)}</span>
                   </Tooltip>

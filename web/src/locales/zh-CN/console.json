@@ -94,7 +94,8 @@
       "total": "总 Token",
       "cached": "缓存 Token",
       "cost": "估算费用",
-      "costHint": "按管理员配置的单价估算，未定价模型不计入"
+      "costHint": "按管理员配置的单价估算，未定价模型不计入",
+      "costUnverified": "另有 {{count}} 条请求的费用币种待核实，未计入"
     },
     "trend": "Token 趋势",
     "trendHint": "按{{group}}堆叠展示每日 Token，折线为请求量",
@@ -159,7 +160,9 @@
     "emptyHint": "所选时间范围内没有匹配的调用",
     "costUnpriced": "该模型没有配置单价，费用未计入",
     "unpriced": "未计价",
-    "costPartial": "部分计价：有尝试的用量未知或不完整，实际费用不低于此数"
+    "costPartial": "部分计价：有尝试的用量未知或不完整，实际费用不低于此数",
+    "unverified": "币种待核实",
+    "costUnverified": "升级前的这条记录无法确定金额币种，原始数值保留在数据库里，未计入任何费用合计"
   },
   "group": {
     "title": "我的用户组",

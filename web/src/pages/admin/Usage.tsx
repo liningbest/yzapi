@@ -114,7 +114,7 @@ export default function Usage() {
       key: 'cost',
       title: t('common:common.cost'),
       value: s ? formatMoney(s.cost, data?.currency) : '-',
-      hint: t('usage:stats.costHint'),
+      hint: s?.cost_unverified ? t('usage:stats.costUnverified', { count: s.cost_unverified }) : t('usage:stats.costHint'),
       icon: <DatabaseOutlined />,
     },
     {

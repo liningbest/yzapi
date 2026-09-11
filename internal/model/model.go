@@ -83,7 +83,10 @@ const (
 	ProtoGemini            = "gemini-generate" // Google generateContent / streamGenerateContent
 
 	// CostLedgerUSD is the fixed currency every stored cost is denominated in.
-	CostLedgerUSD         = "USD"
+	CostLedgerUSD = "USD"
+	// CostLedgerUnverified marks a legacy row whose currency could not be established:
+	// its amounts are kept for inspection but never counted as USD anywhere.
+	CostLedgerUnverified  = "unverified"
 	ProtoOpenAIEmbeddings = "openai-embeddings"
 	ProtoOpenAIImages     = "openai-images"
 )
@@ -267,12 +270,13 @@ type CallLog struct {
 	// replay convert exactly once.
 	CostLedger string `gorm:"size:8" json:"cost_ledger,omitempty"`
 	// Cost is CostMicros in the display currency, filled by the API (not stored).
-	Cost       float64   `gorm:"-" json:"cost"`
-	Error      string    `gorm:"size:1024" json:"error"`
-	Attempts   JSON      `gorm:"type:text" json:"attempts"`
-	RouteLabel string    `gorm:"size:16" json:"route_label"`
-	ClientIP   string    `gorm:"size:64" json:"client_ip"`
-	CreatedAt  time.Time `gorm:"index" json:"created_at"`
+	Cost           float64   `gorm:"-" json:"cost"`
+	CostUnverified bool      `gorm:"-" json:"cost_unverified"` // the row's currency is unverified: Cost is 0 and the amount is counted nowhere
+	Error          string    `gorm:"size:1024" json:"error"`
+	Attempts       JSON      `gorm:"type:text" json:"attempts"`
+	RouteLabel     string    `gorm:"size:16" json:"route_label"`
+	ClientIP       string    `gorm:"size:64" json:"client_ip"`
+	CreatedAt      time.Time `gorm:"index" json:"created_at"`
 }
 
 // UsageHourly is a pre-aggregated rollup used by dashboards.
@@ -301,7 +305,8 @@ type UsageHourly struct {
 	CachedTokens     int64 `json:"cached_tokens"`
 	UnknownUsage     int64 `json:"unknown_usage"` // requests whose usage is partial or unknown
 	LatencyMs        int64 `json:"latency_ms"`
-	CostMicros       int64 `gorm:"not null;default:0" json:"cost_micros"` // ledger currency (USD); booked like tokens: on the attempt's account
+	CostMicros       int64 `gorm:"not null;default:0" json:"cost_micros"`     // ledger currency (USD); booked like tokens: on the attempt's account
+	CostUnverified   int64 `gorm:"not null;default:0" json:"cost_unverified"` // requests whose cost currency is unverified (their amounts are excluded from CostMicros)
 }
 
 // ConfigSnapshot is a point-in-time copy of the routing configuration (accounts with

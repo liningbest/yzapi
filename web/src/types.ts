@@ -561,8 +561,10 @@ export interface CallLog {
   cost_micros?: number;
   /** false when an attempt had no price or its usage is unknown / partial: the figure is a lower bound. */
   cost_known?: boolean;
-  /** Estimated cost in the display currency. */
+  /** Estimated cost in the display currency; 0 when cost_unverified. */
   cost?: number;
+  /** The row's stored currency could not be established after an upgrade; its amount is not counted anywhere. */
+  cost_unverified?: boolean;
   usage_status?: UsageStatus;
   est_prompt_tokens?: number;
   result: LogResult;
@@ -608,6 +610,8 @@ export interface UsageSummary {
   total_tokens: number;
   cached_tokens: number;
   cost: number;
+  /** Requests whose cost currency is unverified; excluded from cost. */
+  cost_unverified?: number;
 }
 
 export interface UsageTrendPoint {

@@ -525,6 +525,11 @@ func Aggregate(batch []*model.CallLog) []*model.UsageHourly {
 		if l.UsageStatus == model.UsagePartial || l.UsageStatus == model.UsageUnknown {
 			u.UnknownUsage++
 		}
+		// A row whose currency is unverified is counted, never summed as USD.
+		costOK := l.CostLedger != model.CostLedgerUnverified
+		if !costOK {
+			u.CostUnverified++
+		}
 		var attempts []logAttempt
 		if len(l.Attempts) > 0 {
 			_ = json.Unmarshal([]byte(l.Attempts), &attempts)
@@ -539,12 +544,14 @@ func Aggregate(batch []*model.CallLog) []*model.UsageHourly {
 			au.PromptTokens += a.PromptTokens
 			au.CompletionTokens += a.CompletionTokens
 			au.TotalTokens += a.PromptTokens + a.CompletionTokens
-			au.CostMicros += a.CostMicros
 			ap += a.PromptTokens
 			ac += a.CompletionTokens
-			acost += a.CostMicros
+			if costOK {
+				au.CostMicros += a.CostMicros
+				acost += a.CostMicros
+			}
 		}
-		if rcost := l.CostMicros - acost; rcost > 0 {
+		if rcost := l.CostMicros - acost; costOK && rcost > 0 {
 			u.CostMicros += rcost // cost not attributable to an attempt stays on the answering account
 		}
 		// Whatever the request knows beyond its attempts is booked on the answering
@@ -583,6 +590,7 @@ func applyRollup(tx *gorm.DB, batch []*model.CallLog) error {
 				"unknown_usage":     gorm.Expr("usage_hourlies.unknown_usage + ?", u.UnknownUsage),
 				"latency_ms":        gorm.Expr("usage_hourlies.latency_ms + ?", u.LatencyMs),
 				"cost_micros":       gorm.Expr("COALESCE(usage_hourlies.cost_micros, 0) + ?", u.CostMicros),
+				"cost_unverified":   gorm.Expr("COALESCE(usage_hourlies.cost_unverified, 0) + ?", u.CostUnverified),
 			}),
 		}).Create(u).Error
 		if err != nil {

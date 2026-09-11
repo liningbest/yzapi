@@ -36,6 +36,7 @@ type usageRow struct {
 	UnknownUsage     int64
 	LatencyMs        int64
 	CostMicros       int64
+	CostUnverified   int64
 }
 
 type dist struct {
@@ -48,8 +49,9 @@ type dist struct {
 	PromptTokens     int64  `json:"prompt_tokens"`
 	CompletionTokens int64  `json:"completion_tokens"`
 	UnknownUsage     int64  `json:"unknown_usage"`
+	CostUnverified   int64  `json:"cost_unverified"` // requests whose cost currency is unverified (excluded from cost)
 	costMicros       int64
-	Cost             float64 `json:"cost"` // base currency
+	Cost             float64 `json:"cost"` // display currency
 }
 
 type trendPoint struct {
@@ -163,6 +165,7 @@ func (s *Server) usageReport(c *gin.Context, scopedUser uint) gin.H {
 		d.PromptTokens += r.PromptTokens
 		d.CompletionTokens += r.CompletionTokens
 		d.UnknownUsage += r.UnknownUsage
+		d.CostUnverified += r.CostUnverified
 		d.costMicros += r.CostMicros
 		d.Cost = s.costOut(d.costMicros)
 	}
@@ -174,6 +177,7 @@ func (s *Server) usageReport(c *gin.Context, scopedUser uint) gin.H {
 		summary.PromptTokens += r.PromptTokens
 		summary.CompletionTokens += r.CompletionTokens
 		summary.UnknownUsage += r.UnknownUsage
+		summary.CostUnverified += r.CostUnverified
 		summary.costMicros += r.CostMicros
 
 		bucket := r.Hour
@@ -251,7 +255,7 @@ func (s *Server) usageReport(c *gin.Context, scopedUser uint) gin.H {
 	return gin.H{
 		"summary": gin.H{"requests": summary.Requests, "success": success, "failed": failed, "prompt_tokens": summary.PromptTokens,
 			"completion_tokens": summary.CompletionTokens, "total_tokens": summary.TotalTokens, "cached_tokens": summary.CachedTokens,
-			"unknown_usage": summary.UnknownUsage, "cost": s.costOut(summary.costMicros)},
+			"unknown_usage": summary.UnknownUsage, "cost": s.costOut(summary.costMicros), "cost_unverified": summary.CostUnverified},
 		"currency":       s.pricer.Currency(),
 		"trend":          tl,
 		"by_provider":    toList("provider"),

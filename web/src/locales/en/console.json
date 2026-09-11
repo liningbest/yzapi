@@ -94,7 +94,8 @@
       "total": "Total tokens",
       "cached": "Cached tokens",
       "cost": "Est. cost",
-      "costHint": "Estimated from the prices set by the administrator; unpriced models are not counted"
+      "costHint": "Estimated from the prices set by the administrator; unpriced models are not counted",
+      "costUnverified": "{{count}} more requests have an unverified cost currency and are not counted"
     },
     "trend": "Token trend",
     "trendHint": "Daily tokens stacked by {{group}}; the line shows requests",
@@ -159,7 +160,9 @@
     "emptyHint": "No matching calls in the selected time range",
     "costUnpriced": "No price configured for this model; cost not counted",
     "unpriced": "Unpriced",
-    "costPartial": "Partially priced: an attempt had unknown or incomplete usage; the actual cost is at least this"
+    "costPartial": "Partially priced: an attempt had unknown or incomplete usage; the actual cost is at least this",
+    "unverified": "Currency unverified",
+    "costUnverified": "The currency of this pre-upgrade record could not be established; the raw amount is kept in the database and counted nowhere"
   },
   "group": {
     "title": "My User Group",

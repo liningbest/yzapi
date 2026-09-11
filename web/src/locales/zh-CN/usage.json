@@ -5,7 +5,8 @@
   "stats": {
     "requestsHint": "成功 {{success}} · 失败 {{failed}}",
     "cacheRate": "缓存命中率 {{rate}}%",
-    "costHint": "按「设置 → 计价」单价估算，未定价模型不计入"
+    "costHint": "按「设置 → 计价」单价估算，未定价模型不计入",
+    "costUnverified": "另有 {{count}} 条请求的费用币种待核实，未计入"
   },
   "trend": {
     "title": "用量趋势",

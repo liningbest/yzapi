@@ -176,3 +176,18 @@ func (s *Server) putPricing(c *gin.Context) {
 
 // costOut renders ledger micro-units (USD) as a float in the display currency.
 func (s *Server) costOut(micros int64) float64 { return s.pricer.Display(micros) }
+
+// displayCost is a call log's cost for display: 0 when its currency is unverified, so
+// an unknown-currency amount is never shown as USD.
+func (s *Server) displayCost(l *model.CallLog) float64 {
+	if l.CostLedger == model.CostLedgerUnverified {
+		return 0
+	}
+	return s.costOut(l.CostMicros)
+}
+
+// fillCost sets the display fields on a call log returned as a whole.
+func (s *Server) fillCost(l *model.CallLog) {
+	l.CostUnverified = l.CostLedger == model.CostLedgerUnverified
+	l.Cost = s.displayCost(l)
+}

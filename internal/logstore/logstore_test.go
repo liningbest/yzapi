@@ -777,3 +777,20 @@ func TestCostFixerAppliedOnCommit(t *testing.T) {
 		t.Fatalf("fixer: %+v", rows)
 	}
 }
+
+// A call log whose cost currency is unverified contributes tokens and a request to the
+// rollup, no cost, and one unverified count on the answering account's row.
+func TestAggregateUnverifiedCost(t *testing.T) {
+	l := sample("u", 10)
+	l.AccountID, l.CostMicros, l.CostLedger = 1, 7200000, model.CostLedgerUnverified
+	l.Attempts = model.JSON(`[{"account_id":1,"usage_status":"confirmed","prompt_tokens":10,"cost_micros":5000000},{"account_id":2,"usage_status":"confirmed","prompt_tokens":0,"cost_micros":2200000}]`)
+	var cost, unv, tokens int64
+	for _, r := range Aggregate([]*model.CallLog{l}) {
+		cost += r.CostMicros
+		unv += r.CostUnverified
+		tokens += r.TotalTokens
+	}
+	if cost != 0 || unv != 1 || tokens != 10 {
+		t.Fatalf("cost=%d unverified=%d tokens=%d", cost, unv, tokens)
+	}
+}

@@ -169,27 +169,71 @@ func TestLedgerV1Upgrade(t *testing.T) {
 }
 
 // An early 1.0.14 database (marker usd-v2) may hold rows its startup replay stored
-// unconverted; their currency cannot be told from the row, so they are flagged, not divided.
+// unconverted; their currency cannot be told from the row, so they are flagged, not
+// divided, and their amounts leave the hourly rollup they were booked into.
 func TestLedgerV2UnverifiedRows(t *testing.T) {
 	_, db, st := testSvc(t)
 	if err := st.SetPricing(settings.Pricing{Currency: "CNY", USDToCNY: 7.2}); err != nil {
 		t.Fatal(err)
 	}
 	db.Create(&model.Setting{Key: ledgerMarker, Value: "usd-v2", UpdatedAt: time.Now()})
-	priced := model.CallLog{RequestID: "missed", CreatedAt: time.Now(), CostMicros: 7200000, Attempts: model.JSON(`[{"cost_micros":7200000}]`)}
-	zero := model.CallLog{RequestID: "zero", CreatedAt: time.Now()}
+	hour := time.Now().Truncate(time.Hour)
+	priced := model.CallLog{RequestID: "missed", CreatedAt: hour.Add(time.Minute), UserID: 1, AccountID: 1, Provider: "custom", RequestModel: "m", APIType: "text", Result: "success",
+		CostMicros: 7200000, CostKnown: true, Attempts: model.JSON(`[{"account_id":1,"provider":"custom","usage_status":"confirmed","prompt_tokens":1,"cost_micros":7200000}]`)}
+	zero := model.CallLog{RequestID: "zero", CreatedAt: hour.Add(time.Minute)}
 	db.Create(&priced)
 	db.Create(&zero)
+	// What the 1.0.14 replay booked for the priced row, plus a legitimate USD row in the same bucket.
+	db.Create(&model.UsageHourly{Hour: hour, UserID: 1, AccountID: 1, Provider: "custom", RequestModel: "m", APIType: "text", Requests: 2, CostMicros: 7200000 + 500})
 	if err := MigrateLedger(db, st); err != nil {
 		t.Fatal(err)
 	}
 	db.First(&priced, priced.ID)
 	db.First(&zero, zero.ID)
-	if priced.CostMicros != 7200000 || priced.CostLedger != LedgerUnverified || attemptCosts(t, priced.Attempts)[0] != 7200000 {
-		t.Fatalf("undecidable row must be flagged, not divided: %+v", priced)
+	if priced.CostMicros != 7200000 || priced.CostLedger != LedgerUnverified || priced.CostKnown || attemptCosts(t, priced.Attempts)[0] != 7200000 {
+		t.Fatalf("undecidable row must be flagged (and not known), not divided: %+v", priced)
 	}
 	if zero.CostLedger != Ledger {
 		t.Fatalf("a row without amounts is simply stamped: %+v", zero)
+	}
+	var h model.UsageHourly
+	db.First(&h)
+	if h.CostMicros != 500 || h.CostUnverified != 1 {
+		t.Fatalf("rollup must drop the unverified amount and count the request: cost=%d unverified=%d", h.CostMicros, h.CostUnverified)
+	}
+	// The rollup rebuilt from the row agrees: no cost, one unverified request.
+	agg := logstore.Aggregate([]*model.CallLog{&priced})
+	var cost, n int64
+	for _, r := range agg {
+		cost += r.CostMicros
+		n += r.CostUnverified
+	}
+	if cost != 0 || n != 1 {
+		t.Fatalf("Aggregate must not sum an unverified row: cost=%d unverified=%d", cost, n)
+	}
+}
+
+// R115-02: the journal fixer follows the same evidence rule as the migration: on an
+// origin whose unstamped records cannot be classified they are marked unverified.
+func TestR115UncertainJournal(t *testing.T) {
+	_, db, st := testSvc(t)
+	if err := st.SetPricing(settings.Pricing{Currency: "CNY", USDToCNY: 7.2}); err != nil {
+		t.Fatal(err)
+	}
+	db.Create(&model.Setting{Key: ledgerMarker, Value: "usd-v2", UpdatedAt: time.Now()})
+	if err := MigrateLedger(db, st); err != nil {
+		t.Fatal(err)
+	}
+	fix := LegacyCostFixer(db, st)
+	l := model.CallLog{CreatedAt: time.Now().Add(-time.Hour), CostMicros: 7200000, CostKnown: true}
+	fix(&l)
+	if l.CostLedger != LedgerUnverified || l.CostMicros != 7200000 || l.CostKnown {
+		t.Fatalf("uncertain v2 journal marked %q cost=%d known=%v instead of unverified", l.CostLedger, l.CostMicros, l.CostKnown)
+	}
+	empty := model.CallLog{CreatedAt: time.Now().Add(-time.Hour)}
+	fix(&empty)
+	if empty.CostLedger != Ledger {
+		t.Fatalf("a record without amounts has nothing to verify: %+v", empty)
 	}
 }
 

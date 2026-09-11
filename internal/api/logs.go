@@ -65,7 +65,7 @@ func (s *Server) listLogs(c *gin.Context) {
 		rows = []model.CallLog{}
 	}
 	for i := range rows {
-		rows[i].Cost = s.costOut(rows[i].CostMicros)
+		s.fillCost(&rows[i])
 	}
 	listResp(c, rows, total)
 }
@@ -80,7 +80,7 @@ func (s *Server) getLog(c *gin.Context) {
 		notFound(c)
 		return
 	}
-	l.Cost = s.costOut(l.CostMicros)
+	s.fillCost(&l)
 	c.JSON(200, l)
 }
 
@@ -146,7 +146,7 @@ func (s *Server) userLogs(c *gin.Context) {
 			"cached_tokens": l.CachedTokens, "tokens_known": l.TokensKnown, "result": l.Result, "status_code": l.StatusCode,
 			"latency_ms": l.LatencyMs, "first_byte_ms": l.FirstByteMs, "error": l.Error, "route_label": l.RouteLabel, "created_at": l.CreatedAt,
 			"usage_status": l.UsageStatus, "est_prompt_tokens": l.EstPromptTokens, "usage_corrected": l.UsageCorrected,
-			"cost": s.costOut(l.CostMicros), "cost_known": l.CostKnown,
+			"cost": s.displayCost(&l), "cost_known": l.CostKnown, "cost_unverified": l.CostLedger == model.CostLedgerUnverified,
 		})
 	}
 	listResp(c, out, total)

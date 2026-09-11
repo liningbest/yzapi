@@ -5,7 +5,8 @@
   "stats": {
     "requestsHint": "{{success}} succeeded · {{failed}} failed",
     "cacheRate": "Cache hit rate {{rate}}%",
-    "costHint": "Estimated from Settings → Pricing; unpriced models excluded"
+    "costHint": "Estimated from Settings → Pricing; unpriced models excluded",
+    "costUnverified": "{{count}} more requests have an unverified cost currency and are not counted"
   },
   "trend": {
     "title": "Usage trend",

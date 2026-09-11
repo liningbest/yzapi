@@ -23,5 +23,7 @@
   },
   "unpriced": "Unpriced",
   "costUnpriced": "No matching price for this model; add one under Settings → Pricing",
-  "costPartial": "Partially priced: an attempt had unknown or incomplete usage; the actual cost is at least this"
+  "costPartial": "Partially priced: an attempt had unknown or incomplete usage; the actual cost is at least this",
+  "unverified": "Currency unverified",
+  "costUnverified": "The currency of this pre-upgrade record could not be established; the raw amount is kept in the database and counted nowhere"
 }

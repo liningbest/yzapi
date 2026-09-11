@@ -97,7 +97,7 @@ export default function Usage() {
       key: 'cost',
       title: t('console:usage.stats.cost'),
       value: summary ? formatMoney(summary.cost, currency) : '-',
-      hint: t('console:usage.stats.costHint'),
+      hint: summary?.cost_unverified ? t('console:usage.stats.costUnverified', { count: summary.cost_unverified }) : t('console:usage.stats.costHint'),
       icon: <WalletOutlined />,
     },
   ];
