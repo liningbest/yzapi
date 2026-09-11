@@ -678,11 +678,15 @@ func Rebuild(db *gorm.DB, from, to time.Time, retentionDays int) (hours int, row
 
 // Mismatch is one hour whose rollup differs from the raw logs.
 type Mismatch struct {
-	Hour           time.Time `json:"hour"`
-	LogRequests    int64     `json:"log_requests"`
-	RollupRequests int64     `json:"rollup_requests"`
-	LogTokens      int64     `json:"log_tokens"`
-	RollupTokens   int64     `json:"rollup_tokens"`
+	Hour             time.Time `json:"hour"`
+	LogRequests      int64     `json:"log_requests"`
+	RollupRequests   int64     `json:"rollup_requests"`
+	LogTokens        int64     `json:"log_tokens"`
+	RollupTokens     int64     `json:"rollup_tokens"`
+	LogCost          int64     `json:"log_cost"`          // ledger micros, unverified rows excluded
+	RollupCost       int64     `json:"rollup_cost"`       // ledger micros
+	LogUnverified    int64     `json:"log_unverified"`    // requests whose cost currency is unverified
+	RollupUnverified int64     `json:"rollup_unverified"` // the rollup's count of the same
 }
 
 // normalizeLegacyUsage re-derives a request's usage from its attempt records when the
@@ -848,16 +852,17 @@ func Reconcile(db *gorm.DB, from, to time.Time) ([]Mismatch, error) {
 	from = from.Truncate(time.Hour)
 	toExcl := to.Truncate(time.Hour).Add(time.Hour)
 	type hourSum struct {
-		Hour     time.Time
-		Requests int64
-		Tokens   int64
+		Hour                               time.Time
+		Requests, Tokens, Cost, Unverified int64
 	}
 	// Bucket raw logs in Go so the query stays portable across SQLite and PostgreSQL.
 	var raw []struct {
 		CreatedAt   time.Time
 		TotalTokens int64
+		CostMicros  int64
+		CostLedger  string
 	}
-	if err := db.Model(&model.CallLog{}).Select("created_at, total_tokens").Where("created_at >= ? AND created_at < ?", from, toExcl).Scan(&raw).Error; err != nil {
+	if err := db.Model(&model.CallLog{}).Select("created_at, total_tokens, cost_micros, cost_ledger").Where("created_at >= ? AND created_at < ?", from, toExcl).Scan(&raw).Error; err != nil {
 		return nil, err
 	}
 	byHour := map[int64]*hourSum{}
@@ -870,30 +875,38 @@ func Reconcile(db *gorm.DB, from, to time.Time) ([]Mismatch, error) {
 		}
 		x.Requests++
 		x.Tokens += r.TotalTokens
+		if r.CostLedger == model.CostLedgerUnverified {
+			x.Unverified++
+		} else {
+			x.Cost += r.CostMicros
+		}
 	}
 	var roll []struct {
-		Hour     time.Time
-		Requests int64
-		Tokens   int64
+		Hour                               time.Time
+		Requests, Tokens, Cost, Unverified int64
 	}
-	if err := db.Model(&model.UsageHourly{}).Select("hour, SUM(requests) AS requests, SUM(total_tokens) AS tokens").
+	if err := db.Model(&model.UsageHourly{}).Select("hour, SUM(requests) AS requests, SUM(total_tokens) AS tokens, SUM(COALESCE(cost_micros, 0)) AS cost, SUM(COALESCE(cost_unverified, 0)) AS unverified").
 		Where("hour >= ? AND hour < ?", from, toExcl).Group("hour").Scan(&roll).Error; err != nil {
 		return nil, err
 	}
-	rollMap := map[int64]struct{ r, t int64 }{}
+	rollMap := map[int64]hourSum{}
 	for _, r := range roll {
-		rollMap[r.Hour.Unix()] = struct{ r, t int64 }{r.Requests, r.Tokens}
+		rollMap[r.Hour.Unix()] = hourSum{Hour: r.Hour, Requests: r.Requests, Tokens: r.Tokens, Cost: r.Cost, Unverified: r.Unverified}
+	}
+	mismatch := func(l, r hourSum) Mismatch {
+		return Mismatch{Hour: l.Hour, LogRequests: l.Requests, RollupRequests: r.Requests, LogTokens: l.Tokens, RollupTokens: r.Tokens,
+			LogCost: l.Cost, RollupCost: r.Cost, LogUnverified: l.Unverified, RollupUnverified: r.Unverified}
 	}
 	var out []Mismatch
 	for k, l := range byHour {
 		r := rollMap[k]
-		if r.r != l.Requests || r.t != l.Tokens {
-			out = append(out, Mismatch{Hour: l.Hour, LogRequests: l.Requests, RollupRequests: r.r, LogTokens: l.Tokens, RollupTokens: r.t})
+		if r.Requests != l.Requests || r.Tokens != l.Tokens || r.Cost != l.Cost || r.Unverified != l.Unverified {
+			out = append(out, mismatch(*l, r))
 		}
 	}
 	for k, r := range rollMap {
-		if _, ok := byHour[k]; !ok && (r.r != 0 || r.t != 0) {
-			out = append(out, Mismatch{Hour: time.Unix(k, 0), RollupRequests: r.r, RollupTokens: r.t})
+		if _, ok := byHour[k]; !ok && (r.Requests != 0 || r.Tokens != 0 || r.Cost != 0 || r.Unverified != 0) {
+			out = append(out, mismatch(hourSum{Hour: time.Unix(k, 0)}, r))
 		}
 	}
 	return out, nil

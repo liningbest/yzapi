@@ -367,3 +367,95 @@ func TestR114V113NewUSDRecords(t *testing.T) {
 		t.Fatalf("already-USD 1.0.13 attempt converted again: got=%d want=1000000", c[0])
 	}
 }
+
+// R116-01: a database left by 1.0.15 (marker usd-v3): rows already marked unverified
+// still have their amounts in the hourly rollup. The v4 step takes them out, once, in the
+// same transaction as the marker, and a second start finds nothing to do.
+func TestR116UpgradeAlreadyUnverified(t *testing.T) {
+	_, db, st := testSvc(t)
+	db.Create(&model.Setting{Key: ledgerMarker, Value: "usd-v3", UpdatedAt: time.Now()})
+	db.Create(&model.Setting{Key: ledgerOriginKey, Value: "v2", UpdatedAt: time.Now()})
+	h := time.Now().Truncate(time.Hour)
+	l := model.CallLog{RequestID: "from115", CreatedAt: h.Add(time.Minute), UserID: 1, AccountID: 1, Provider: "custom", RequestModel: "m", APIType: "text", Result: "success",
+		CostLedger: LedgerUnverified, CostKnown: true, CostMicros: 7200000, Attempts: model.JSON(`[{"account_id":1,"provider":"custom","usage_status":"confirmed","prompt_tokens":1,"cost_micros":7200000}]`)}
+	db.Create(&l)
+	// A confirmed USD row shares the hour bucket: its amount must survive the repair.
+	ok := model.CallLog{RequestID: "fine", CreatedAt: h.Add(2 * time.Minute), UserID: 1, AccountID: 1, Provider: "custom", RequestModel: "m", APIType: "text", Result: "success",
+		CostLedger: Ledger, CostKnown: true, CostMicros: 500, Attempts: model.JSON(`[{"account_id":1,"provider":"custom","usage_status":"confirmed","prompt_tokens":1,"cost_micros":500}]`)}
+	db.Create(&ok)
+	u := model.UsageHourly{Hour: h, UserID: 1, AccountID: 1, Provider: "custom", RequestModel: "m", APIType: "text", Requests: 2, CostMicros: 7200000 + 500}
+	db.Create(&u)
+	// First attempt fails while moving the marker to v4: nothing may change.
+	if err := db.Exec(`CREATE TRIGGER fail_v4 BEFORE UPDATE ON settings WHEN NEW.key = 'cost_ledger' AND NEW.value = 'usd-v4' BEGIN SELECT RAISE(ABORT, 'injected'); END`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := MigrateLedger(db, st); err == nil {
+		t.Fatal("expected injected failure")
+	}
+	var mid model.UsageHourly
+	db.First(&mid, u.ID)
+	var lmid model.CallLog
+	db.First(&lmid, l.ID)
+	if mid.CostMicros != 7200500 || mid.CostUnverified != 0 || !lmid.CostKnown {
+		t.Fatalf("failed repair must roll back: hourly=%d unverified=%d known=%v", mid.CostMicros, mid.CostUnverified, lmid.CostKnown)
+	}
+	db.Exec("DROP TRIGGER fail_v4")
+	if err := MigrateLedger(db, st); err != nil {
+		t.Fatal(err)
+	}
+	db.First(&l, l.ID)
+	db.First(&u, u.ID)
+	if u.CostMicros != 500 || u.CostUnverified != 1 || l.CostKnown || l.CostMicros != 7200000 {
+		t.Fatalf("1.0.15 upgrade: hourly=%d unverified=%d logKnown=%v cost=%d", u.CostMicros, u.CostUnverified, l.CostKnown, l.CostMicros)
+	}
+	// Second start: nothing changes (no double unbooking).
+	if err := MigrateLedger(db, st); err != nil {
+		t.Fatal(err)
+	}
+	db.First(&u, u.ID)
+	if u.CostMicros != 500 || u.CostUnverified != 1 {
+		t.Fatalf("second start must be a no-op: hourly=%d unverified=%d", u.CostMicros, u.CostUnverified)
+	}
+	// Logs and rollup agree on cost and unverified counts.
+	mm, err := logstore.Reconcile(db, h, h)
+	if err != nil || len(mm) != 0 {
+		t.Fatalf("reconcile after repair: %v %+v", err, mm)
+	}
+	var marker model.Setting
+	db.Where("key = ?", ledgerMarker).First(&marker)
+	if marker.Value != ledgerVersion {
+		t.Fatalf("marker %q", marker.Value)
+	}
+}
+
+// R116-02: on a 1.0.13 database the hourly rollup holds USD; a row whose attempts are
+// still in the display currency is unbooked with the amounts that were actually booked
+// (attempts scaled onto the USD request amount), never with the raw attempt numbers.
+func TestR116V1UnbookUsesLedgerCurrency(t *testing.T) {
+	_, db, st := testSvc(t)
+	if err := st.SetPricing(settings.Pricing{Currency: "CNY", USDToCNY: 2}); err != nil {
+		t.Fatal(err)
+	}
+	h := time.Now().Truncate(time.Hour)
+	db.Create(&model.Setting{Key: ledgerMarker, Value: "USD", UpdatedAt: h.Add(2 * time.Minute)})
+	// Two accounts: 1.0.13 converted request/hourly amounts to USD but left attempts in CNY.
+	l := model.CallLog{RequestID: "v1-rate2", CreatedAt: h.Add(time.Minute), AccountID: 2, Provider: "p", RequestModel: "m", APIType: "text", Result: "success", CostMicros: 1000000, PromptTokens: 1, TotalTokens: 1, UsageStatus: model.UsageConfirmed,
+		Attempts: model.JSON(`[{"account_id":1,"provider":"p","usage_status":"confirmed","prompt_tokens":1,"cost_micros":500000},{"account_id":2,"provider":"p","usage_status":"confirmed","prompt_tokens":0,"cost_micros":1500000}]`)}
+	db.Create(&l)
+	// Same hour, another confirmed row on account 2 whose USD amount must stay.
+	db.Create(&model.UsageHourly{Hour: h, AccountID: 1, Provider: "p", RequestModel: "m", APIType: "text", Requests: 0, Attempts: 1, CostMicros: 250000})
+	db.Create(&model.UsageHourly{Hour: h, AccountID: 2, Provider: "p", RequestModel: "m", APIType: "text", Requests: 2, Attempts: 2, CostMicros: 750000 + 300})
+	if err := MigrateLedger(db, st); err != nil {
+		t.Fatal(err)
+	}
+	db.First(&l, l.ID)
+	if l.CostLedger != LedgerUnverified || l.CostKnown {
+		t.Fatalf("low-rate guard: %q known=%v", l.CostLedger, l.CostKnown)
+	}
+	var a1, a2 model.UsageHourly
+	db.Where("account_id = 1").First(&a1)
+	db.Where("account_id = 2").First(&a2)
+	if a1.CostMicros != 0 || a2.CostMicros != 300 || a2.CostUnverified != 1 || a1.CostUnverified != 0 {
+		t.Fatalf("unbook must remove the booked USD amounts per account: a1=%d/%d a2=%d/%d", a1.CostMicros, a1.CostUnverified, a2.CostMicros, a2.CostUnverified)
+	}
+}

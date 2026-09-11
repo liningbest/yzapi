@@ -281,7 +281,8 @@ func (s *Service) Currency() string {
 const (
 	ledgerMarker    = "cost_ledger"
 	ledgerOriginKey = "cost_ledger_origin" // which build the database came from when first migrated
-	ledgerVersion   = "usd-v3"
+	ledgerVersion   = "usd-v4"
+	ledgerV3        = "usd-v3"    // 1.0.15: rows marked unverified but their amounts left in the hourly rollup
 	ledgerMigrating = "migrating" // placeholder held inside the migration transaction
 
 	LedgerUnverified = model.CostLedgerUnverified // stamp for rows whose currency could not be established
@@ -314,6 +315,15 @@ func MigrateLedger(db *gorm.DB, st *settings.Store) error {
 	}
 	found := err == nil
 	origin := ledgerOriginOf(row.Value, found)
+	if found && row.Value == ledgerV3 {
+		// Only 1.0.15+ recorded the origin; for earlier markers the marker itself says
+		// where the database comes from, whatever an origin row (e.g. from a test
+		// fixture that rewound the marker) may claim.
+		if o, e := readSetting(db, ledgerOriginKey); e == nil && o != "" {
+			origin = o
+		}
+	}
+	repairV3 := found && row.Value == ledgerV3
 	markerTime := row.UpdatedAt
 	pr := st.Get().Pricing
 	rate := pr.USDToCNY
@@ -352,6 +362,31 @@ func MigrateLedger(db *gorm.DB, st *settings.Store) error {
 				return err
 			}
 		}
+		// 1.0.15 marked rows unverified without taking their amounts out of the hourly
+		// rollup (R116-01). Those rows are still recognisable by their stamp; repair them
+		// once, inside this transaction, before the marker moves past v3.
+		if repairV3 {
+			lastID := uint(0)
+			for {
+				var rows []model.CallLog
+				if err := tx.Where("id > ? AND cost_ledger = ?", lastID, LedgerUnverified).Order("id").Limit(500).Find(&rows).Error; err != nil {
+					return err
+				}
+				if len(rows) == 0 {
+					break
+				}
+				for i := range rows {
+					r := &rows[i]
+					if err := unbookUnverified(tx, r, origin == "v1"); err != nil {
+						return err
+					}
+					if err := tx.Model(&model.CallLog{}).Where("id = ?", r.ID).Update("cost_known", false).Error; err != nil {
+						return err
+					}
+				}
+				lastID = rows[len(rows)-1].ID
+			}
+		}
 		lastID := uint(0)
 		for {
 			var rows []model.CallLog
@@ -371,7 +406,7 @@ func MigrateLedger(db *gorm.DB, st *settings.Store) error {
 					// Its amounts were booked into the hourly rollup as if they were USD
 					// (origin v2 replayed them without a fixer): take them back out and
 					// count the request as unverified there too.
-					if err := unbookUnverified(tx, r); err != nil {
+					if err := unbookUnverified(tx, r, origin == "v1"); err != nil {
 						return err
 					}
 					upd["cost_known"] = false
@@ -496,10 +531,33 @@ func scaleAttempts(raw model.JSON, factor float64) (model.JSON, bool) {
 	return model.JSON(b), true
 }
 
-// unbookUnverified removes a row's amounts from the hourly rollup it was booked into
-// and counts the request as unverified there, using the same attribution as the rollup.
-func unbookUnverified(tx *gorm.DB, l *model.CallLog) error {
-	for _, u := range logstore.Aggregate([]*model.CallLog{l}) {
+// readSetting returns a settings row's value.
+func readSetting(db *gorm.DB, key string) (string, error) {
+	var row model.Setting
+	if err := db.Where("key = ?", key).First(&row).Error; err != nil {
+		return "", err
+	}
+	return row.Value, nil
+}
+
+// unbookUnverified removes from the hourly rollup exactly what was booked there for
+// this row, with the rollup's own attribution, and counts the request as unverified.
+//
+// What was booked depends on the database's history. A v2-origin row was replayed and
+// booked with its raw amounts. A v1-origin row was booked by 1.0.12 from its attempts and
+// then had the hourly amounts divided by the 1.0.13 migration along with the request
+// amount, so the booked per-attempt amounts are the attempts scaled onto the request
+// amount (scaleToRequest); using the raw attempts there would subtract display-currency
+// numbers from a USD rollup (R116-02).
+func unbookUnverified(tx *gorm.DB, row *model.CallLog, scaleToRequest bool) error {
+	l := *row
+	l.CostLedger = "" // Aggregate must see the amounts, not the stamp
+	if scaleToRequest {
+		if sum, priced := attemptsCostSum(l.Attempts); priced && sum > 0 && l.CostMicros > 0 {
+			l.Attempts, _ = scaleAttempts(l.Attempts, float64(l.CostMicros)/float64(sum))
+		}
+	}
+	for _, u := range logstore.Aggregate([]*model.CallLog{&l}) {
 		if u.CostMicros == 0 && u.Requests == 0 {
 			continue
 		}
