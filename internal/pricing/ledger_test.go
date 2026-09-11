@@ -459,3 +459,63 @@ func TestR116V1UnbookUsesLedgerCurrency(t *testing.T) {
 		t.Fatalf("unbook must remove the booked USD amounts per account: a1=%d/%d a2=%d/%d", a1.CostMicros, a1.CostUnverified, a2.CostMicros, a2.CostUnverified)
 	}
 }
+
+// R117-01: a database that first migrated on 1.0.15 from 1.0.12 (origin v0, usd-v3) has
+// USD hourly rows; the v4 pass must not divide them again.
+func TestR117V3OriginV0MustNotRedivideHourly(t *testing.T) {
+	_, db, st := testSvc(t)
+	if err := st.SetPricing(settings.Pricing{Currency: "CNY", USDToCNY: 7.2}); err != nil {
+		t.Fatal(err)
+	}
+	db.Create(&model.Setting{Key: ledgerMarker, Value: "usd-v3", UpdatedAt: time.Now()})
+	db.Create(&model.Setting{Key: ledgerOriginKey, Value: "v0", UpdatedAt: time.Now()})
+	h := time.Now().Truncate(time.Hour)
+	l := model.CallLog{RequestID: "already-usd", CreatedAt: h.Add(time.Minute), CostLedger: Ledger, CostKnown: true, CostMicros: 1000000, PromptTokens: 1, TotalTokens: 1, UsageStatus: model.UsageConfirmed,
+		Attempts: model.JSON(`[{"account_id":1,"usage_status":"confirmed","prompt_tokens":1,"cost_micros":1000000}]`)}
+	db.Create(&l)
+	// A row that somehow never got a stamp: no history to reason from, so unverified; its
+	// amount had been booked into the same bucket and is taken back out.
+	stray := model.CallLog{RequestID: "stray", CreatedAt: h.Add(time.Minute), CostMicros: 3000}
+	db.Create(&stray)
+	u := model.UsageHourly{Hour: h, Requests: 2, CostMicros: 1000000 + 3000}
+	db.Create(&u)
+	if err := MigrateLedger(db, st); err != nil {
+		t.Fatal(err)
+	}
+	db.First(&u, u.ID)
+	db.First(&l, l.ID)
+	db.First(&stray, stray.ID)
+	if u.CostMicros != 1000000 || u.CostUnverified != 1 || l.CostMicros != 1000000 || l.CostLedger != Ledger {
+		t.Fatalf("v0 database already on usd-v3: hourly=%d unverified=%d log=%d %q", u.CostMicros, u.CostUnverified, l.CostMicros, l.CostLedger)
+	}
+	if stray.CostLedger != LedgerUnverified || stray.CostMicros != 3000 {
+		t.Fatalf("stray unstamped row in a repair pass must be flagged, not converted: %+v", stray)
+	}
+	var marker model.Setting
+	db.Where("key = ?", ledgerMarker).First(&marker)
+	if marker.Value != ledgerVersion {
+		t.Fatalf("marker %q", marker.Value)
+	}
+}
+
+// A database 1.0.16 already repaired (unverified rows with cost_known=false, amounts
+// already out of the rollup) is left alone by the v4 pass.
+func TestR117V3AlreadyUnbookedMustNotSubtractAgain(t *testing.T) {
+	_, db, st := testSvc(t)
+	db.Create(&model.Setting{Key: ledgerMarker, Value: "usd-v3"})
+	db.Create(&model.Setting{Key: ledgerOriginKey, Value: "v2"})
+	h := time.Now().Truncate(time.Hour)
+	l := model.CallLog{RequestID: "from116", CreatedAt: h.Add(time.Minute), UserID: 1, AccountID: 1, Provider: "custom", RequestModel: "m", APIType: "text", Result: "success",
+		CostLedger: LedgerUnverified, CostKnown: false, CostMicros: 7200000,
+		Attempts: model.JSON(`[{"account_id":1,"provider":"custom","usage_status":"confirmed","prompt_tokens":1,"cost_micros":7200000}]`)}
+	db.Create(&l)
+	u := model.UsageHourly{Hour: h, UserID: 1, AccountID: 1, Provider: "custom", RequestModel: "m", APIType: "text", Requests: 1, CostMicros: 500, CostUnverified: 1}
+	db.Create(&u)
+	if err := MigrateLedger(db, st); err != nil {
+		t.Fatal(err)
+	}
+	db.First(&u, u.ID)
+	if u.CostMicros != 500 || u.CostUnverified != 1 {
+		t.Fatalf("already-unbooked v3 db subtracted again: hourly=%d unverified=%d", u.CostMicros, u.CostUnverified)
+	}
+}

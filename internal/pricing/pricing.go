@@ -331,7 +331,7 @@ func MigrateLedger(db *gorm.DB, st *settings.Store) error {
 		rate = 7.2
 	}
 	divide := strings.ToUpper(pr.Currency) == "CNY"
-	var unverified int64
+	var unverified, unsettled int64
 	txErr := db.Transaction(func(tx *gorm.DB) error {
 		// Claim the marker first: a second instance racing on the same database either
 		// blocks on the row and then finds it claimed, or fails the insert.
@@ -355,9 +355,10 @@ func MigrateLedger(db *gorm.DB, st *settings.Store) error {
 		} else if e != nil {
 			return e
 		}
-		// Hourly rows carry no per-row stamp; they are converted only on the first
-		// migration of a v0 database (later origins already hold USD there).
-		if divide && origin == "v0" {
+		// Hourly rows carry no per-row stamp; they are converted exactly once: on the very
+		// first migration of a database that has no marker at all (a 1.0.12 database).
+		// Any later pass, whatever the recorded origin, finds them already in USD (R117-01).
+		if divide && !found {
 			if err := tx.Exec("UPDATE usage_hourlies SET cost_micros = CAST(ROUND(cost_micros / ?) AS INTEGER) WHERE cost_micros <> 0", rate).Error; err != nil {
 				return err
 			}
@@ -365,11 +366,15 @@ func MigrateLedger(db *gorm.DB, st *settings.Store) error {
 		// 1.0.15 marked rows unverified without taking their amounts out of the hourly
 		// rollup (R116-01). Those rows are still recognisable by their stamp; repair them
 		// once, inside this transaction, before the marker moves past v3.
+		// 1.0.15 and 1.0.16 both wrote usd-v3. 1.0.16 already took the amounts out and set
+		// cost_known=false on the rows it processed; 1.0.15 left cost_known untouched (true
+		// for a priced row). So cost_known=true is the per-row evidence of "not yet taken
+		// out"; a row 1.0.16 processed, or one that was never known, is left alone.
 		if repairV3 {
 			lastID := uint(0)
 			for {
 				var rows []model.CallLog
-				if err := tx.Where("id > ? AND cost_ledger = ?", lastID, LedgerUnverified).Order("id").Limit(500).Find(&rows).Error; err != nil {
+				if err := tx.Where("id > ? AND cost_ledger = ? AND cost_known = ?", lastID, LedgerUnverified, true).Order("id").Limit(500).Find(&rows).Error; err != nil {
 					return err
 				}
 				if len(rows) == 0 {
@@ -386,6 +391,17 @@ func MigrateLedger(db *gorm.DB, st *settings.Store) error {
 				}
 				lastID = rows[len(rows)-1].ID
 			}
+			// Rows 1.0.15 marked while cost_known was already false (partially priced) carry
+			// no evidence either way; they are not touched, only reported, and a rollup
+			// rebuild over the retention window settles them from the logs.
+			if err := tx.Model(&model.CallLog{}).Where("cost_ledger = ? AND cost_known = ? AND cost_micros <> 0", LedgerUnverified, false).Count(&unsettled).Error; err != nil {
+				return err
+			}
+		}
+		// In a repair pass, a row still without a stamp has no known history: never guess.
+		classifyOrigin := origin
+		if repairV3 {
+			classifyOrigin = "v2"
 		}
 		lastID := uint(0)
 		for {
@@ -399,7 +415,7 @@ func MigrateLedger(db *gorm.DB, st *settings.Store) error {
 			}
 			for i := range rows {
 				r := &rows[i]
-				micros, att, stamp := classifyLegacyRow(r, origin, markerTime, rate, divide)
+				micros, att, stamp := classifyLegacyRow(r, classifyOrigin, markerTime, rate, divide)
 				upd := map[string]any{"cost_micros": micros, "cost_ledger": stamp}
 				if stamp == LedgerUnverified {
 					unverified++
@@ -435,6 +451,9 @@ func MigrateLedger(db *gorm.DB, st *settings.Store) error {
 	}
 	if unverified > 0 {
 		slog.Warn("cost ledger migration: rows whose currency could not be established were left as written", "rows", unverified, "stamp", LedgerUnverified)
+	}
+	if unsettled > 0 {
+		slog.Warn("cost ledger migration: unverified rows without evidence of being taken out of the hourly rollup; rebuild the usage rollup for the retention window to settle them", "rows", unsettled)
 	}
 	return nil
 }

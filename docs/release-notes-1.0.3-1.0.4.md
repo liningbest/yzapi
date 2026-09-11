@@ -194,3 +194,13 @@
 | 补充 | 对账只核对请求数与 Token | `Reconcile` 同时核对费用（美元账本，待核实行不计）与待核实条数 | `TestR116UpgradeAlreadyUnverified` 末尾 |
 
 五轮评审的 `run.py`（6 + 3 + 2 + 2 + 2）全部通过；全量 `go test -race`、smoke 56、api-crud 90 通过。说明：1.0.16 也写 `usd-v3` 标记但已做扣回，若某库确实跑过 1.0.16（实际只有本地演示库，且没有 unverified 行），v4 步骤会再扣一次；1.0.16 未发布，故不为它单独区分。
+
+## 1.0.18：第六轮复核 R117-01 与升级边界（`docs/acceptance-review-1.0.17-2026-09-11.md`）
+
+| 编号 | 问题 | 修改 | 验收方式 |
+|---|---|---|---|
+| R117-01 P1 | 修理 v3 时读回 origin=v0，把已经是美元的小时汇总再除一次汇率 | 小时汇总整表折算只在库完全没有标记的第一次迁移执行（`!found`），任何后续步骤都不再碰；修理时若还有无标记行，不按来源猜测，一律标待核实 | `TestR117V3OriginV0MustNotRedivideHourly`（小时表保持 100 万微美元；无标记行标待核实） |
+| 边界 | 跑过 1.0.16（已扣回）的库再升级会重复扣回 | 以 `cost_known` 作为逐行证据：只扣 `cost_known=true` 的待核实行（1.0.15 状态），1.0.16 处理过的行（已置 false）不再扣；1.0.15 期间本就是 false 且有金额的行没有证据，不动、日志报数，建议用保留期重建结算 | `TestR117V3AlreadyUnbookedMustNotSubtractAgain`、`TestR116UpgradeAlreadyUnverified` |
+| 建议 | | 升级过 1.0.15 / 1.0.16 的库在升级后跑一次「计量维护 → 对账」，对账已核对费用与待核实条数，有差异按保留期重建 | 手工 |
+
+六轮评审的 `run.py`（6 + 3 + 2 + 2 + 2 + 4）全部通过；全量 `go test -race`、smoke 56、api-crud 90 通过。
