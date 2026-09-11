@@ -170,7 +170,7 @@ func CORS(next http.Handler) http.Handler {
 			h := w.Header()
 			h.Set("Access-Control-Allow-Origin", "*")
 			h.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-			h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, x-api-key, api-key, anthropic-version, anthropic-beta, OpenAI-Beta, OpenAI-Organization, OpenAI-Project, X-Requested-With")
+			h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, x-api-key, api-key, x-goog-api-key, anthropic-version, anthropic-beta, OpenAI-Beta, OpenAI-Organization, OpenAI-Project, X-Requested-With")
 			h.Set("Access-Control-Expose-Headers", "X-Request-Id, Retry-After, X-Token-Count-Estimated")
 			h.Set("Access-Control-Max-Age", "600")
 			if r.Method == http.MethodOptions {

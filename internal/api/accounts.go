@@ -423,7 +423,10 @@ func (s *Server) resetAccountHealth(c *gin.Context) {
 
 // ---- discovery & probing ----
 
-func (s *Server) upstreamRequest(ctx context.Context, method, url, key string, anthropic bool, body any) (*http.Response, error) {
+// upstreamRequest sends one management-plane call to an upstream. proto selects the auth
+// convention: Anthropic adds anthropic-version, Gemini sends only x-goog-api-key (Google
+// rejects a Bearer API key), everything else gets Bearer plus x-api-key.
+func (s *Server) upstreamRequest(ctx context.Context, method, url, key, proto string, body any) (*http.Response, error) {
 	var rd io.Reader
 	if body != nil {
 		b, _ := json.Marshal(body)
@@ -434,10 +437,16 @@ func (s *Server) upstreamRequest(ctx context.Context, method, url, key string, a
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+key)
-	req.Header.Set("x-api-key", key)
-	if anthropic {
+	switch proto {
+	case model.ProtoGemini:
+		req.Header.Set("x-goog-api-key", key)
+	case model.ProtoAnthropicMessages:
+		req.Header.Set("Authorization", "Bearer "+key)
+		req.Header.Set("x-api-key", key)
 		req.Header.Set("anthropic-version", "2023-06-01")
+	default:
+		req.Header.Set("Authorization", "Bearer "+key)
+		req.Header.Set("x-api-key", key)
 	}
 	req.Header.Set("User-Agent", "yzapi-gateway/1.0")
 	return s.gw.HTTPClient().Do(req)
@@ -445,10 +454,12 @@ func (s *Server) upstreamRequest(ctx context.Context, method, url, key string, a
 
 func (s *Server) discoverModels(c *gin.Context) {
 	var in struct {
-		Provider  string `json:"provider"`
-		BaseURL   string `json:"base_url"`
-		APIKey    string `json:"api_key"`
-		AccountID uint   `json:"account_id"`
+		Provider    string   `json:"provider"`
+		AccountType string   `json:"account_type"`
+		Protocols   []string `json:"protocols"`
+		BaseURL     string   `json:"base_url"`
+		APIKey      string   `json:"api_key"`
+		AccountID   uint     `json:"account_id"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		badRequest(c, "invalid body")
@@ -476,7 +487,14 @@ func (s *Server) discoverModels(c *gin.Context) {
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
 	defer cancel()
-	resp, err := s.upstreamRequest(ctx, http.MethodGet, base+"/models", key, in.Provider == "anthropic", nil)
+	discoverProto := ""
+	switch {
+	case in.Provider == "anthropic":
+		discoverProto = model.ProtoAnthropicMessages
+	case geminiEndpoint(in.Provider, in.AccountType, in.Protocols):
+		discoverProto = model.ProtoGemini
+	}
+	resp, err := s.upstreamRequest(ctx, http.MethodGet, base+"/models", key, discoverProto, nil)
 	if err != nil {
 		fail(c, 502, "discover_failed", "请求失败: "+err.Error())
 		return
@@ -513,7 +531,7 @@ func (s *Server) discoverModels(c *gin.Context) {
 	for _, d := range parsed.Models {
 		id := d.ID
 		if id == "" {
-			id = d.Name
+			id = strings.TrimPrefix(d.Name, "models/") // Gemini lists "models/gemini-2.5-pro"
 		}
 		if id != "" && !seen[id] {
 			seen[id] = true
@@ -543,9 +561,9 @@ func (s *Server) probeAccount(ctx context.Context, in *accountIn, key string) (b
 		has[p] = true
 	}
 	var (
-		url  string
-		body any
-		anth bool
+		url   string
+		body  any
+		proto string
 	)
 	switch in.Type {
 	case model.TypeImage:
@@ -560,15 +578,23 @@ func (s *Server) probeAccount(ctx context.Context, in *accountIn, key string) (b
 			body = map[string]any{"model": testModel, "messages": []map[string]string{{"role": "user", "content": "ping"}}, "max_tokens": 5}
 		case has[model.ProtoAnthropicMessages]:
 			url = base + "/messages"
-			anth = true
+			proto = model.ProtoAnthropicMessages
 			body = map[string]any{"model": testModel, "messages": []map[string]string{{"role": "user", "content": "ping"}}, "max_tokens": 5}
 		case has[model.ProtoOpenAIResponses]:
 			url = base + "/responses"
 			body = map[string]any{"model": testModel, "input": "ping", "max_output_tokens": 16}
+		case has[model.ProtoGemini]:
+			url = base + "/models/" + testModel + ":generateContent"
+			proto = model.ProtoGemini
+			body = map[string]any{"contents": []map[string]any{{"role": "user", "parts": []map[string]string{{"text": "ping"}}}},
+				"generationConfig": map[string]any{"maxOutputTokens": 5}}
 		}
 	}
+	if url == "" {
+		return false, 0, "账号没有可探测的协议"
+	}
 	t0 := time.Now()
-	resp, err := s.upstreamRequest(ctx, http.MethodPost, url, key, anth, body)
+	resp, err := s.upstreamRequest(ctx, http.MethodPost, url, key, proto, body)
 	if err != nil {
 		return false, 0, err.Error()
 	}
@@ -779,12 +805,11 @@ func (s *Server) cacheCheckAccount(c *gin.Context) {
 	var (
 		url   string
 		body  any
-		anth  bool
 		proto string
 	)
 	switch {
 	case has[model.ProtoAnthropicMessages]:
-		url, anth, proto = base+"/messages", true, model.ProtoAnthropicMessages
+		url, proto = base+"/messages", model.ProtoAnthropicMessages
 		body = map[string]any{"model": in.Model, "max_tokens": 5,
 			"system":   []map[string]any{{"type": "text", "text": prefix, "cache_control": map[string]string{"type": "ephemeral"}}},
 			"messages": []map[string]any{{"role": "user", "content": "Reply with the single word: ok"}}}
@@ -795,6 +820,11 @@ func (s *Server) cacheCheckAccount(c *gin.Context) {
 	case has[model.ProtoOpenAIResponses]:
 		url, proto = base+"/responses", model.ProtoOpenAIResponses
 		body = map[string]any{"model": in.Model, "max_output_tokens": 16, "instructions": prefix, "input": "Reply with the single word: ok"}
+	case has[model.ProtoGemini]:
+		url, proto = base+"/models/"+in.Model+":generateContent", model.ProtoGemini
+		body = map[string]any{"systemInstruction": map[string]any{"parts": []map[string]string{{"text": prefix}}},
+			"contents":         []map[string]any{{"role": "user", "parts": []map[string]string{{"text": "Reply with the single word: ok"}}}},
+			"generationConfig": map[string]any{"maxOutputTokens": 5}}
 	default:
 		badRequest(c, "账号没有可用的文本协议")
 		return
@@ -803,7 +833,7 @@ func (s *Server) cacheCheckAccount(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 60*time.Second)
 		defer cancel()
 		t0 := time.Now()
-		resp, err := s.upstreamRequest(ctx, http.MethodPost, url, key, anth, body)
+		resp, err := s.upstreamRequest(ctx, http.MethodPost, url, key, proto, body)
 		if err != nil {
 			return cacheUsage{}, err.Error()
 		}
@@ -814,6 +844,15 @@ func (s *Server) cacheCheckAccount(c *gin.Context) {
 			return u, fmt.Sprintf("HTTP %d: %s", resp.StatusCode, truncateStr(string(raw), 300))
 		}
 		switch proto {
+		case model.ProtoGemini:
+			var r struct {
+				Usage struct {
+					Prompt int64 `json:"promptTokenCount"`
+					Cached int64 `json:"cachedContentTokenCount"`
+				} `json:"usageMetadata"`
+			}
+			_ = json.Unmarshal(raw, &r)
+			u.Prompt, u.Cached = r.Usage.Prompt, r.Usage.Cached
 		case model.ProtoAnthropicMessages:
 			var r struct {
 				Usage struct {
@@ -865,4 +904,19 @@ func (s *Server) cacheCheckAccount(c *gin.Context) {
 		message = "第二次请求没有报告缓存命中：供应商可能不支持该模型的提示缓存，或返回中没有缓存字段"
 	}
 	c.JSON(200, gin.H{"ok": true, "hit": hit, "protocol": proto, "model": in.Model, "first": first, "second": second, "message": message})
+}
+
+// geminiEndpoint reports whether an account (as submitted) talks the native Gemini API.
+func geminiEndpoint(providerKey, accountType string, protocols []string) bool {
+	for _, p := range protocols {
+		if p == model.ProtoGemini {
+			return true
+		}
+	}
+	if p, ok := provider.Get(providerKey); ok {
+		if at, ok := p.AccountTypeOf(accountType); ok && len(at.Protocols) == 1 && at.Protocols[0] == model.ProtoGemini {
+			return true
+		}
+	}
+	return false
 }

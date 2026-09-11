@@ -17,8 +17,15 @@ import (
 	"yzapi/internal/model"
 )
 
-func protoPath(proto string) string {
+// protoPath returns the path (and query) appended to an account's base URL for one call.
+// Gemini addresses the model in the URL, so it needs the upstream model and stream flag.
+func protoPath(proto, upstreamModel string, stream bool) string {
 	switch proto {
+	case model.ProtoGemini:
+		if stream {
+			return "/models/" + upstreamModel + ":streamGenerateContent?alt=sse"
+		}
+		return "/models/" + upstreamModel + ":generateContent"
 	case model.ProtoOpenAIChat:
 		return "/chat/completions"
 	case model.ProtoOpenAIResponses:
@@ -37,6 +44,7 @@ func protoPath(proto string) string {
 type upstreamCall struct {
 	up      *Upstream
 	proto   string
+	model   string // upstream model name (needed for URL-addressed protocols)
 	body    []byte
 	stream  bool
 	headers http.Header // selected client headers to forward
@@ -69,14 +77,18 @@ func (g *Gateway) doUpstream(ctx context.Context, c *upstreamCall) (*http.Respon
 		// a response, so record that moment for usage classification.
 		ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{WroteRequest: func(httptrace.WroteRequestInfo) { *c.sent = true }})
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.up.BaseURL+protoPath(c.proto), bytes.NewReader(c.body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.up.BaseURL+protoPath(c.proto, c.model, c.stream), bytes.NewReader(c.body))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "yzapi-gateway/1.0")
 	req.ContentLength = int64(len(c.body))
-	if c.proto == model.ProtoAnthropicMessages {
+	if c.proto == model.ProtoGemini {
+		// Google validates an Authorization header when present, so send only the
+		// API-key header it expects (OpenAI-compatible relays accept it too).
+		req.Header.Set("x-goog-api-key", c.up.APIKey)
+	} else if c.proto == model.ProtoAnthropicMessages {
 		req.Header.Set("x-api-key", c.up.APIKey)
 		req.Header.Set("Authorization", "Bearer "+c.up.APIKey)
 		ver := c.headers.Get("anthropic-version")
@@ -190,6 +202,14 @@ func (ir *idleReader) Close() error {
 // usageFromJSON extracts token usage from a non-streaming response body.
 func usageFromJSON(proto string, raw []byte) (u convert.Usage, ok bool) {
 	switch proto {
+	case model.ProtoGemini:
+		var r struct {
+			UsageMetadata *convert.GeminiUsage `json:"usageMetadata"`
+		}
+		if json.Unmarshal(raw, &r) != nil || r.UsageMetadata == nil {
+			return u, false
+		}
+		return geminiUsage(r.UsageMetadata), true
 	case model.ProtoAnthropicMessages:
 		var r struct {
 			Usage convert.AnthropicUsage `json:"usage"`
@@ -268,6 +288,30 @@ func passthroughStream(r io.Reader, w io.Writer, flush func(), proto string, dro
 		}
 		data := ev.Data
 		switch proto {
+		case model.ProtoGemini:
+			var e struct {
+				Candidates []struct {
+					FinishReason string `json:"finishReason"`
+				} `json:"candidates"`
+				UsageMetadata *convert.GeminiUsage `json:"usageMetadata"`
+				Error         *struct {
+					Message string `json:"message"`
+				} `json:"error"`
+			}
+			if json.Unmarshal([]byte(data), &e) == nil {
+				if e.Error != nil {
+					upstreamErr = &upstreamError{msg: "upstream error event: " + e.Error.Message}
+				}
+				if e.UsageMetadata != nil {
+					usage = geminiUsage(e.UsageMetadata)
+					known = true
+				}
+				for _, c := range e.Candidates {
+					if c.FinishReason != "" {
+						done = true
+					}
+				}
+			}
 		case model.ProtoAnthropicMessages:
 			switch ev.Event {
 			case "message_stop":
@@ -386,6 +430,20 @@ func passthroughStream(r io.Reader, w io.Writer, flush func(), proto string, dro
 		}
 		flush()
 	}
+}
+
+// geminiUsage folds Gemini usageMetadata into the OpenAI usage shape (thoughts count as output).
+func geminiUsage(g *convert.GeminiUsage) convert.Usage {
+	u := convert.Usage{PromptTokens: g.PromptTokenCount, CompletionTokens: g.CandidatesTokenCount + g.ThoughtsTokenCount, TotalTokens: g.TotalTokenCount}
+	if u.TotalTokens == 0 {
+		u.TotalTokens = u.PromptTokens + u.CompletionTokens
+	}
+	if g.CachedContentTokenCount > 0 {
+		u.PromptTokensDetails = &struct {
+			CachedTokens int `json:"cached_tokens"`
+		}{CachedTokens: g.CachedContentTokenCount}
+	}
+	return u
 }
 
 // upstreamError marks a failure the upstream reported inside an otherwise-200 stream.

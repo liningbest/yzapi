@@ -276,6 +276,8 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
     }
     discoverMut.mutate({
       provider: providerKey,
+      account_type: (form.getFieldValue('account_type') as string | undefined) || undefined,
+      protocols: (form.getFieldValue('protocols') as string[] | undefined) || undefined,
       base_url: baseUrl,
       api_key: apiKey || undefined,
       ...(isEdit ? { account_id: id } : {}),

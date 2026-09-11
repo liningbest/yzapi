@@ -35,6 +35,8 @@ type request struct {
 	raw          map[string]json.RawMessage
 	body         []byte
 	model        string
+	pathModel    string // model taken from the URL (Gemini); overrides the body
+	pathStream   bool   // streaming decided by the URL (Gemini streamGenerateContent)
 	stream       bool
 	includeUsage bool
 	text         string
@@ -77,7 +79,7 @@ func clientIP(r *http.Request) string {
 
 func (g *Gateway) fail(req *request, e *GatewayError) {
 	if !req.wrote {
-		writeError(req.w, req.anthropic, e)
+		writeErrorProto(req.w, req.proto, e)
 		req.wrote = true
 	}
 	req.log.StatusCode = e.Status
@@ -201,6 +203,12 @@ func (g *Gateway) authenticate(r *http.Request) (*Principal, *GatewayError) {
 	if key == "" {
 		key = strings.TrimSpace(r.Header.Get("api-key")) // Azure-style clients
 	}
+	if key == "" {
+		key = strings.TrimSpace(r.Header.Get("x-goog-api-key")) // Gemini SDKs / Gemini CLI
+	}
+	if key == "" {
+		key = strings.TrimSpace(r.URL.Query().Get("key")) // Gemini REST style ?key=
+	}
 	if key == "" || !strings.HasPrefix(key, "sk-") {
 		return nil, ErrUnauthorized
 	}
@@ -273,11 +281,20 @@ func (g *Gateway) prepare(req *request) *GatewayError {
 		return ErrBadJSON
 	}
 	_ = json.Unmarshal(req.raw["model"], &req.model)
+	if req.pathModel != "" {
+		req.model = req.pathModel
+	}
 	req.model = strings.TrimSpace(req.model)
 	if req.model == "" {
 		return newErr(400, "missing_model", "The 'model' field is required")
 	}
 	_ = json.Unmarshal(req.raw["stream"], &req.stream)
+	if req.pathStream {
+		req.stream = true
+	}
+	if req.proto == model.ProtoGemini {
+		req.includeUsage = true // usageMetadata is always part of a Gemini stream
+	}
 	if so, ok := req.raw["stream_options"]; ok {
 		var opts struct {
 			IncludeUsage bool `json:"include_usage"`
@@ -405,6 +422,8 @@ func shortProto(p string) string {
 		return "responses"
 	case model.ProtoAnthropicMessages:
 		return "messages"
+	case model.ProtoGemini:
+		return "gemini"
 	default:
 		return "chat"
 	}
@@ -418,7 +437,7 @@ func pickProto(up *Upstream, clientProto string, conversion bool) string {
 	if !conversion || provider.ProtocolType(clientProto) != model.TypeText {
 		return ""
 	}
-	for _, p := range []string{model.ProtoOpenAIChat, model.ProtoOpenAIResponses, model.ProtoAnthropicMessages} {
+	for _, p := range []string{model.ProtoOpenAIChat, model.ProtoOpenAIResponses, model.ProtoAnthropicMessages, model.ProtoGemini} {
 		if up.HasProtocol(p) {
 			return p
 		}
@@ -473,7 +492,16 @@ func (g *Gateway) HandleModels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (g *Gateway) handleText(w http.ResponseWriter, r *http.Request, proto string) {
+	g.handleTextWith(w, r, proto, nil)
+}
+
+// handleTextWith runs the text pipeline; setup can seed request state (URL-derived
+// model, stream flag) before the body is parsed.
+func (g *Gateway) handleTextWith(w http.ResponseWriter, r *http.Request, proto string, setup func(*request)) {
 	req := g.newRequest(w, r, proto)
+	if setup != nil {
+		setup(req)
+	}
 	if e := g.prepare(req); e != nil {
 		g.fail(req, e)
 		return
@@ -620,14 +648,14 @@ func (g *Gateway) forward(req *request, cands []string) {
 			}
 			t0 := time.Now()
 			sent := false
-			resp, err := g.doUpstream(ctx, &upstreamCall{up: up, proto: proto, body: body, stream: req.stream, headers: req.r.Header, sent: &sent})
+			resp, err := g.doUpstream(ctx, &upstreamCall{up: up, proto: proto, model: upstreamModel, body: body, stream: req.stream, headers: req.r.Header, sent: &sent})
 			// Older OpenAI-compatible servers reject stream_options; retry once without the injection.
 			if err == nil && resp.StatusCode == 400 && dropUsage {
 				msg, _ := readErrorBody(resp)
 				if strings.Contains(msg, "stream_options") {
 					if b2, e2 := stripStreamOptions(body); e2 == nil {
 						body, dropUsage = b2, false
-						resp, err = g.doUpstream(ctx, &upstreamCall{up: up, proto: proto, body: body, stream: req.stream, headers: req.r.Header, sent: &sent})
+						resp, err = g.doUpstream(ctx, &upstreamCall{up: up, proto: proto, model: upstreamModel, body: body, stream: req.stream, headers: req.r.Header, sent: &sent})
 					}
 				} else {
 					resp.Body = io.NopCloser(strings.NewReader(msg))
@@ -936,6 +964,10 @@ func stripStreamOptions(body []byte) ([]byte, error) {
 
 // buildBody produces the upstream request body for the chosen protocol.
 func (g *Gateway) buildBody(req *request, proto, upstreamModel string) (body []byte, dropUsage bool, err error) {
+	if proto == req.proto && proto == model.ProtoGemini {
+		// Gemini carries the model in the URL and rejects unknown body fields.
+		return req.body, false, nil
+	}
 	if proto == req.proto {
 		raw := make(map[string]json.RawMessage, len(req.raw)+1)
 		for k, v := range req.raw {
@@ -973,11 +1005,18 @@ func (g *Gateway) buildBody(req *request, proto, upstreamModel string) (body []b
 			return nil, false, e
 		}
 		chat, err = convert.ResponsesToChatRequest(&rr, upstreamModel)
+	case model.ProtoGemini:
+		var gr convert.GeminiRequest
+		if e := json.Unmarshal(req.body, &gr); e != nil {
+			return nil, false, e
+		}
+		chat, err = convert.GeminiToChatRequest(&gr, upstreamModel)
 	}
 	if err != nil {
 		return nil, false, err
 	}
 	chat.Model = upstreamModel
+	chat.Stream = req.stream // Gemini decides streaming by URL, so the body flag comes from the request
 	switch proto {
 	case model.ProtoOpenAIChat:
 		if req.stream {
@@ -998,6 +1037,13 @@ func (g *Gateway) buildBody(req *request, proto, upstreamModel string) (body []b
 			return nil, false, e
 		}
 		b, e := json.Marshal(rr)
+		return b, false, e
+	case model.ProtoGemini:
+		gr, e := convert.ChatToGeminiRequest(chat)
+		if e != nil {
+			return nil, false, e
+		}
+		b, e := json.Marshal(gr)
 		return b, false, e
 	}
 	return nil, false, errors.New("unsupported protocol")
@@ -1075,6 +1121,34 @@ func (g *Gateway) relay(req *request, resp *http.Response, upProto string, dropU
 				},
 				func(r io.Reader) (*convert.Usage, error) {
 					return convert.ChatStreamToAnthropic(r, dst, flush, req.model)
+				})
+		case upProto == model.ProtoOpenAIChat && req.proto == model.ProtoGemini:
+			up, err = convert.ChatStreamToGemini(body, dst, flush, req.model)
+		case upProto == model.ProtoGemini && req.proto == model.ProtoOpenAIChat:
+			up, err = convert.GeminiStreamToChat(body, dst, flush, req.model, req.includeUsage)
+		case upProto == model.ProtoGemini:
+			// Gemini upstream, Anthropic or Responses client: go through chat chunks.
+			up, err = chainStream(body, dst, flush, req.model,
+				func(r io.Reader, pw io.Writer) (*convert.Usage, error) {
+					return convert.GeminiStreamToChat(r, pw, func() {}, req.model, true)
+				},
+				func(r io.Reader) (*convert.Usage, error) {
+					if req.proto == model.ProtoAnthropicMessages {
+						return convert.ChatStreamToAnthropic(r, dst, flush, req.model)
+					}
+					return convert.ChatStreamToResponses(r, dst, flush, req.model)
+				})
+		case req.proto == model.ProtoGemini:
+			// Anthropic or Responses upstream, Gemini client.
+			up, err = chainStream(body, dst, flush, req.model,
+				func(r io.Reader, pw io.Writer) (*convert.Usage, error) {
+					if upProto == model.ProtoAnthropicMessages {
+						return convert.AnthropicStreamToChat(r, pw, func() {}, req.model, true)
+					}
+					return convert.ResponsesStreamToChat(r, pw, func() {}, req.model, true)
+				},
+				func(r io.Reader) (*convert.Usage, error) {
+					return convert.ChatStreamToGemini(r, dst, flush, req.model)
 				})
 		default:
 			usage, known, err = passthroughStream(body, dst, flush, upProto, dropUsage)
@@ -1174,6 +1248,14 @@ func convertResponse(raw []byte, upProto, clientProto, model string) ([]byte, er
 		if err != nil {
 			return nil, err
 		}
+	case "gemini-generate":
+		var err error
+		chat, err = convert.GeminiToChatResponse(raw, model)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, errors.New("unsupported upstream protocol " + upProto)
 	}
 	chat.Model = model
 	switch clientProto {
@@ -1183,6 +1265,8 @@ func convertResponse(raw []byte, upProto, clientProto, model string) ([]byte, er
 		return json.Marshal(convert.ChatToAnthropicResponse(chat, model))
 	case "openai-responses":
 		return json.Marshal(convert.ChatToResponsesResponse(chat, model))
+	case "gemini-generate":
+		return json.Marshal(convert.ChatToGeminiResponse(chat, model))
 	}
 	return raw, nil
 }
@@ -1219,6 +1303,17 @@ func setUsage(req *request, u convert.Usage, known bool, complete bool) {
 // extractSystem returns system / developer / instructions text for compliance checks.
 func extractSystem(proto string, raw map[string]json.RawMessage) string {
 	switch proto {
+	case model.ProtoGemini:
+		var si convert.GeminiContent
+		_ = json.Unmarshal(raw["systemInstruction"], &si)
+		var sb strings.Builder
+		for _, p := range si.Parts {
+			if p.Text != "" {
+				sb.WriteString(p.Text)
+				sb.WriteByte('\n')
+			}
+		}
+		return strings.TrimSpace(sb.String())
 	case model.ProtoAnthropicMessages:
 		var s string
 		if json.Unmarshal(raw["system"], &s) == nil {
@@ -1269,6 +1364,25 @@ func extractSystem(proto string, raw map[string]json.RawMessage) string {
 // extractText pulls the latest user text and the message count for routing/compliance.
 func extractText(proto string, raw map[string]json.RawMessage) (string, int) {
 	switch proto {
+	case model.ProtoGemini:
+		var contents []convert.GeminiContent
+		_ = json.Unmarshal(raw["contents"], &contents)
+		for i := len(contents) - 1; i >= 0; i-- {
+			if contents[i].Role == "model" {
+				continue
+			}
+			var sb strings.Builder
+			for _, p := range contents[i].Parts {
+				if p.Text != "" {
+					sb.WriteString(p.Text)
+					sb.WriteByte('\n')
+				}
+			}
+			if sb.Len() > 0 {
+				return strings.TrimSpace(sb.String()), len(contents)
+			}
+		}
+		return "", len(contents)
 	case model.ProtoAnthropicMessages:
 		var msgs []convert.AnthropicMessage
 		_ = json.Unmarshal(raw["messages"], &msgs)

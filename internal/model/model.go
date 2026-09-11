@@ -80,6 +80,7 @@ const (
 	ProtoOpenAIChat        = "openai-completions"
 	ProtoOpenAIResponses   = "openai-responses"
 	ProtoAnthropicMessages = "anthropic-messages"
+	ProtoGemini            = "gemini-generate" // Google generateContent / streamGenerateContent
 	ProtoOpenAIEmbeddings  = "openai-embeddings"
 	ProtoOpenAIImages      = "openai-images"
 )

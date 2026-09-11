@@ -59,6 +59,7 @@ export function ProtocolTag({ protocol }: { protocol: Protocol | string }) {
   const short: Record<string, string> = {
     'openai-completions': 'Chat',
     'openai-responses': 'Responses',
+    'gemini-generate': 'Gemini',
     'anthropic-messages': 'Anthropic',
     'openai-embeddings': 'Embeddings',
     'openai-images': 'Images',

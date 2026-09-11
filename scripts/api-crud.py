@@ -333,6 +333,14 @@ try:
     check("usage rebuild/reconcile/metering", lambda: (req("POST", "/api/admin/usage/rebuild", {"from": time.strftime("%Y-%m-%dT00:00:00Z", time.gmtime()), "to": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}, expect=200), req("GET", "/api/admin/usage/reconcile?range=24h", expect=200), req("GET", "/api/admin/usage/metering", expect=200)))
     check("overview live/usage", lambda: (req("GET", "/api/admin/overview/live", expect=200), req("GET", "/api/admin/overview/usage?range=7d", expect=200)))
     check("providers/models/system info", lambda: (req("GET", "/api/admin/providers", expect=200), req("GET", "/api/admin/models", expect=200), req("GET", "/api/admin/system/info", expect=200)))
+    def gemini_preset():
+        provs = req("GET", "/api/admin/providers", expect=200)
+        g = next(p for p in provs if p["key"] == "gemini")
+        ats = {a["key"]: a for a in g.get("account_types", [])}
+        assert ats["native"]["protocols"] == ["gemini-generate"], ats
+        assert "gemini-generate" in g["protocols"], g["protocols"]
+        return True
+    check("gemini preset has native + openai account types", gemini_preset)
     check("user logs/usage", lambda: (eq(req("GET", "/api/user/logs?range=24h&result=success", token=BT, expect=200)["items"][0]["usage_status"], "confirmed"), req("GET", "/api/user/usage?range=24h", token=BT, expect=200)))
 
     # ---------- deletes in dependency order ----------

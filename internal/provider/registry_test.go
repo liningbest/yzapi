@@ -43,6 +43,18 @@ func TestRegistryConsistency(t *testing.T) {
 			}
 		}
 	}
+	// The Gemini preset must offer the native endpoint (Gemini CLI) and the OpenAI-compatible one.
+	g, ok := Get("gemini")
+	if !ok || len(g.AccountTypes) != 2 {
+		t.Fatalf("gemini preset: %+v", g)
+	}
+	nat, ok := g.AccountTypeOf("native")
+	if !ok || len(nat.Protocols) != 1 || nat.Protocols[0] != model.ProtoGemini || strings.HasSuffix(nat.BaseURL, "/openai") {
+		t.Fatalf("gemini native account type: %+v", nat)
+	}
+	if ProtocolType(model.ProtoGemini) != model.TypeText {
+		t.Fatal("gemini protocol must be a text protocol")
+	}
 	if n := len(registry); n != 26 {
 		t.Fatalf("registry has %d providers; update the login page and README counts", n)
 	}

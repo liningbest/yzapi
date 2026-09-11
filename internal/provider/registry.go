@@ -103,9 +103,13 @@ var registry = []Provider{
 		Types:      []string{model.TypeText, model.TypeImage, model.TypeEmbedding},
 		Protocols:  []string{model.ProtoOpenAIChat, model.ProtoOpenAIEmbeddings, model.ProtoOpenAIImages},
 		AuthHeader: "bearer", Discover: true, Icon: "siliconflow"},
-	{Key: "gemini", Name: "Google Gemini", BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
-		Types:      []string{model.TypeText, model.TypeEmbedding},
-		Protocols:  []string{model.ProtoOpenAIChat, model.ProtoOpenAIEmbeddings},
+	{Key: "gemini", Name: "Google Gemini", BaseURL: "https://generativelanguage.googleapis.com/v1beta",
+		Types:     []string{model.TypeText, model.TypeEmbedding},
+		Protocols: []string{model.ProtoGemini, model.ProtoOpenAIChat, model.ProtoOpenAIEmbeddings},
+		AccountTypes: []AccountType{
+			{Key: "native", Name: "原生 Gemini API（Gemini CLI）", BaseURL: "https://generativelanguage.googleapis.com/v1beta", Protocols: []string{model.ProtoGemini}},
+			{Key: "openai", Name: "OpenAI 兼容", BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai", Protocols: []string{model.ProtoOpenAIChat, model.ProtoOpenAIEmbeddings}},
+		},
 		AuthHeader: "bearer", Discover: true, Icon: "gemini"},
 	{Key: "xai", Name: "xAI", BaseURL: "https://api.x.ai/v1",
 		Types:      []string{model.TypeText, model.TypeImage},
@@ -149,11 +153,11 @@ var registry = []Provider{
 		AuthHeader: "bearer", Discover: true, Custom: true, Icon: "ollama"},
 	{Key: "newapi", Name: "New API / One API", BaseURL: "http://127.0.0.1:3000/v1",
 		Types:      []string{model.TypeText, model.TypeImage, model.TypeEmbedding},
-		Protocols:  []string{model.ProtoOpenAIChat, model.ProtoOpenAIResponses, model.ProtoAnthropicMessages, model.ProtoOpenAIEmbeddings, model.ProtoOpenAIImages},
+		Protocols:  []string{model.ProtoOpenAIChat, model.ProtoOpenAIResponses, model.ProtoAnthropicMessages, model.ProtoGemini, model.ProtoOpenAIEmbeddings, model.ProtoOpenAIImages},
 		AuthHeader: "bearer", Discover: true, Custom: true, Icon: "newapi"},
 	{Key: "custom", Name: "自定义 (OpenAI 兼容)", BaseURL: "",
 		Types:      []string{model.TypeText, model.TypeImage, model.TypeEmbedding},
-		Protocols:  []string{model.ProtoOpenAIChat, model.ProtoOpenAIResponses, model.ProtoAnthropicMessages, model.ProtoOpenAIEmbeddings, model.ProtoOpenAIImages},
+		Protocols:  []string{model.ProtoOpenAIChat, model.ProtoOpenAIResponses, model.ProtoAnthropicMessages, model.ProtoGemini, model.ProtoOpenAIEmbeddings, model.ProtoOpenAIImages},
 		AuthHeader: "bearer", Discover: true, Custom: true, Icon: "custom"},
 	{Key: "custom-anthropic", Name: "自定义 (Anthropic 兼容)", BaseURL: "",
 		Types:      []string{model.TypeText},
@@ -190,7 +194,7 @@ func ProtocolsForType(t string) []string {
 	case model.TypeEmbedding:
 		return []string{model.ProtoOpenAIEmbeddings}
 	default:
-		return []string{model.ProtoOpenAIChat, model.ProtoOpenAIResponses, model.ProtoAnthropicMessages}
+		return []string{model.ProtoOpenAIChat, model.ProtoOpenAIResponses, model.ProtoAnthropicMessages, model.ProtoGemini}
 	}
 }
 

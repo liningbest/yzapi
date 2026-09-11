@@ -75,6 +75,8 @@ func (e *e2e) call(t *testing.T, path, body string, hdr map[string]string) *http
 	}
 	w := httptest.NewRecorder()
 	switch {
+	case strings.HasPrefix(path, "/v1beta/"):
+		e.g.HandleGemini(w, r)
 	case strings.HasSuffix(path, "/count_tokens"):
 		e.g.HandleCountTokens(w, r)
 	case strings.HasSuffix(path, "/messages"):

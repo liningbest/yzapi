@@ -3,6 +3,8 @@ package gateway
 import (
 	"encoding/json"
 	"net/http"
+
+	"yzapi/internal/model"
 )
 
 // GatewayError is returned to clients in OpenAI or Anthropic error format.
@@ -58,15 +60,48 @@ var (
 )
 
 func writeError(w http.ResponseWriter, anthropic bool, e *GatewayError) {
+	if anthropic {
+		writeErrorProto(w, model.ProtoAnthropicMessages, e)
+	} else {
+		writeErrorProto(w, model.ProtoOpenAIChat, e)
+	}
+}
+
+// geminiStatus maps an HTTP status to the google.rpc.Code name Gemini clients expect.
+func geminiStatus(status int) string {
+	switch status {
+	case 400, 413:
+		return "INVALID_ARGUMENT"
+	case 401:
+		return "UNAUTHENTICATED"
+	case 403:
+		return "PERMISSION_DENIED"
+	case 404:
+		return "NOT_FOUND"
+	case 429:
+		return "RESOURCE_EXHAUSTED"
+	case 503:
+		return "UNAVAILABLE"
+	}
+	return "INTERNAL"
+}
+
+// writeErrorProto writes e in the error shape of the client's wire protocol.
+func writeErrorProto(w http.ResponseWriter, proto string, e *GatewayError) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(e.Status)
 	var body any
-	if anthropic {
+	switch proto {
+	case model.ProtoGemini:
+		body = map[string]any{
+			"error": map[string]any{"code": e.Status, "message": e.Message, "status": geminiStatus(e.Status)},
+		}
+	case model.ProtoAnthropicMessages:
 		body = map[string]any{
 			"type":  "error",
 			"error": map[string]any{"type": e.Type, "message": e.Message},
 		}
-	} else {
+	default:
 		body = map[string]any{
 			"error": map[string]any{"message": e.Message, "type": e.Type, "code": e.Code, "param": nil},
 		}

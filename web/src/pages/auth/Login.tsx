@@ -12,7 +12,7 @@ import { useSiteStore } from '@/stores/site';
 import BrandMark from '@/components/BrandMark';
 
 // Coding clients verified against the gateway's protocol fixtures (see docs/api.md).
-const CLIENTS = ['Claude Code', 'Codex', 'OpenCode', 'Cline', 'Roo Code', 'Cursor'];
+const CLIENTS = ['Claude Code', 'Codex', 'Gemini CLI', 'OpenCode', 'Cline', 'Roo Code', 'Cursor'];
 import { homeFor } from '@/layouts/guards';
 
 export default function Login() {

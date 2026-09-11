@@ -5,6 +5,7 @@ export type ModelType = 'text' | 'image' | 'embedding';
 export type Protocol =
   | 'openai-completions'
   | 'openai-responses'
+  | 'gemini-generate'
   | 'anthropic-messages'
   | 'openai-embeddings'
   | 'openai-images';
@@ -209,6 +210,8 @@ export interface AccountListParams extends PageParams {
 
 export interface DiscoverInput {
   provider: string;
+  account_type?: string;
+  protocols?: string[];
   base_url: string;
   api_key?: string;
   account_id?: number;

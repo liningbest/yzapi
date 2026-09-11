@@ -139,6 +139,25 @@ func (e *e2e) callLog(t *testing.T) (model.CallLog, []attemptRecord) {
 	return l, nil
 }
 
+// lastLog waits for at least n call logs and returns the newest one.
+func (e *e2e) lastLog(t *testing.T, n int) (model.CallLog, []attemptRecord) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		var ls []model.CallLog
+		if err := e.db.Order("id desc").Limit(1).Find(&ls).Error; err == nil && len(ls) == 1 && ls[0].ID >= uint(n) {
+			var att []attemptRecord
+			if len(ls[0].Attempts) > 0 {
+				_ = json.Unmarshal([]byte(ls[0].Attempts), &att)
+			}
+			return ls[0], att
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("call log %d was not committed", n)
+	return model.CallLog{}, nil
+}
+
 func jsonUpstream(status int, body string) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.ReadAll(r.Body)

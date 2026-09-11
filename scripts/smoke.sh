@@ -48,6 +48,11 @@ ACC2=$(curl -fsS -X POST "$BASE/api/admin/accounts" -H "$A" -H 'Content-Type: ap
   \"protocols\":[\"anthropic-messages\"],
   \"mappings\":[{\"request_model\":\"claude-mock\",\"upstream_model\":\"mock-pro\"}],\"priority\":20}")
 if echo "$ACC2" | j "['id']" >/dev/null; then pass "create anthropic-style account"; else failx "create anthropic-style account"; fi
+ACC4=$(curl -fsS -X POST "$BASE/api/admin/accounts" -H "$A" -H 'Content-Type: application/json' -d "{
+  \"name\":\"mock-gemini\",\"provider\":\"gemini\",\"account_type\":\"native\",\"type\":\"text\",\"base_url\":\"http://$MOCK/v1beta\",\"api_key\":\"sk-mock\",
+  \"protocols\":[\"gemini-generate\"],
+  \"mappings\":[{\"request_model\":\"gemini-mock\",\"upstream_model\":\"mock-gemini\"}],\"priority\":30}")
+if echo "$ACC4" | j "['id']" >/dev/null && [ "$(echo "$ACC4" | j "['protocols'][0]")" = "gemini-generate" ]; then pass "create native gemini account"; else echo "$ACC4"; failx "create native gemini account"; fi
 ACC3=$(curl -fsS -X POST "$BASE/api/admin/accounts" -H "$A" -H 'Content-Type: application/json' -d "{
   \"name\":\"mock-embed\",\"provider\":\"custom\",\"type\":\"embedding\",\"base_url\":\"http://$MOCK/v1\",\"api_key\":\"sk-mock\",
   \"mappings\":[{\"request_model\":\"embed\",\"upstream_model\":\"mock-embed\"}]}")
@@ -65,7 +70,7 @@ if echo "$DISC" | grep -q mock-pro; then pass "discover models"; else failx "dis
 
 echo "== model groups / user group / user / key"
 MG1=$(curl -fsS -X POST "$BASE/api/admin/model-groups" -H "$A" -H 'Content-Type: application/json' -d '{"name":"cheap","type":"text","models":["mini"]}' | j "['id']")
-MG2=$(curl -fsS -X POST "$BASE/api/admin/model-groups" -H "$A" -H 'Content-Type: application/json' -d '{"name":"strong","type":"text","models":["claude-mock","pro"]}' | j "['id']")
+MG2=$(curl -fsS -X POST "$BASE/api/admin/model-groups" -H "$A" -H 'Content-Type: application/json' -d '{"name":"strong","type":"text","models":["claude-mock","pro","gemini-mock"]}' | j "['id']")
 MG3=$(curl -fsS -X POST "$BASE/api/admin/model-groups" -H "$A" -H 'Content-Type: application/json' -d '{"name":"vectors","type":"embedding","models":["embed"]}' | j "['id']")
 UG=$(curl -fsS -X POST "$BASE/api/admin/user-groups" -H "$A" -H 'Content-Type: application/json' -d "{\"name\":\"dev\",\"max_concurrency\":10,\"key_max_concurrency\":5,\"token_quota\":1000000,\"model_group_ids\":[$MG1,$MG2,$MG3]}" | j "['id']")
 curl -fsS -X POST "$BASE/api/admin/users" -H "$A" -H 'Content-Type: application/json' -d "{\"username\":\"alice\",\"password\":\"AlicePass12345\",\"group_id\":$UG}" >/dev/null
@@ -102,6 +107,22 @@ OUT=$(curl -fsS "$BASE/v1/responses" -H "$K" -H 'Content-Type: application/json'
 if echo "$OUT" | grep -q '"object":"response"' && echo "$OUT" | grep -q 'anthropic:mock-pro'; then pass "responses client -> anthropic upstream (conversion)"; else failx "responses client -> anthropic upstream (conversion)"; fi
 OUT=$(curl -fsS -N "$BASE/v1/responses" -H "$K" -H 'Content-Type: application/json' -d '{"model":"claude-mock","input":"responses stream via anthropic","stream":true}')
 if echo "$OUT" | grep -q 'response.output_text.delta' && echo "$OUT" | grep -q 'response.completed'; then pass "responses client -> anthropic upstream (stream chain)"; else failx "responses client -> anthropic upstream (stream chain)"; fi
+OUT=$(curl -fsS "$BASE/v1beta/models/gemini-mock:generateContent" -H "x-goog-api-key: $KEY" -H 'Content-Type: application/json' -d '{"contents":[{"role":"user","parts":[{"text":"gemini native"}]}]}')
+if echo "$OUT" | grep -q 'gemini:mock-gemini\] echo: gemini native' && echo "$OUT" | grep -q '"usageMetadata"'; then pass "gemini native passthrough (x-goog-api-key)"; else echo "$OUT"; failx "gemini native passthrough"; fi
+OUT=$(curl -fsS -N "$BASE/v1beta/models/gemini-mock:streamGenerateContent?alt=sse&key=$KEY" -H 'Content-Type: application/json' -d '{"contents":[{"role":"user","parts":[{"text":"gemini stream"}]}]}')
+if echo "$OUT" | grep -q '"finishReason":"STOP"' && echo "$OUT" | grep -q 'promptTokenCount'; then pass "gemini native stream passthrough (?key=)"; else echo "$OUT"; failx "gemini native stream passthrough"; fi
+OUT=$(curl -fsS "$BASE/v1beta/models/mini:generateContent" -H "x-goog-api-key: $KEY" -H 'Content-Type: application/json' -d '{"systemInstruction":{"parts":[{"text":"be brief"}]},"contents":[{"role":"user","parts":[{"text":"gemini via openai"}]}]}')
+if echo "$OUT" | grep -q '"candidates"' && echo "$OUT" | grep -q 'mock-mini\] echo: gemini via openai'; then pass "gemini client -> openai upstream (conversion)"; else echo "$OUT"; failx "gemini client -> openai upstream"; fi
+OUT=$(curl -fsS -N "$BASE/v1beta/models/claude-mock:streamGenerateContent?alt=sse" -H "x-goog-api-key: $KEY" -H 'Content-Type: application/json' -d '{"contents":[{"role":"user","parts":[{"text":"gemini via anthropic"}]}]}')
+if echo "$OUT" | grep -q '"finishReason":"STOP"' && echo "$OUT" | grep -q 'anthropic:mock-pro'; then pass "gemini client -> anthropic upstream (stream chain)"; else echo "$OUT"; failx "gemini client -> anthropic upstream (stream chain)"; fi
+OUT=$(curl -fsS "$BASE/v1/chat/completions" -H "$K" -H 'Content-Type: application/json' -d '{"model":"gemini-mock","messages":[{"role":"user","content":"chat via gemini"}]}')
+if echo "$OUT" | grep -q '"chat.completion"' && echo "$OUT" | grep -q 'gemini:mock-gemini\] echo: chat via gemini' && echo "$OUT" | grep -q '"prompt_tokens":11'; then pass "openai client -> gemini upstream (conversion + usage)"; else echo "$OUT"; failx "openai client -> gemini upstream"; fi
+OUT=$(curl -fsS -N "$BASE/v1/messages" -H "x-api-key: $KEY" -H 'Content-Type: application/json' -d '{"model":"gemini-mock","max_tokens":100,"stream":true,"tools":[{"name":"get_weather","description":"w","input_schema":{"type":"object","properties":{}}}],"messages":[{"role":"user","content":"weather today?"}]}')
+if echo "$OUT" | grep -q 'tool_use' && echo "$OUT" | grep -q 'message_stop'; then pass "anthropic client -> gemini upstream (tool-call stream chain)"; else echo "$OUT"; failx "anthropic client -> gemini upstream (tool-call stream chain)"; fi
+OUT=$(curl -fsS "$BASE/v1beta/models" -H "x-goog-api-key: $KEY")
+if echo "$OUT" | grep -q '"name":"models/gemini-mock"' && echo "$OUT" | grep -q 'generateContent'; then pass "gemini model list"; else echo "$OUT"; failx "gemini model list"; fi
+code=$(curl -s -o /tmp/yz_gem_err -w '%{http_code}' "$BASE/v1beta/models/gemini-mock:generateContent" -H 'x-goog-api-key: sk-bad' -H 'Content-Type: application/json' -d '{"contents":[]}')
+if [ "$code" = "401" ] && grep -q 'UNAUTHENTICATED' /tmp/yz_gem_err; then pass "gemini error shape (401 UNAUTHENTICATED)"; else failx "gemini error shape"; fi
 OUT=$(curl -fsS "$BASE/v1/embeddings" -H "$K" -H 'Content-Type: application/json' -d '{"model":"embed","input":"vec"}')
 if echo "$OUT" | grep -q '"embedding"'; then pass "embeddings"; else failx "embeddings"; fi
 OUT=$(curl -fsS "$BASE/v1/chat/completions" -H "$K" -H 'Content-Type: application/json' -d '{"model":"strong","messages":[{"role":"user","content":"group call"}]}')
@@ -166,6 +187,6 @@ if curl -fsS "$BASE/api/admin/settings" -H "$A" | grep -q '"performance"'; then 
 if curl -fsS "$BASE/api/admin/system/info" -H "$A" | grep -q '"go_version"'; then pass "system info"; else failx "system info"; fi
 
 echo
-EXPECTED=47
+EXPECTED=56
 if [ "$PASSED" -ne "$EXPECTED" ]; then echo "only $PASSED/$EXPECTED checks ran"; exit 1; fi
 echo "ALL $PASSED SMOKE TESTS PASSED"

@@ -113,3 +113,24 @@
 | 新增 9 个预设 | 阶跃星辰、百度千帆、Groq、Mistral、Together AI、Fireworks AI、Cerebras、LM Studio、自定义 (Anthropic 兼容)，共 26 家 |
 
 回归：`TestRegistryConsistency`（预设一致性、Anthropic 入口不得复用 `/v1`）、`TestAccountTypeNarrowsProtocols`。
+
+## 1.0.12：同类工具考察后的十项补充
+
+对应 `docs/competitive-survey-2026-09.md` 第 3 节的 1–10 项。没有引入配额预占，也没有内置订阅账号 OAuth 池。
+
+| 项 | 修改 | 说明 | 验收方式 |
+|---|---|---|---|
+| 1 成本估算 | 内置参考价目表（按模型、USD / CNY、每百万 token，标注 `2026-06` 版本），首次启动写入、可在"设置 → 计价"逐条改价或一键恢复内置；网关按每次尝试计价（缓存 token 按答复尝试计），折算成本记入日志、小时汇总、报表、总览与用户中心；`settings.pricing` 设基准币种与汇率 | 价格查找顺序：同供应商 → 通用 → 其他供应商；精确 > 最长前缀，容忍厂商前缀与版本后缀。任一尝试无价时 `cost_known=false` | `internal/pricing` 单测、`TestCostPerAttemptAndRollup` / `TestCostUnknownWhenUnpriced`、api-crud 计价用例；后台改价后新日志的 `cost` 立即变化 |
+| 2 缓存自检 | 账号"映射"弹层的"缓存自检"按钮：用同一段 ~1.5k token 前缀连打两次，展示两次的 prompt / cached / cache_write 与延迟，判定第二次是否命中 | 支持 Anthropic（`cache_control`）、OpenAI Chat / Responses（自动前缀缓存）、Gemini（隐式缓存 `cachedContentTokenCount`） | `POST /api/admin/accounts/{id}/cache-check`；对真实供应商第二次 `cached>0` |
+| 3 Key 级限制 | API Key 可设有效期、模型白名单（只能是自己可见的模型）、每分钟请求 / token 上限；用户组也可设每分钟请求 / token 上限 | 数据面：过期 401 `api_key_expired`，白名单外 403 `key_model_not_allowed`，超限 429 `rate_limited` / `token_rate_limited` 带 `Retry-After: 5`；按最近 60 秒滚动统计，请求在准入计数、token 在结束计数 | `TestKeyRestrictionsAndGroupLimits`、api-crud 用例；用户中心新建 / 编辑 Key 的表单 |
+| 4 Gemini 原生协议 | 新协议 `gemini-generate`：客户端入口 `/v1beta/models/{model}:generateContent`、`:streamGenerateContent?alt=sse`、`:countTokens`、`GET /v1beta/models[/{model}]`，认证支持 `x-goog-api-key` 与 `?key=`；错误按 Google 形状返回。上游侧 Gemini 预设拆成"原生 Gemini API（Gemini CLI）"与"OpenAI 兼容"两种账号类型，自定义 / New API 预设也可勾选该协议；账号探测、发现模型、缓存自检都支持原生入口 | 四种客户端协议与四种上游协议两两互转：Gemini ↔ Chat 直接转换，Gemini ↔ Anthropic / Responses 经 Chat 分片串联；工具调用、图片、思考部分、`thinkingBudget`、JSON 输出模式都有映射；同协议直连时请求体原样转发、只发 `x-goog-api-key`（Google 会校验多余的 Bearer 头） | `internal/gateway/convert/gemini_test.go`（5 个）、`internal/gateway/gemini_test.go`（5 个端到端：Gemini CLI 形态直连、Gemini 客户端 → OpenAI 上游、OpenAI 客户端 → Gemini 上游、Claude Code → Gemini 上游流式、模型列表与错误形状）、smoke 新增 9 项（56）、mock 上游新增 Gemini 端点 |
+| 5 思考转正文 | "设置 → 基础"开关：跨协议转换时把 thinking / reasoning 以 `<think>…</think>` 放进正文，供不认识 `reasoning_content` 的客户端显示；`thinking.budget_tokens` ↔ `reasoning_effort` 双向映射 | 只影响转换路径，同协议直连不动 | `TestReasoningToContentMode`；开关打开后 Chat 客户端调 Anthropic 上游能在正文看到思考 |
+| 6 解析可见性 | 每个响应带 `X-Upstream-Account`、`X-Upstream-Model`、`X-Upstream-Protocol` | 便于在客户端侧核对"打到了哪个账号 / 模型 / 协议" | `TestCompatUpstreamHeaders`；curl -i 查看 |
+| 7 熔断探测 | 账号冷却到期后只放一个探测请求（半开），成功即恢复、失败则重新冷却；探测超时 30 秒自动释放 | 避免冷却结束后一批请求同时撞上仍在故障的上游 | `TestHealthHalfOpenProbe`；smoke 的 failover 段 |
+| 8 组级限速 | 见第 3 项：用户组每分钟请求 / token 上限 | | 同上 |
+| 9 配置版本 | 账号、模型组、价目、设置的每次改动前自动快照；"设置 → 配置版本"可查看、手工打点、一键回滚（事务内整体恢复，快照里没有的设置段回到默认） | `GET/POST /api/admin/config/snapshots`、`POST /{id}/restore` | `TestConfigSnapshotAndRestore`、api-crud 用例 |
+| 10 加权灰度 | 账号增加权重：同一优先级内按权重随机排序，优先级仍是硬序 | 权重 0 视为 1；用于新供应商小流量灰度 | `TestOrderUpstreamsWeighted`（分布检验） |
+
+验证：`go test -race ./...` 全绿；`scripts/smoke.sh` 56 项；`scripts/api-crud.py` 90 项。登录页与 README 已把 Gemini CLI 列入适配客户端。
+
+升级：直接替换镜像；首次启动写入内置价目表与 `usage_hourlies.cost_micros` 等新列，不重算历史成本（历史日志 `cost_known=false`）。

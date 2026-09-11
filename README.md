@@ -9,7 +9,7 @@
 | 模块 | 能力 |
 |---|---|
 | 统一接入 | `/v1/chat/completions`、`/v1/responses`、`/v1/messages`、`/v1/embeddings`、`/v1/images/generations`、`/v1/models`；Bearer 与 `x-api-key` 认证 |
-| 账号池 | 26 家内置供应商（OpenAI、Anthropic、DeepSeek、阿里云百炼、腾讯云、火山方舟、智谱、Moonshot、MiniMax、阶跃星辰、百度千帆、硅基流动、Gemini、xAI、Groq、Mistral、Together、Fireworks、Cerebras、OpenRouter、vLLM、Ollama、LM Studio、New API、自定义 OpenAI 兼容、自定义 Anthropic 兼容）；DeepSeek / Kimi / 智谱 / MiniMax / 百炼 各带独立的 Anthropic 兼容入口，Claude Code 可同协议直连；模型映射；发现模型；优先级、并发上限；健康状态与自动冷却 |
+| 账号池 | 26 家内置供应商（OpenAI、Anthropic、DeepSeek、阿里云百炼、腾讯云、火山方舟、智谱、Moonshot、MiniMax、阶跃星辰、百度千帆、硅基流动、Gemini、xAI、Groq、Mistral、Together、Fireworks、Cerebras、OpenRouter、vLLM、Ollama、LM Studio、New API、自定义 OpenAI 兼容、自定义 Anthropic 兼容）；DeepSeek / Kimi / 智谱 / MiniMax / 百炼 各带独立的 Anthropic 兼容入口，Claude Code 可同协议直连；Gemini 带原生 API 入口，Gemini CLI 可同协议直连；模型映射；发现模型；优先级、并发上限；健康状态与自动冷却 |
 | 协议转换 | OpenAI Chat ↔ Anthropic Messages ↔ OpenAI Responses 三向转换，含流式、工具调用、思考内容；原生协议优先 |
 | 模型组 | 有序 failover；可直接用组名当模型名调用 |
 | 用户 / 用户组 | 席位管理、组并发、单 Key 并发、月度 Token 配额、授权模型组、默认组保护、唯一管理员保护 |

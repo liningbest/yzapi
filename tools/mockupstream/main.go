@@ -30,6 +30,7 @@ func main() {
 	mux.HandleFunc("/v1/messages", messages)
 	mux.HandleFunc("/v1/embeddings", embeddings)
 	mux.HandleFunc("/v1/responses", responses)
+	mux.HandleFunc("/v1beta/models/", gemini) // /v1beta/models/{model}:generateContent | :streamGenerateContent
 	mux.HandleFunc("/v1/images/generations", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"created": time.Now().Unix(), "data": []map[string]any{{"url": "https://example.com/mock.png"}}})
 	})
@@ -44,7 +45,7 @@ func logReq(h http.Handler) http.Handler {
 			fmt.Fprintf(w, `{"error":{"message":"mock failure %d","type":"server_error"}}`, *fail)
 			return
 		}
-		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") && r.Header.Get("x-api-key") == "" {
+		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") && r.Header.Get("x-api-key") == "" && r.Header.Get("x-goog-api-key") == "" && r.URL.Query().Get("key") == "" {
 			w.WriteHeader(401)
 			fmt.Fprint(w, `{"error":{"message":"missing api key","type":"authentication_error"}}`)
 			return
@@ -282,4 +283,83 @@ func responses(w http.ResponseWriter, r *http.Request) {
 	}
 	send("response.output_text.done", map[string]any{"item_id": "msg_1", "output_index": 0, "content_index": 0, "text": reply})
 	send("response.completed", map[string]any{"response": final})
+}
+
+// gemini mimics generateContent / streamGenerateContent (SSE with alt=sse).
+func gemini(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("x-goog-api-key") == "" && r.URL.Query().Get("key") == "" {
+		w.WriteHeader(401)
+		fmt.Fprint(w, `{"error":{"code":401,"message":"API key not valid","status":"UNAUTHENTICATED"}}`)
+		return
+	}
+	name, action, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/v1beta/models/"), ":")
+	var req struct {
+		Contents []struct {
+			Role  string `json:"role"`
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"contents"`
+		Tools []any `json:"tools"`
+	}
+	body, _ := io.ReadAll(r.Body)
+	if err := json.Unmarshal(body, &req); err != nil {
+		w.WriteHeader(400)
+		fmt.Fprint(w, `{"error":{"code":400,"message":"Invalid JSON payload received.","status":"INVALID_ARGUMENT"}}`)
+		return
+	}
+	prompt := ""
+	for i := len(req.Contents) - 1; i >= 0; i-- {
+		if req.Contents[i].Role != "model" && len(req.Contents[i].Parts) > 0 {
+			prompt = req.Contents[i].Parts[len(req.Contents[i].Parts)-1].Text
+			break
+		}
+	}
+	reply := fmt.Sprintf("[gemini:%s] echo: %s", name, prompt)
+	wantTool := len(req.Tools) > 0 && strings.Contains(strings.ToLower(prompt), "weather")
+	usage := map[string]int{"promptTokenCount": 11, "candidatesTokenCount": 5, "totalTokenCount": 16, "cachedContentTokenCount": 2}
+	cand := func(parts []map[string]any, finish string) map[string]any {
+		c := map[string]any{"content": map[string]any{"role": "model", "parts": parts}, "index": 0}
+		if finish != "" {
+			c["finishReason"] = finish
+		}
+		return c
+	}
+	toolPart := map[string]any{"functionCall": map[string]any{"name": "get_weather", "args": map[string]any{"city": "Beijing"}}}
+	switch action {
+	case "generateContent":
+		parts := []map[string]any{{"text": reply}}
+		if wantTool {
+			parts = []map[string]any{toolPart}
+		}
+		writeJSON(w, map[string]any{"candidates": []map[string]any{cand(parts, "STOP")}, "usageMetadata": usage, "modelVersion": name})
+	case "streamGenerateContent":
+		w.Header().Set("Content-Type", "text/event-stream")
+		fl := w.(http.Flusher)
+		send := func(v any) {
+			b, _ := json.Marshal(v)
+			fmt.Fprintf(w, "data: %s\n\n", b)
+			fl.Flush()
+			time.Sleep(*delay)
+		}
+		if wantTool {
+			send(map[string]any{"candidates": []map[string]any{cand([]map[string]any{toolPart}, "STOP")}, "usageMetadata": usage, "modelVersion": name})
+			return
+		}
+		words := strings.SplitAfter(reply, " ")
+		for i, word := range words {
+			finish := ""
+			ev := map[string]any{"candidates": []map[string]any{cand([]map[string]any{{"text": word}}, finish)}, "modelVersion": name}
+			if i == len(words)-1 {
+				ev["candidates"] = []map[string]any{cand([]map[string]any{{"text": word}}, "STOP")}
+				ev["usageMetadata"] = usage
+			}
+			send(ev)
+		}
+	case "countTokens":
+		writeJSON(w, map[string]any{"totalTokens": len(body) / 4})
+	default:
+		w.WriteHeader(404)
+		fmt.Fprint(w, `{"error":{"code":404,"message":"unknown method","status":"NOT_FOUND"}}`)
+	}
 }

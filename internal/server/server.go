@@ -67,6 +67,11 @@ func New(cfg *config.Config, db *gorm.DB, gw *gateway.Gateway, mgmt *api.Server,
 	r.POST("/messages/count_tokens", gin.WrapF(gw.HandleCountTokens))
 	r.POST("/v1/v1/chat/completions", gin.WrapF(gw.HandleChat))
 	r.GET("/models", gin.WrapF(gw.HandleModels))
+	// Google Gemini native surface (Gemini CLI, google-genai SDKs): /v1beta/models/{m}:generateContent etc.
+	r.Any("/v1beta/*rest", gin.WrapF(gw.HandleGemini))
+	// /v1/models/{m}:generateContent collides with the OpenAI GET /v1/models/:id route only by
+	// method, so the POST form is dispatched to the Gemini handler as well.
+	v1.POST("/models/*rest", gin.WrapF(gw.HandleGemini))
 
 	// Management API
 	mgmt.Register(r)

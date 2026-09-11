@@ -11,7 +11,7 @@ export const PROTOCOLS: Protocol[] = [
 ];
 
 export const PROTOCOLS_BY_TYPE: Record<ModelType, Protocol[]> = {
-  text: ['openai-completions', 'openai-responses', 'anthropic-messages'],
+  text: ['openai-completions', 'openai-responses', 'anthropic-messages', 'gemini-generate'],
   image: ['openai-images'],
   embedding: ['openai-embeddings'],
 };
@@ -20,6 +20,7 @@ export const PROTOCOL_LABELS: Record<Protocol, string> = {
   'openai-completions': 'OpenAI Chat Completions',
   'openai-responses': 'OpenAI Responses',
   'anthropic-messages': 'Anthropic Messages',
+  'gemini-generate': 'Gemini generateContent',
   'openai-embeddings': 'OpenAI Embeddings',
   'openai-images': 'OpenAI Images',
 };

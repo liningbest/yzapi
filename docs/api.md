@@ -9,14 +9,15 @@
 
 数据面限速：用户组与 API Key 各有每分钟请求数 / Token 数上限（0 不限），按最近 60 秒统计，请求数在准入时计数、Token 在结束时计数；超出返回 429 `rate_limited` / `token_rate_limited` 并带 `Retry-After`。Key 过期返回 401 `api_key_expired`，Key 白名单外的模型返回 403 `key_model_not_allowed`。
 
-数据面接口（客户端调用，API Key 认证）：`GET /v1/models`、`GET /v1/models/{id}`、`POST /v1/chat/completions`、`POST /v1/responses`、`POST /v1/messages`、`POST /v1/messages/count_tokens`、`POST /v1/embeddings`、`POST /v1/images/generations`。为兼容各种编程客户端：
+数据面接口（客户端调用，API Key 认证）：`GET /v1/models`、`GET /v1/models/{id}`、`POST /v1/chat/completions`、`POST /v1/responses`、`POST /v1/messages`、`POST /v1/messages/count_tokens`、`POST /v1/embeddings`、`POST /v1/images/generations`；Google Gemini 原生入口 `GET /v1beta/models`、`GET /v1beta/models/{model}`、`POST /v1beta/models/{model}:generateContent`、`POST /v1beta/models/{model}:streamGenerateContent?alt=sse`、`POST /v1beta/models/{model}:countTokens`（`/v1/models/{model}:generateContent` 等 `/v1` 前缀形式同样接受）。为兼容各种编程客户端：
 
-- 认证头接受 `Authorization: Bearer`、`x-api-key`、`api-key` 三种；路径省略或重复 `/v1` 也接受；`/v1/*` 支持 CORS 预检，浏览器内的客户端可直连。
+- 认证头接受 `Authorization: Bearer`、`x-api-key`、`api-key`、`x-goog-api-key` 四种，以及 Gemini REST 风格的 `?key=` 查询参数；路径省略或重复 `/v1` 也接受；`/v1/*` 支持 CORS 预检，浏览器内的客户端可直连。
 - **模型名解析**：客户端发来的模型名依次按精确、忽略大小写、去掉厂商前缀（`anthropic/`、`openai/`、`models/` 等）、去掉 `-latest`、版本 / 日期后缀容错（`claude-sonnet-4-5-20250929` 命中映射 `claude-sonnet-4-5`，反之亦可；只接受数字或日期形态的后缀，`gpt-5-codex` 不会命中 `gpt-5`）匹配映射；日志与报表记录解析后的名称。**歧义**（多个同长候选，或仅大小写不同的多个映射）返回 400 `model_ambiguous`，不会调用上游，也不会落入透传。
 - **透传未映射模型**：账号开启 `passthrough_models` 后，没有映射的模型名原样转发给该账号（按账号类型限定文本 / 向量 / 文生图）。显式映射优先；用户组绑定了模型组时不允许透传。
 - `POST /v1/messages/count_tokens`：与生成请求走同一前半段（鉴权、正文上限与内存预算、模型解析、用户组与模型组授权、全局 / 组 / Key 并发槽），因此受同样的性能设置约束；有 Anthropic 协议账号可服务该模型时原样转发（改写模型名、透传 `anthropic-beta`），否则按请求体大小估算并带 `X-Token-Count-Estimated: true`。估算只用于上下文辅助，不是计量值，不进入用量账本。
 - `GET /v1/models` / `GET /v1/models/{id}` 每项同时带 OpenAI 字段（`object:"model"/created/owned_by`）与 Anthropic ModelInfo 字段（`type:"model"/display_name/created_at`），列表含 `has_more`；网关自身分类放在 `model_type`（text / embedding / image），`kind` 为 model / virtual / group。透传账号可服务的未映射名称在详情查询中同样返回可用。
 - 最终失败为 429 时把上游的 `Retry-After` 透传给客户端。
+- **Gemini 原生协议**（`gemini-generate`）：模型名取自 URL，流式由 `:streamGenerateContent` 决定（总是以 SSE 回复，`usageMetadata` 随最后一个事件下发）；错误按 Google 的 `{"error":{"code","message","status"}}` 形状返回（`UNAUTHENTICATED` / `PERMISSION_DENIED` / `NOT_FOUND` / `RESOURCE_EXHAUSTED` …）；`countTokens` 与生成请求走同一鉴权 / 模型解析 / 授权检查后本地估算，不打上游。同协议直连到原生 Gemini 账号时请求体原样转发（Gemini 拒绝未知字段，因此不注入 `model`），只发送 `x-goog-api-key`；跨协议时 Gemini ↔ Chat 互转：`systemInstruction` ↔ system、`functionCall` / `functionResponse` ↔ tool_calls / tool（按函数名顺序配对合成调用 ID，连续的工具结果合并进一个 user 轮）、`inlineData` ↔ data URL 图片、`thought` 部分 ↔ reasoning、`thinkingBudget` ↔ `reasoning_effort`、`responseMimeType/responseSchema` ↔ `response_format`、`thoughtsTokenCount` 计入输出 token。
 
 **跨协议转换的能力边界**（客户端协议与上游协议不同时才会发生；同协议直连时只改写模型名，其余字段原样透传）：
 
@@ -60,7 +61,7 @@
 - `GET /api/admin/overview/usage?range=24h` → `{tokens:{total,prompt,completion,cached,cache_rate}, requests:{total,success,failed,fail_rate}, active_users, active_keys, trend:[{time, total_tokens, prompt_tokens, completion_tokens, cached_tokens, requests}]}`
 
 ### 供应商与模型
-- `GET /api/admin/providers` → `[{key,name,base_url,types[],protocols[],account_types:[{key,name,base_url,protocols[]}],auth_header,discover,custom,icon}]`。`account_types[].protocols` 存在时表示该入口只讲这些协议（例如 DeepSeek / Kimi / 智谱 / MiniMax / 百炼 的 Anthropic 兼容入口只讲 `anthropic-messages`），创建账号时协议默认与校验都以它为准，避免把 OpenAI 与 Anthropic 协议混在同一个 Base URL 下
+- `GET /api/admin/providers` → `[{key,name,base_url,types[],protocols[],account_types:[{key,name,base_url,protocols[]}],auth_header,discover,custom,icon}]`。`account_types[].protocols` 存在时表示该入口只讲这些协议（例如 DeepSeek / Kimi / 智谱 / MiniMax / 百炼 的 Anthropic 兼容入口只讲 `anthropic-messages`；Gemini 预设的"原生 Gemini API"入口只讲 `gemini-generate`，"OpenAI 兼容"入口讲 `openai-completions` / `openai-embeddings`），创建账号时协议默认与校验都以它为准，避免把不同协议混在同一个 Base URL 下。`POST /accounts/discover` 可带 `account_type` / `protocols`，原生 Gemini 入口按 `x-goog-api-key` 拉取 `models[].name` 并去掉 `models/` 前缀
 - `GET /api/admin/models` → `[{name,type,kind:"model"|"virtual"|"group",provider,accounts,models[]}]`（当前可路由的全部请求模型）
 
 ### 账号池 `/api/admin/accounts`
