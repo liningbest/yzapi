@@ -133,4 +133,6 @@
 
 验证：`go test -race ./...` 全绿；`scripts/smoke.sh` 56 项；`scripts/api-crud.py` 90 项。登录页与 README 已把 Gemini CLI 列入适配客户端。
 
+同版本附带一个修正：此前 `HTTP_PROXY` / `HTTPS_PROXY` 被当作显式代理地址读入，`NO_PROXY` 不生效，连回环地址的上游也会绕代理（本机压测因此每请求多 4 ms、封顶约 250 req/s）。现在只有 `YZAPI_HTTP_PROXY` 是强制代理，其余情况遵循标准环境变量语义。性能对比（零延迟 mock，清掉代理后）：1.0.12 相对十项之前单请求多约 10 µs，16 并发吞吐 1.4–1.7 万 req/s 对 2 万 req/s，只在机器打满时可见。
+
 升级：直接替换镜像；首次启动写入内置价目表与 `usage_hourlies.cost_micros` 等新列，不重算历史成本（历史日志 `cost_known=false`）。

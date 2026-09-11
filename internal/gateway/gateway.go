@@ -178,12 +178,14 @@ func (g *Gateway) buildTransport(perf settings.Performance) {
 	if !g.cfg.UpstreamHTTP2 {
 		tr.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{} // HTTP/1.1 only
 	}
+	// An explicit YZAPI_HTTP_PROXY is unconditional; otherwise follow the environment,
+	// which honours NO_PROXY and never proxies loopback (a local mock or a same-host
+	// relay must not take a detour through the machine's HTTP_PROXY).
+	tr.Proxy = http.ProxyFromEnvironment
 	if g.cfg.HTTPProxy != "" {
 		if pu, err := url.Parse(g.cfg.HTTPProxy); err == nil {
 			tr.Proxy = http.ProxyURL(pu)
 		}
-	} else {
-		tr.Proxy = http.ProxyFromEnvironment
 	}
 	g.client.Store(&http.Client{Transport: tr, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }})
 	if old := g.transport.Swap(tr); old != nil {
