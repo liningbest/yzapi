@@ -240,6 +240,11 @@ func describeIndex(db *gorm.DB, table, name string) (found bool, d indexDef, err
 				d.plain = false
 				continue
 			}
+			// The key compares exact strings: a NOCASE / RTRIM collation or a DESC
+			// column would change which rows collide, so it is not the managed key.
+			if !strings.EqualFold(x.Coll, "BINARY") || x.Desc != 0 {
+				d.plain = false
+			}
 			d.cols = append(d.cols, *x.Name)
 		}
 		return true, d, nil
@@ -249,8 +254,15 @@ func describeIndex(db *gorm.DB, table, name string) (found bool, d indexDef, err
 			Plain  bool
 			Cols   string
 		}
+		// plain also requires each key column to use its column's own collation, the
+		// type's default operator class and no ordering option, i.e. the semantics of a
+		// plain CREATE UNIQUE INDEX (col, ...).
 		res := db.Raw(`SELECT i.indisunique AS "unique",
-			(i.indpred IS NULL AND i.indexprs IS NULL AND i.indisvalid AND i.indisready) AS plain,
+			(i.indpred IS NULL AND i.indexprs IS NULL AND i.indisvalid AND i.indisready
+			 AND COALESCE((SELECT bool_and(i.indcollation[k.ord-1] = a.attcollation AND oc.opcdefault AND i.indoption[k.ord-1] = 0)
+			 	FROM unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
+			 	JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
+			 	JOIN pg_opclass oc ON oc.oid = i.indclass[k.ord-1]), false)) AS plain,
 			COALESCE((SELECT string_agg(a.attname, ',' ORDER BY k.ord) FROM unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
 				JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum), '') AS cols
 			FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid JOIN pg_namespace n ON n.oid = c.relnamespace

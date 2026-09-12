@@ -510,3 +510,49 @@ func TestR138MigrationAllowsUnrelatedIndexes(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// R139-02: a same-named unique index with another collation or ordering is not the
+// managed key (which compares exact strings); it is replaced and the migration stays
+// idempotent afterwards.
+func TestR139MigrationRejectsDifferentIndexCollation(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{Logger: logger.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE accounts (id integer primary key autoincrement, name text, provider text, type text, base_url text, api_key_enc text, protocols text, enabled numeric)`,
+		`CREATE UNIQUE INDEX uq_accounts_name ON accounts(name COLLATE NOCASE)`,
+		`INSERT INTO accounts (name,provider,type,base_url,api_key_enc,protocols,enabled) VALUES ('CaseName','openai','text','http://a','k','[]',1)`,
+		`CREATE TABLE sensitive_words (id integer primary key autoincrement, policy_group_id integer, word text, note text, enabled numeric)`,
+		`CREATE UNIQUE INDEX uq_sensitive_words_key ON sensitive_words(policy_group_id, word COLLATE RTRIM)`,
+		`INSERT INTO sensitive_words (policy_group_id, word, note, enabled) VALUES (1,'w','',1)`,
+		`CREATE TABLE route_samples (id integer primary key autoincrement, label text, text text, threshold real, note text, vector blob, vector_dim integer, vector_model text, text_hash varchar(64) NOT NULL DEFAULT '')`,
+		`CREATE UNIQUE INDEX uq_route_samples_key ON route_samples(label DESC, text_hash)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatal(stmt, err)
+		}
+	}
+	for run := 0; run < 2; run++ {
+		if err := migrateIdempotencyKeys(db); err != nil {
+			t.Fatalf("run %d: %v", run, err)
+		}
+	}
+	if err := db.Exec(`INSERT INTO accounts (name,provider,type,base_url,api_key_enc,protocols,enabled) VALUES ('casename','openai','text','http://b','k','[]',1)`).Error; err != nil {
+		t.Fatalf("the NOCASE index must have been replaced by the exact-string key: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO sensitive_words (policy_group_id, word, note, enabled) VALUES (1,'w ','',1)`).Error; err != nil {
+		t.Fatalf("the RTRIM index must have been replaced by the exact-string key: %v", err)
+	}
+	for _, k := range idempotencyKeys {
+		if !db.Migrator().HasTable(k.table) {
+			continue
+		}
+		if _, ok, err := correctUniqueIndex(db, k.table, k.index, k.cols); err != nil || !ok {
+			t.Fatalf("%s: ok=%v err=%v", k.index, ok, err)
+		}
+	}
+	if err := db.AutoMigrate(model.All()...); err != nil {
+		t.Fatal(err)
+	}
+}

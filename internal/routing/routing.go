@@ -462,12 +462,23 @@ func (e *Engine) BuildVectors(ctx context.Context, ids []uint) (built int, faile
 	if e.embed == nil && e.embedID == nil {
 		return 0, 0, errors.New("vector service is not configured")
 	}
-	q := e.db.Model(&model.RouteSample{}).Select("id", "text", "text_hash", "vector_model")
+	// Claim: this build's token goes onto every selected row in one atomic update.
+	// The claim is the ordering the database enforces across builds (and across
+	// instances): a later build overwrites the token, so an earlier build that
+	// returns afterwards finds its token gone and writes nothing. That is what makes
+	// the write-back safe against A→B→A sequences of a repeatable identity.
+	token := model.NewBuildToken()
+	claim := e.db.Model(&model.RouteSample{})
 	if ids != nil {
-		q = q.Where("id IN ?", ids)
+		claim = claim.Where("id IN ?", ids)
+	} else {
+		claim = claim.Where("1 = 1")
+	}
+	if err = claim.Update("build_token", token).Error; err != nil {
+		return 0, 0, err
 	}
 	var rows []model.RouteSample
-	if err = q.Order("id").Find(&rows).Error; err != nil {
+	if err = e.db.Model(&model.RouteSample{}).Select("id", "text", "text_hash").Where("build_token = ?", token).Order("id").Find(&rows).Error; err != nil {
 		return 0, 0, err
 	}
 	// The stored vectors are only served once the index is reloaded; a failed reload
@@ -513,12 +524,11 @@ func (e *Engine) BuildVectors(ctx context.Context, ids []uint) (built int, faile
 				continue
 			}
 			// Compare-and-swap: the vector lands only if the row still holds the text it
-			// was computed from and either the vector generation read at the start or the
-			// one being written (a repeat of the same generation). A sample edited or
-			// deleted meanwhile, or already carrying a newer generation written by a
-			// faster build, is counted as failed and left alone.
+			// was computed from and this build's claim. A sample edited or deleted
+			// meanwhile, or claimed by a later build (which may already have written),
+			// is counted as failed and left alone.
 			res := e.db.Model(&model.RouteSample{}).
-				Where("id = ? AND text_hash = ? AND (vector_model = ? OR vector_model = ?)", r.ID, r.TextHash, r.VectorModel, stamp).
+				Where("id = ? AND text_hash = ? AND build_token = ?", r.ID, r.TextHash, token).
 				Updates(map[string]any{"vector": vector.Encode(v), "vector_dim": len(v), "vector_model": stamp, "updated_at": time.Now()})
 			if res.Error != nil || res.RowsAffected != 1 {
 				failed++

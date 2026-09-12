@@ -2,6 +2,7 @@
 package model
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql/driver"
 	"encoding/hex"
@@ -361,7 +362,9 @@ type RouteSample struct {
 	Text  string `gorm:"type:text" json:"text"`
 	// TextHash is the SHA-256 of Text; (label, hash) is the create idempotency key the
 	// database enforces. See AuditSample.TextHash.
-	TextHash    string    `gorm:"size:64;uniqueIndex:uq_route_samples_key" json:"-"`
+	TextHash string `gorm:"size:64;uniqueIndex:uq_route_samples_key" json:"-"`
+	// BuildToken: see AuditSample.BuildToken.
+	BuildToken  string    `gorm:"size:32" json:"-"`
 	Threshold   float64   `json:"threshold"` // 0 = use global
 	Note        string    `gorm:"size:255" json:"note"`
 	Vector      []byte    `gorm:"type:blob" json:"-"`
@@ -418,7 +421,11 @@ type AuditSample struct {
 	// TextHash is the SHA-256 of Text; (policy group, hash) is the create idempotency
 	// key the database enforces (the text itself is too long to index). Kept in step
 	// with Text by the BeforeSave hook and by every update that writes text.
-	TextHash    string    `gorm:"size:64;uniqueIndex:uq_audit_samples_key" json:"-"`
+	TextHash string `gorm:"size:64;uniqueIndex:uq_audit_samples_key" json:"-"`
+	// BuildToken is the claim of the vector build that last started on this row; a
+	// build may only write its vector while its own token is still there, so an
+	// earlier build can never overwrite a later one (see Engine.BuildVectors).
+	BuildToken  string    `gorm:"size:32" json:"-"`
 	Note        string    `gorm:"size:255" json:"note"`
 	Enabled     bool      `gorm:"default:true" json:"enabled"`
 	Vector      []byte    `gorm:"type:blob" json:"-"`
@@ -473,3 +480,10 @@ func (a *AuditSample) BeforeSave(*gorm.DB) error { a.TextHash = TextKey(a.Text);
 
 // BeforeSave keeps the hash in step with the text on struct-based writes.
 func (r *RouteSample) BeforeSave(*gorm.DB) error { r.TextHash = TextKey(r.Text); return nil }
+
+// NewBuildToken returns the claim token of one vector build.
+func NewBuildToken() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}
