@@ -327,6 +327,9 @@
     "modelGroups": "Model groups",
     "mappings": "Mappings",
     "settings": "Settings",
-    "missingKeys": "These accounts had no key in the snapshot and were restored disabled; enter their keys again: {{names}}"
+    "missingKeys": "These accounts had no key in the snapshot and were restored disabled; enter their keys again: {{names}}",
+    "priceRowsMerged": "{{count}} price rows in the snapshot shared a key (provider + model) with another row and were merged (edited first, then manual, then the oldest)",
+    "priceRowsSkipped": "{{count}} price rows in the snapshot fail the current validation and were not restored: {{rows}}{{more}}",
+    "priceRowsMore": "… {{count}} more in the server log"
   }
 }

@@ -780,6 +780,14 @@ export interface PriceImportChange {
   reason?: 'manual' | 'currency' | string;
 }
 
+/** Restore reply: accounts restored without a key, and price rows a pre-1.0.27 snapshot lost to validation or de-duplication. */
+export interface ConfigRestoreResult {
+  restored: number;
+  missing_keys?: string[];
+  price_rows_skipped?: string[];
+  price_rows_merged?: number;
+}
+
 export interface PriceImportOptions {
   overwrite_edited: boolean;
   overwrite_currency: boolean;

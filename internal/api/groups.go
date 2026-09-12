@@ -148,17 +148,11 @@ func (s *Server) createUserGroup(c *gin.Context) {
 		TokenQuota: in.TokenQuota, TokensPerMinute: in.TokensPerMinute, RequestsPerMinute: in.RequestsPerMinute,
 		Enabled: in.Enabled == nil || *in.Enabled, Note: in.Note, ModelGroups: mgs}
 	disabled := !g.Enabled // decided before Create: gorm writes default:true back into the struct
-	if err := s.db.Create(&g).Error; err != nil {
+	if err := createWithEnabled(s.db, &g, disabled); err != nil {
 		conflictOrServerError(c, err, "用户组名称已存在")
 		return
 	}
-	if disabled {
-		if err := s.db.Model(&g).Update("enabled", false).Error; err != nil {
-			serverError(c, err)
-			return
-		}
-		g.Enabled = false
-	}
+	g.Enabled = !disabled
 	_ = s.gw.Reload()
 	s.db.Preload("ModelGroups").First(&g, g.ID)
 	c.JSON(200, s.userGroupView(&g, 0))

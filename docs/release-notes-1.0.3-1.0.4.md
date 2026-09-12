@@ -265,3 +265,10 @@
 - 创建价目 / 用户组 / 账号 / 策略组 / 敏感词 / 审计样本时 `enabled:false` 真正生效。
 - 目录解析里无效条目不再遮蔽同键的有效条目；PostgreSQL 上唯一索引迁移加 advisory lock。
 - 接入指引：OpenCode V1/V2 结构说明、Gemini CLI 仅 HTTPS 说明。
+
+## 1.0.29：1.0.28 验收修复（`docs/changes-2026-09-12-client-guide-priceimport.md` 第 9 节）
+
+- 创建时 `enabled:false` 的插入与禁用在同一事务，失败整体回滚。
+- 预览缓存的份数与行数改为硬上限（413 / 429），领取不再淘汰有效预览。
+- 配置快照恢复：界面显示价目被跳过 / 合并的报告；恢复先刷新全部运行态再报告价目重载失败。
+- 备注与 User-Agent 按 UTF-8 字符边界截断。

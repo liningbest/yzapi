@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"gorm.io/gorm"
 
@@ -66,10 +67,21 @@ func ValidateRow(r *CatalogRow) string {
 			return "单价范围 0 - 1000000（每百万 Token）"
 		}
 	}
-	if len(r.Note) > 255 {
-		r.Note = r.Note[:255]
-	}
+	r.Note = TruncateUTF8(r.Note, 255)
 	return ""
+}
+
+// TruncateUTF8 cuts s to at most n bytes without splitting a multi-byte character, so
+// a truncated note stays valid UTF-8 for PostgreSQL and JSON.
+func TruncateUTF8(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	cut := n
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
 }
 
 const invalidRowsListed = 50
@@ -279,9 +291,7 @@ func parseLiteLLM(data []byte) (*Catalog, error) {
 		if e.Source != "" {
 			note += " · " + e.Source
 		}
-		if len(note) > 250 {
-			note = note[:250]
-		}
+		note = TruncateUTF8(note, 250)
 		if cat.add(CatalogRow{Pattern: name, Provider: prov, InputPerM: perM(e.In), OutputPerM: perM(e.Out),
 			CachedPerM: perM(e.CacheRead), WritePerM: perM(e.CacheWrite), Currency: "USD", Note: note}) {
 			seen[prov+"|"+name] = true

@@ -33,10 +33,15 @@ export default function ConfigTab() {
     },
   });
   const restore = useMutation({
-    mutationFn: (id: number) => configSnapshotsApi.restore(id) as Promise<{ restored: number; missing_keys?: string[] }>,
+    mutationFn: (id: number) => configSnapshotsApi.restore(id),
     onSuccess: (res) => {
       message.success(t('settings:config.restored'));
       if (res?.missing_keys?.length) message.warning(t('settings:config.missingKeys', { names: res.missing_keys.join(', ') }), 8);
+      if (res?.price_rows_merged) message.warning(t('settings:config.priceRowsMerged', { count: res.price_rows_merged }), 8);
+      if (res?.price_rows_skipped?.length) {
+        const rows = res.price_rows_skipped;
+        message.warning(t('settings:config.priceRowsSkipped', { count: rows.length, rows: rows.slice(0, 5).join('；'), more: rows.length > 5 ? t('settings:config.priceRowsMore', { count: rows.length - 5 }) : '' }), 12);
+      }
       setViewing(null);
       invalidateAll();
     },

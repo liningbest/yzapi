@@ -327,6 +327,9 @@
     "modelGroups": "模型組",
     "mappings": "映射",
     "settings": "設定",
-    "missingKeys": "以下帳號在快照中沒有金鑰，已恢復為停用狀態，請重新填寫金鑰：{{names}}"
+    "missingKeys": "以下帳號在快照中沒有金鑰，已恢復為停用狀態，請重新填寫金鑰：{{names}}",
+    "priceRowsMerged": "快照裡有 {{count}} 行價目與另一行同鍵（供應商 + 模型），已合併為一行（改過的優先，其次手工行，再取最早的）",
+    "priceRowsSkipped": "快照裡有 {{count}} 行價目未通過目前校驗，未恢復：{{rows}}{{more}}",
+    "priceRowsMore": "…另 {{count}} 行見伺服器日誌"
   }
 }

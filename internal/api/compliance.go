@@ -105,17 +105,11 @@ func (s *Server) createPolicyGroup(c *gin.Context) {
 	}
 	p := model.PolicyGroup{Name: in.Name, Action: in.Action, RiskLevel: in.RiskLevel, Enabled: in.Enabled == nil || *in.Enabled, Description: in.Description}
 	disabled := !p.Enabled // decided before Create: gorm writes default:true back into the struct
-	if err := s.db.Create(&p).Error; err != nil {
+	if err := createWithEnabled(s.db, &p, disabled); err != nil {
 		conflictOrServerError(c, err, "策略组名称已存在")
 		return
 	}
-	if disabled {
-		if err := s.db.Model(&p).Update("enabled", false).Error; err != nil {
-			serverError(c, err)
-			return
-		}
-		p.Enabled = false
-	}
+	p.Enabled = !disabled
 	s.reloadCompliance()
 	c.JSON(200, policyView(&p, 0, 0))
 }
@@ -265,17 +259,11 @@ func (s *Server) createWord(c *gin.Context) {
 	}
 	w := model.SensitiveWord{PolicyGroupID: in.PolicyGroupID, Word: in.Word, Note: in.Note, Enabled: in.Enabled == nil || *in.Enabled}
 	disabled := !w.Enabled // decided before Create: gorm writes default:true back into the struct
-	if err := s.db.Create(&w).Error; err != nil {
+	if err := createWithEnabled(s.db, &w, disabled); err != nil {
 		serverError(c, err)
 		return
 	}
-	if disabled {
-		if err := s.db.Model(&w).Update("enabled", false).Error; err != nil {
-			serverError(c, err)
-			return
-		}
-		w.Enabled = false
-	}
+	w.Enabled = !disabled
 	s.reloadCompliance()
 	s.db.Preload("PolicyGroup").First(&w, w.ID)
 	c.JSON(200, wordView(&w))
@@ -426,17 +414,11 @@ func (s *Server) createAuditSample(c *gin.Context) {
 	}
 	x := model.AuditSample{PolicyGroupID: in.PolicyGroupID, Text: in.Text, Note: in.Note, Enabled: in.Enabled == nil || *in.Enabled}
 	disabled := !x.Enabled // decided before Create: gorm writes default:true back into the struct
-	if err := s.db.Create(&x).Error; err != nil {
+	if err := createWithEnabled(s.db, &x, disabled); err != nil {
 		serverError(c, err)
 		return
 	}
-	if disabled {
-		if err := s.db.Model(&x).Update("enabled", false).Error; err != nil {
-			serverError(c, err)
-			return
-		}
-		x.Enabled = false
-	}
+	x.Enabled = !disabled
 	var buildErr string
 	if in.BuildVector && s.eng.Compliance != nil {
 		if _, _, err := s.eng.Compliance.BuildVectors(c.Request.Context(), []uint{x.ID}); err != nil {

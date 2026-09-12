@@ -327,6 +327,9 @@
     "modelGroups": "模型组",
     "mappings": "映射",
     "settings": "设置",
-    "missingKeys": "以下账号在快照中没有密钥，已恢复为停用状态，请重新填写密钥：{{names}}"
+    "missingKeys": "以下账号在快照中没有密钥，已恢复为停用状态，请重新填写密钥：{{names}}",
+    "priceRowsMerged": "快照里有 {{count}} 行价目与另一行同键（供应商 + 模型），已合并为一行（改过的优先，其次手工行，再取最早的）",
+    "priceRowsSkipped": "快照里有 {{count}} 行价目未通过当前校验，未恢复：{{rows}}{{more}}",
+    "priceRowsMore": "…另 {{count}} 行见服务端日志"
   }
 }

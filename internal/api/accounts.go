@@ -263,17 +263,11 @@ func (s *Server) createAccount(c *gin.Context) {
 		a.Mappings = append(a.Mappings, model.ModelMapping{RequestModel: m.RequestModel, UpstreamModel: m.UpstreamModel})
 	}
 	disabled := !a.Enabled // decided before Create: gorm writes default:true back into the struct
-	if err := s.db.Create(&a).Error; err != nil {
+	if err := createWithEnabled(s.db, &a, disabled); err != nil {
 		serverError(c, err)
 		return
 	}
-	if disabled {
-		if err := s.db.Model(&a).Update("enabled", false).Error; err != nil {
-			serverError(c, err)
-			return
-		}
-		a.Enabled = false
-	}
+	a.Enabled = !disabled
 	_ = s.gw.Reload()
 	c.JSON(200, s.accountView(&a))
 }

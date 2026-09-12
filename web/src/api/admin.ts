@@ -1,5 +1,6 @@
 import { del, get, http, patch, post, put } from './client';
 import type {
+  ConfigRestoreResult,
   PriceImportOptions,
   PriceImportResult,
   ModelMapping,
@@ -180,7 +181,7 @@ export const configSnapshotsApi = {
   list: () => get<{ items: ConfigSnapshotRow[]; total: number }>(`${A}/config/snapshots`),
   create: (reason: string) => post<unknown>(`${A}/config/snapshots`, { reason }),
   get: (id: number) => get<ConfigSnapshotDetail>(`${A}/config/snapshots/${id}`),
-  restore: (id: number) => post<{ restored: number }>(`${A}/config/snapshots/${id}/restore`, {}),
+  restore: (id: number) => post<ConfigRestoreResult>(`${A}/config/snapshots/${id}/restore`, {}),
 };
 
 export const pricesApi = {

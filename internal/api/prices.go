@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"yzapi/internal/model"
 	"yzapi/internal/pricing"
@@ -59,6 +61,22 @@ func validatePrice(in *priceIn) string {
 	return msg
 }
 
+// createWithEnabled inserts a row and, when it must start disabled, flips enabled to
+// false inside the same transaction: the model's default:true means Create alone writes
+// an enabled row, and a second statement outside a transaction could leave it enabled
+// if it failed. The caller sets the struct's Enabled after a successful return.
+func createWithEnabled(db *gorm.DB, rec any, disabled bool) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(rec).Error; err != nil {
+			return err
+		}
+		if disabled {
+			return tx.Model(rec).Update("enabled", false).Error
+		}
+		return nil
+	})
+}
+
 // reloadPrices refreshes the in-memory price table after a write. A failure is not
 // silent: the database already holds the new rows while requests would still be priced
 // from the old copy, so the caller gets a 503 that says exactly that.
@@ -94,19 +112,13 @@ func (s *Server) createPrice(c *gin.Context) {
 	disabled := in.Enabled != nil && !*in.Enabled // decided before Create: gorm writes default:true back into the struct
 	p := model.ModelPrice{Pattern: in.Pattern, Provider: in.Provider, InputPerM: in.InputPerM, OutputPerM: in.OutputPerM,
 		CachedInputPerM: in.CachedInputPerM, CacheWritePerM: in.CacheWritePerM, Currency: in.Currency, Enabled: !disabled, Note: in.Note}
-	if err := s.db.Create(&p).Error; err != nil {
+	if err := createWithEnabled(s.db, &p, disabled); err != nil {
 		if !priceKeyConflict(c, err) {
 			serverError(c, err)
 		}
 		return
 	}
-	if disabled {
-		if err := s.db.Model(&p).Update("enabled", false).Error; err != nil {
-			serverError(c, err)
-			return
-		}
-		p.Enabled = false
-	}
+	p.Enabled = !disabled
 	if !s.reloadPrices(c) {
 		return
 	}
@@ -281,11 +293,14 @@ type importPlans struct {
 
 func newImportPlans() *importPlans { return &importPlans{plans: map[string]*storedImport{}} }
 
-// sweepLocked drops expired previews and, when over the count or row budget, the
-// oldest unclaimed ones. Caller holds mu.
-func (ip *importPlans) sweepLocked(extraRows int) {
+var (
+	errImportPlanTooLarge = errors.New("catalog exceeds the preview row budget")
+	errImportPlansFull    = errors.New("too many previews are being applied; retry shortly")
+)
+
+// expireLocked drops previews past their TTL that nobody is applying. Caller holds mu.
+func (ip *importPlans) expireLocked() (rows int) {
 	now := time.Now()
-	rows := extraRows
 	for id, p := range ip.plans {
 		if now.Sub(p.created) > importPlanTTL && !p.claimed {
 			delete(ip.plans, id)
@@ -293,6 +308,20 @@ func (ip *importPlans) sweepLocked(extraRows int) {
 		}
 		rows += len(p.catalog.Rows)
 	}
+	return rows
+}
+
+// put stores a preview under the hard limits: a catalog larger than the whole row
+// budget is refused, then the oldest unclaimed previews make room; when every stored
+// preview is being applied and there is still no room, the new one is refused rather
+// than admitted over the cap.
+func (ip *importPlans) put(si *storedImport) error {
+	if len(si.catalog.Rows) > importRowBudget {
+		return errImportPlanTooLarge
+	}
+	ip.mu.Lock()
+	defer ip.mu.Unlock()
+	rows := ip.expireLocked() + len(si.catalog.Rows)
 	for len(ip.plans) >= importPlanCap || rows > importRowBudget {
 		oldest := ""
 		for id, p := range ip.plans {
@@ -304,18 +333,13 @@ func (ip *importPlans) sweepLocked(extraRows int) {
 			}
 		}
 		if oldest == "" {
-			return
+			return errImportPlansFull
 		}
 		rows -= len(ip.plans[oldest].catalog.Rows)
 		delete(ip.plans, oldest)
 	}
-}
-
-func (ip *importPlans) put(si *storedImport) {
-	ip.mu.Lock()
-	defer ip.mu.Unlock()
-	ip.sweepLocked(len(si.catalog.Rows))
 	ip.plans[si.id] = si
+	return nil
 }
 
 // claim atomically takes a stored preview for applying: absent, expired or already
@@ -324,7 +348,7 @@ func (ip *importPlans) put(si *storedImport) {
 func (ip *importPlans) claim(id string) *storedImport {
 	ip.mu.Lock()
 	defer ip.mu.Unlock()
-	ip.sweepLocked(0)
+	ip.expireLocked() // only expiry: a full cache never evicts a live preview on read
 	p, ok := ip.plans[id]
 	if !ok || p.claimed || time.Since(p.created) > importPlanTTL {
 		return nil
@@ -470,7 +494,14 @@ func (s *Server) importPreview(c *gin.Context, data []byte, origin string, opts 
 	}
 	sum := sha256.Sum256(data)
 	si := &storedImport{id: newPlanID(), sha: hex.EncodeToString(sum[:]), origin: origin, catalog: cat, opts: opts, by: cur(c).Username, created: time.Now()}
-	s.imports.put(si)
+	switch err := s.imports.put(si); {
+	case errors.Is(err, errImportPlanTooLarge):
+		fail(c, 413, "import_too_large", fmt.Sprintf("价目条数 %d 超过预览上限 %d 行", len(cat.Rows), importRowBudget))
+		return
+	case errors.Is(err, errImportPlansFull):
+		fail(c, 429, "import_busy", "有太多预览正在应用中，请稍后再预览")
+		return
+	}
 	c.JSON(200, gin.H{"applied": false, "plan_id": si.id, "sha256": si.sha, "origin": origin, "options": opts,
 		"expires_in": int(importPlanTTL.Seconds()), "plan": plan})
 }

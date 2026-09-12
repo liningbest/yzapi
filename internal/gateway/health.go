@@ -3,6 +3,7 @@ package gateway
 import (
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"gorm.io/gorm"
 
@@ -178,8 +179,11 @@ func (h *healthTracker) persist(id uint, seq uint64, upd map[string]any) {
 }
 
 func truncate(s string, n int) string {
-	if len(s) > n {
-		return s[:n] + "…"
+	if len(s) <= n {
+		return s
 	}
-	return s
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n-- // never split a multi-byte character
+	}
+	return s[:n] + "…"
 }
