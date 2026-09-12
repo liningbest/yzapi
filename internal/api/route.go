@@ -85,11 +85,13 @@ func (s *Server) createRouteSample(c *gin.Context) {
 	}
 	var buildErr string
 	if in.BuildVector && s.eng.Route != nil {
-		if _, _, err := s.eng.Route.BuildVectors(c.Request.Context(), []uint{x.ID}); err != nil {
+		if _, failed, err := s.eng.Route.BuildVectors(c.Request.Context(), []uint{x.ID}); err != nil {
 			if buildReloadFailed(c, "route", err, nil) {
 				return
 			}
 			buildErr = err.Error()
+		} else if failed > 0 {
+			buildErr = "向量构建失败，请检查向量服务"
 		}
 		s.db.First(&x, x.ID)
 	}

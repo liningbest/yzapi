@@ -5,6 +5,7 @@ import { CameraOutlined, EyeOutlined, RollbackOutlined } from '@ant-design/icons
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { configSnapshotsApi } from '@/api';
+import type { NormalizedError } from '@/api/client';
 import { SectionTitle, TimeCell } from '@/components';
 import type { ConfigSnapshotRow, ConfigRestoreResult } from '@/types';
 import { SETTINGS_KEY } from './shared';
@@ -32,27 +33,31 @@ export default function ConfigTab() {
       void qc.invalidateQueries({ queryKey: KEY });
     },
   });
+  /** Warnings the restore report carries, shown for a 200 and for a 503 alike. */
+  const showRestoreReport = (res: Partial<ConfigRestoreResult>) => {
+    if (res.missing_keys?.length) message.warning(t('settings:config.missingKeys', { names: res.missing_keys.join(', ') }), 8);
+    if (res.price_rows_merged) message.warning(t('settings:config.priceRowsMerged', { count: res.price_rows_merged }), 8);
+    if (res.price_rows_skipped?.length) {
+      const rows = res.price_rows_skipped;
+      message.warning(t('settings:config.priceRowsSkipped', { count: rows.length, rows: rows.slice(0, 5).join('；'), more: rows.length > 5 ? t('settings:config.priceRowsMore', { count: rows.length - 5 }) : '' }), 12);
+    }
+  };
   const restore = useMutation({
     mutationFn: (id: number) => configSnapshotsApi.restore(id),
     onSuccess: (res) => {
       message.success(t('settings:config.restored'));
-      if (res?.missing_keys?.length) message.warning(t('settings:config.missingKeys', { names: res.missing_keys.join(', ') }), 8);
-      if (res?.price_rows_merged) message.warning(t('settings:config.priceRowsMerged', { count: res.price_rows_merged }), 8);
-      if (res?.price_rows_skipped?.length) {
-        const rows = res.price_rows_skipped;
-        message.warning(t('settings:config.priceRowsSkipped', { count: rows.length, rows: rows.slice(0, 5).join('；'), more: rows.length > 5 ? t('settings:config.priceRowsMore', { count: rows.length - 5 }) : '' }), 12);
-      }
+      showRestoreReport(res ?? {});
+      setViewing(null);
+      invalidateAll();
     },
     onError: (err: unknown) => {
-      // A 503 (database restored, a runtime not refreshed) still carries the restore report.
-      const data = (err as { response?: { data?: Partial<ConfigRestoreResult> } })?.response?.data;
-      if (!data) return;
-      if (data.price_rows_merged) message.warning(t('settings:config.priceRowsMerged', { count: data.price_rows_merged }), 8);
-      if (data.price_rows_skipped?.length) {
-        const rows = data.price_rows_skipped;
-        message.warning(t('settings:config.priceRowsSkipped', { count: rows.length, rows: rows.slice(0, 5).join('；'), more: rows.length > 5 ? t('settings:config.priceRowsMore', { count: rows.length - 5 }) : '' }), 12);
-      }
-      if (data.restored) invalidateAll();
+      // The interceptor already toasted the error text. A 503 after a committed restore
+      // (a runtime failed to refresh) still carries the report and means the database
+      // changed: show the report and refresh the cached data; any other failure keeps
+      // the page as it is so the restore can be retried.
+      const data = (err as NormalizedError)?.data as Partial<ConfigRestoreResult> | undefined;
+      if (!data?.restored) return;
+      showRestoreReport(data);
       setViewing(null);
       invalidateAll();
     },

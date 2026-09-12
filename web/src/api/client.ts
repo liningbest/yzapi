@@ -22,6 +22,8 @@ export interface NormalizedError extends Error {
   status?: number;
   code?: string;
   silent?: boolean;
+  /** The structured response body, when the server sent one (a 503 after a committed write still carries its report). */
+  data?: unknown;
 }
 
 export function extractError(err: unknown): NormalizedError {
@@ -36,6 +38,7 @@ export function extractError(err: unknown): NormalizedError {
   const n = new Error(text) as NormalizedError;
   n.status = status;
   n.code = data && typeof data === 'object' ? (data as ApiError).code : undefined;
+  n.data = data && typeof data === 'object' ? data : undefined;
   return n;
 }
 

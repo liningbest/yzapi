@@ -461,6 +461,11 @@ func (s *Server) putSmartRoute(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
+	// The virtual model and the enabled flag live in the gateway's immutable routing
+	// snapshot: a failed rebuild means requests keep routing by the old settings.
+	if !s.reloadRuntimes(c, "gateway") {
+		return
+	}
 	c.JSON(200, in)
 }
 

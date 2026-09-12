@@ -153,7 +153,11 @@ func New(cfg *config.Config, db *gorm.DB, cipher *crypto.Cipher, st *settings.St
 		g.gate.configure(all.Performance.MaxConcurrency, all.Performance.QueueSize)
 		g.bodyBudget.configure(int64(max(all.Performance.MaxBodyMemoryMB, 1)) << 20)
 		g.buildTransport(all.Performance)
-		_ = g.Reload()
+		// API-driven settings changes verify this refresh themselves (503 on failure);
+		// the background refresh is logged so a stale snapshot is never silent.
+		if err := g.Reload(); err != nil {
+			slog.Error("gateway snapshot reload after settings change failed; previous snapshot stays live", "err", err)
+		}
 	})
 	go g.quotaRefresher()
 	return g, nil
