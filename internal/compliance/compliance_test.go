@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -289,7 +290,7 @@ func TestBuildVectors(t *testing.T) {
 	db := newTestDB(t)
 	mustCreate(t, db, &model.PolicyGroup{ID: 1, Name: "G", Action: ActionAudit, RiskLevel: RiskLow, Enabled: true})
 	for i := 1; i <= 18; i++ {
-		mustCreate(t, db, &model.AuditSample{PolicyGroupID: 1, Text: "sample", Enabled: true})
+		mustCreate(t, db, &model.AuditSample{PolicyGroupID: 1, Text: fmt.Sprintf("sample %d", i), Enabled: true}) // (group, text) is unique
 	}
 	st := newStore(t, db, settings.Compliance{Enabled: true})
 	calls := 0

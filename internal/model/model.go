@@ -2,9 +2,13 @@
 package model
 
 import (
+	"crypto/sha256"
 	"database/sql/driver"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"gorm.io/gorm"
+	"strings"
 	"time"
 )
 
@@ -151,7 +155,7 @@ type ModelGroup struct {
 // Account is an upstream provider account (账号池).
 type Account struct {
 	ID          uint           `gorm:"primaryKey" json:"id"`
-	Name        string         `gorm:"size:64" json:"name"`
+	Name        string         `gorm:"size:64;uniqueIndex:uq_accounts_name" json:"name"` // the create idempotency key
 	Provider    string         `gorm:"size:32;index" json:"provider"`
 	AccountType string         `gorm:"size:32" json:"account_type"`
 	Type        string         `gorm:"size:16;index" json:"type"`
@@ -352,9 +356,12 @@ type ModelPrice struct {
 
 // RouteSample is a labelled example used by smart routing.
 type RouteSample struct {
-	ID          uint      `gorm:"primaryKey" json:"id"`
-	Label       string    `gorm:"size:16;index" json:"label"` // simple | complex
-	Text        string    `gorm:"type:text" json:"text"`
+	ID    uint   `gorm:"primaryKey" json:"id"`
+	Label string `gorm:"size:16;index;uniqueIndex:uq_route_samples_key" json:"label"` // simple | complex
+	Text  string `gorm:"type:text" json:"text"`
+	// TextHash is the SHA-256 of Text; (label, hash) is the create idempotency key the
+	// database enforces. See AuditSample.TextHash.
+	TextHash    string    `gorm:"size:64;uniqueIndex:uq_route_samples_key" json:"-"`
 	Threshold   float64   `json:"threshold"` // 0 = use global
 	Note        string    `gorm:"size:255" json:"note"`
 	Vector      []byte    `gorm:"type:blob" json:"-"`
@@ -394,9 +401,9 @@ type PolicyGroup struct {
 
 type SensitiveWord struct {
 	ID            uint         `gorm:"primaryKey" json:"id"`
-	PolicyGroupID uint         `gorm:"index" json:"policy_group_id"`
+	PolicyGroupID uint         `gorm:"index;uniqueIndex:uq_sensitive_words_key" json:"policy_group_id"`
 	PolicyGroup   *PolicyGroup `json:"policy_group,omitempty"`
-	Word          string       `gorm:"size:255;index" json:"word"`
+	Word          string       `gorm:"size:255;index;uniqueIndex:uq_sensitive_words_key" json:"word"` // (policy group, word) is the create idempotency key
 	Note          string       `gorm:"size:255" json:"note"`
 	Enabled       bool         `gorm:"default:true" json:"enabled"`
 	CreatedAt     time.Time    `json:"created_at"`
@@ -405,16 +412,20 @@ type SensitiveWord struct {
 
 type AuditSample struct {
 	ID            uint         `gorm:"primaryKey" json:"id"`
-	PolicyGroupID uint         `gorm:"index" json:"policy_group_id"`
+	PolicyGroupID uint         `gorm:"index;uniqueIndex:uq_audit_samples_key" json:"policy_group_id"`
 	PolicyGroup   *PolicyGroup `json:"policy_group,omitempty"`
 	Text          string       `gorm:"type:text" json:"text"`
-	Note          string       `gorm:"size:255" json:"note"`
-	Enabled       bool         `gorm:"default:true" json:"enabled"`
-	Vector        []byte       `gorm:"type:blob" json:"-"`
-	VectorDim     int          `json:"vector_dim"`
-	VectorModel   string       `gorm:"size:160" json:"vector_model"`
-	CreatedAt     time.Time    `json:"created_at"`
-	UpdatedAt     time.Time    `json:"updated_at"`
+	// TextHash is the SHA-256 of Text; (policy group, hash) is the create idempotency
+	// key the database enforces (the text itself is too long to index). Kept in step
+	// with Text by the BeforeSave hook and by every update that writes text.
+	TextHash    string    `gorm:"size:64;uniqueIndex:uq_audit_samples_key" json:"-"`
+	Note        string    `gorm:"size:255" json:"note"`
+	Enabled     bool      `gorm:"default:true" json:"enabled"`
+	Vector      []byte    `gorm:"type:blob" json:"-"`
+	VectorDim   int       `json:"vector_dim"`
+	VectorModel string    `gorm:"size:160" json:"vector_model"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type AuditLog struct {
@@ -450,3 +461,15 @@ func All() []any {
 		&PolicyGroup{}, &SensitiveWord{}, &AuditSample{}, &AuditLog{}, &Setting{}, &ModelPrice{}, &ConfigSnapshot{},
 	}
 }
+
+// TextKey is the idempotency hash of a sample text: SHA-256 of the trimmed text, hex.
+func TextKey(text string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(text)))
+	return hex.EncodeToString(sum[:])
+}
+
+// BeforeSave keeps the hash in step with the text on struct-based writes.
+func (a *AuditSample) BeforeSave(*gorm.DB) error { a.TextHash = TextKey(a.Text); return nil }
+
+// BeforeSave keeps the hash in step with the text on struct-based writes.
+func (r *RouteSample) BeforeSave(*gorm.DB) error { r.TextHash = TextKey(r.Text); return nil }

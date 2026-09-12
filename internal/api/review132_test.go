@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"gorm.io/gorm"
@@ -81,6 +82,17 @@ func TestR132FailedSmartRouteReloadKeepsWholeRoutingGeneration(t *testing.T) {
 	}
 	router := &r132GenRouter{}
 	s.gw.SetRouter(router)
+	// The failure injection is registered before any data-plane traffic (the log store
+	// writes call logs on a background goroutine, and gorm's callback registry is not
+	// safe to mutate concurrently) and switched with an atomic flag.
+	var failRebuild atomic.Bool
+	if err := s.db.Callback().Query().Before("gorm:query").Register("r132:gateway_reload", func(tx *gorm.DB) {
+		if failRebuild.Load() && tx.Statement.Table == "accounts" {
+			tx.AddError(errors.New("injected gateway snapshot query failure"))
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
 	call := func() string {
 		r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"r132-auto","messages":[{"role":"user","content":"hi"}]}`))
 		r.Header.Set("Authorization", "Bearer "+key)
@@ -97,17 +109,10 @@ func TestR132FailedSmartRouteReloadKeepsWholeRoutingGeneration(t *testing.T) {
 	if got := call(); got != "r132-old" {
 		t.Fatalf("baseline: %q", got)
 	}
-	const cb = "r132:gateway_reload"
-	if err := s.db.Callback().Query().Before("gorm:query").Register(cb, func(tx *gorm.DB) {
-		if tx.Statement.Table == "accounts" {
-			tx.AddError(errors.New("injected gateway snapshot query failure"))
-		}
-	}); err != nil {
-		t.Fatal(err)
-	}
+	failRebuild.Store(true)
 	body := map[string]any{"enabled": true, "virtual_model": "r132-auto", "simple_group_id": newGroup.ID, "complex_group_id": newGroup.ID, "threshold": 0.9, "confidence_gap": 0.2, "top_k": 9}
 	w := review126Call(s, s.putSmartRoute, admin, "/api/admin/settings/smart-route", body)
-	s.db.Callback().Query().Remove(cb)
+	failRebuild.Store(false)
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("injected rebuild must fail: %d %s", w.Code, w.Body.String())
 	}

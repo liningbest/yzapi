@@ -78,19 +78,41 @@ func (s *Server) createRouteSample(c *gin.Context) {
 		badRequest(c, "标签必须为 simple/complex，样本文本不能为空且不超过 65536 字符")
 		return
 	}
-	// The same text under the same label is the retry of an earlier create: return it.
-	var dup model.RouteSample
-	if err := s.db.Where("label = ? AND text = ?", in.Label, in.Text).First(&dup).Error; err == nil {
-		if !s.reloadRuntimesFor(c, gin.H{"id": dup.ID, "resource": routeSampleView(&dup)}, "route") {
+	// (label, text hash) is the create idempotency key, enforced by the database. The
+	// insert goes first; on a unique conflict the existing row is read and compared. An
+	// identical create is the retry of one whose refresh failed: it still performs the
+	// requested vector build on the existing row and reports it like a fresh create. A
+	// different note or threshold is a 409. A read error is a 500.
+	var x model.RouteSample
+	retry := func() (done bool, existing bool) {
+		var dup model.RouteSample
+		if err := s.db.Where("label = ? AND text_hash = ?", in.Label, model.TextKey(in.Text)).First(&dup).Error; err != nil {
+			serverError(c, err)
+			return true, false
+		}
+		if dup.Text != in.Text { // hash collision: not the same sample
+			c.JSON(409, gin.H{"code": "sample_exists", "error": "已有摘要相同的样本，请修改文本", "id": dup.ID})
+			return true, false
+		}
+		if dup.Note != in.Note || dup.Threshold != in.Threshold {
+			c.JSON(409, gin.H{"code": "sample_exists", "error": "同一标签下已有同一文本的样本且设置不同；请编辑既有条目", "id": dup.ID, "resource": routeSampleView(&dup)})
+			return true, false
+		}
+		x = dup
+		return false, true
+	}
+	x = model.RouteSample{Label: in.Label, Text: in.Text, Threshold: in.Threshold, Note: in.Note}
+	if err := s.db.Create(&x).Error; err != nil {
+		if !uniqueViolation(err) {
+			serverError(c, err)
 			return
 		}
-		c.JSON(200, routeSampleView(&dup))
-		return
-	}
-	x := model.RouteSample{Label: in.Label, Text: in.Text, Threshold: in.Threshold, Note: in.Note}
-	if err := s.db.Create(&x).Error; err != nil {
-		serverError(c, err)
-		return
+		if done, existing := retry(); done || !existing {
+			if !done {
+				serverError(c, err)
+			}
+			return
+		}
 	}
 	var buildErr string
 	if in.BuildVector && s.eng.Route != nil {
@@ -138,12 +160,16 @@ func (s *Server) updateRouteSample(c *gin.Context) {
 		return
 	}
 	textChanged := in.Text != x.Text // before Updates(&x) overwrites x.Text
-	upd := map[string]any{"label": in.Label, "text": in.Text, "threshold": in.Threshold, "note": in.Note}
+	upd := map[string]any{"label": in.Label, "text": in.Text, "text_hash": model.TextKey(in.Text), "threshold": in.Threshold, "note": in.Note}
 	if textChanged {
 		upd["vector"] = nil
 		upd["vector_dim"] = 0
 	}
 	if err := s.db.Model(&x).Updates(upd).Error; err != nil {
+		if uniqueViolation(err) {
+			fail(c, 409, "sample_exists", "同一标签下已有同一文本的样本")
+			return
+		}
 		serverError(c, err)
 		return
 	}
@@ -199,15 +225,38 @@ func (s *Server) batchRouteSamples(c *gin.Context) {
 		badRequest(c, "invalid body")
 		return
 	}
+	// Duplicates inside the batch and rows already present are skipped, never
+	// inserted twice: (label, text hash) is unique.
 	var rows []model.RouteSample
+	seen := map[string]bool{}
+	skipped := 0
 	for _, it := range in.Items {
 		t := strings.TrimSpace(it.Text)
 		if !validLabel(it.Label) || t == "" {
 			continue
 		}
+		k := it.Label + "|" + model.TextKey(t)
+		if seen[k] {
+			skipped++
+			continue
+		}
+		seen[k] = true
+		var n int64
+		if err := s.db.Model(&model.RouteSample{}).Where("label = ? AND text_hash = ?", it.Label, model.TextKey(t)).Count(&n).Error; err != nil {
+			serverError(c, err)
+			return
+		}
+		if n > 0 {
+			skipped++
+			continue
+		}
 		rows = append(rows, model.RouteSample{Label: it.Label, Text: t, Note: it.Note})
 	}
 	if len(rows) == 0 {
+		if skipped > 0 {
+			c.JSON(200, gin.H{"created": 0, "skipped": skipped})
+			return
+		}
 		badRequest(c, "没有有效的样本")
 		return
 	}
@@ -215,7 +264,7 @@ func (s *Server) batchRouteSamples(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
-	resp := gin.H{"created": len(rows)}
+	resp := gin.H{"created": len(rows), "skipped": skipped}
 	if in.BuildVector && s.eng.Route != nil {
 		ids := make([]uint, 0, len(rows))
 		for _, r := range rows {

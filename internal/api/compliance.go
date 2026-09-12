@@ -262,18 +262,33 @@ func (s *Server) createWord(c *gin.Context) {
 		badRequest(c, "敏感词不能为空，且必须选择有效的策略组")
 		return
 	}
-	// The same word in the same policy group is the retry of an earlier create: return it.
-	var dupWord model.SensitiveWord
-	if err := s.db.Where("policy_group_id = ? AND word = ?", in.PolicyGroupID, in.Word).First(&dupWord).Error; err == nil {
-		if !s.reloadRuntimesFor(c, gin.H{"id": dupWord.ID, "resource": dupWord}, "compliance") {
-			return
+	// (policy group, word) is the create idempotency key, enforced by the database. The
+	// insert goes first; on a unique conflict the existing row is read and compared: an
+	// identical create is the retry of one whose refresh failed and returns the row, a
+	// different note or enabled flag is a 409. A read error is a 500, never an insert.
+	retry := func() (done bool) {
+		var dup model.SensitiveWord
+		if err := s.db.Where("policy_group_id = ? AND word = ?", in.PolicyGroupID, in.Word).First(&dup).Error; err != nil {
+			serverError(c, err)
+			return true
 		}
-		c.JSON(200, dupWord)
-		return
+		if dup.Note != in.Note || dup.Enabled != (in.Enabled == nil || *in.Enabled) {
+			c.JSON(409, gin.H{"code": "word_exists", "error": "该策略组已有同一敏感词且设置不同；请编辑既有条目", "id": dup.ID, "resource": dup})
+			return true
+		}
+		if !s.reloadRuntimesFor(c, gin.H{"id": dup.ID, "resource": dup}, "compliance") {
+			return true
+		}
+		c.JSON(200, dup)
+		return true
 	}
 	w := model.SensitiveWord{PolicyGroupID: in.PolicyGroupID, Word: in.Word, Note: in.Note, Enabled: in.Enabled == nil || *in.Enabled}
 	disabled := !w.Enabled // decided before Create: gorm writes default:true back into the struct
 	if err := createWithEnabled(s.db, &w, disabled); err != nil {
+		if uniqueViolation(err) {
+			retry()
+			return
+		}
 		serverError(c, err)
 		return
 	}
@@ -434,22 +449,45 @@ func (s *Server) createAuditSample(c *gin.Context) {
 		badRequest(c, "样本文本不能为空，且必须选择有效的策略组")
 		return
 	}
-	// The same text in the same policy group is the retry of an earlier create: return it.
-	var dupSample model.AuditSample
-	if err := s.db.Preload("PolicyGroup").Where("policy_group_id = ? AND text = ?", in.PolicyGroupID, in.Text).First(&dupSample).Error; err == nil {
-		if !s.reloadRuntimesFor(c, gin.H{"id": dupSample.ID, "resource": auditSampleView(&dupSample)}, "compliance") {
-			return
+	// (policy group, text hash) is the create idempotency key, enforced by the database.
+	// The insert goes first; on a unique conflict the existing row is read and compared.
+	// An identical create is the retry of one whose refresh failed: it still performs
+	// the requested vector build on the existing row and reports it exactly like a
+	// fresh create. A different note or enabled flag is a 409. A read error is a 500.
+	var x model.AuditSample
+	retry := func() (done bool, existing bool) {
+		var dup model.AuditSample
+		if err := s.db.Where("policy_group_id = ? AND text_hash = ?", in.PolicyGroupID, model.TextKey(in.Text)).First(&dup).Error; err != nil {
+			serverError(c, err)
+			return true, false
 		}
-		c.JSON(200, auditSampleView(&dupSample))
-		return
+		if dup.Text != in.Text { // hash collision: not the same sample
+			c.JSON(409, gin.H{"code": "sample_exists", "error": "该策略组已有摘要相同的样本，请修改文本", "id": dup.ID})
+			return true, false
+		}
+		if dup.Note != in.Note || dup.Enabled != (in.Enabled == nil || *in.Enabled) {
+			c.JSON(409, gin.H{"code": "sample_exists", "error": "该策略组已有同一文本的样本且设置不同；请编辑既有条目", "id": dup.ID, "resource": auditSampleView(&dup)})
+			return true, false
+		}
+		x = dup
+		return false, true
 	}
-	x := model.AuditSample{PolicyGroupID: in.PolicyGroupID, Text: in.Text, Note: in.Note, Enabled: in.Enabled == nil || *in.Enabled}
+	x = model.AuditSample{PolicyGroupID: in.PolicyGroupID, Text: in.Text, Note: in.Note, Enabled: in.Enabled == nil || *in.Enabled}
 	disabled := !x.Enabled // decided before Create: gorm writes default:true back into the struct
 	if err := createWithEnabled(s.db, &x, disabled); err != nil {
-		serverError(c, err)
-		return
+		if !uniqueViolation(err) {
+			serverError(c, err)
+			return
+		}
+		if done, existing := retry(); done || !existing {
+			if !done {
+				serverError(c, err)
+			}
+			return
+		}
+	} else {
+		x.Enabled = !disabled
 	}
-	x.Enabled = !disabled
 	var buildErr string
 	if in.BuildVector && s.eng.Compliance != nil {
 		if _, failed, err := s.eng.Compliance.BuildVectors(c.Request.Context(), []uint{x.ID}); err != nil {
@@ -497,7 +535,7 @@ func (s *Server) updateAuditSample(c *gin.Context) {
 		badRequest(c, "样本文本不能为空，且必须选择有效的策略组")
 		return
 	}
-	upd := map[string]any{"policy_group_id": in.PolicyGroupID, "text": in.Text, "note": in.Note}
+	upd := map[string]any{"policy_group_id": in.PolicyGroupID, "text": in.Text, "text_hash": model.TextKey(in.Text), "note": in.Note}
 	if in.Enabled != nil {
 		upd["enabled"] = *in.Enabled
 	}
@@ -507,6 +545,10 @@ func (s *Server) updateAuditSample(c *gin.Context) {
 		upd["vector_dim"] = 0
 	}
 	if err := s.db.Model(&x).Updates(upd).Error; err != nil {
+		if uniqueViolation(err) {
+			fail(c, 409, "sample_exists", "该策略组已有同一文本的样本")
+			return
+		}
 		serverError(c, err)
 		return
 	}

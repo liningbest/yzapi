@@ -245,22 +245,10 @@ func (s *Server) createAccount(c *gin.Context) {
 		badRequest(c, "API Key 不能为空")
 		return
 	}
-	// Account names are unique. A create that exactly repeats an existing account
-	// (same endpoint and key) is the retry of a create whose runtime refresh failed:
-	// it refreshes and returns the existing account instead of a second upstream.
-	var dup model.Account
-	if err := s.db.Preload("Mappings").Where("name = ?", in.Name).First(&dup).Error; err == nil {
-		key, _ := s.cipher.Decrypt(dup.APIKeyEnc)
-		if dup.Provider == in.Provider && dup.Type == in.Type && dup.BaseURL == in.BaseURL && key == strings.TrimSpace(in.APIKey) {
-			if !s.reloadRuntimesFor(c, gin.H{"id": dup.ID, "resource": s.accountView(&dup)}, "gateway") {
-				return
-			}
-			c.JSON(200, s.accountView(&dup))
-			return
-		}
-		fail(c, 409, "account_exists", "同名账号已存在；若这是上一次创建的重试，请到「设置 → 配置快照」重新加载运行态")
-		return
-	}
+	// Account names are unique (database-enforced). The create is attempted first; a
+	// unique conflict means an account of that name exists, and only then is it read
+	// and compared (see accountCreateRetry). There is no pre-insert lookup: the
+	// database constraint decides, so two concurrent creates cannot both insert.
 	if !in.SkipTest {
 		if ok, _, msg := s.probeAccount(c.Request.Context(), &in, in.APIKey); !ok {
 			fail(c, 400, "validation_failed", "连接验证失败: "+msg)
@@ -280,6 +268,12 @@ func (s *Server) createAccount(c *gin.Context) {
 	}
 	disabled := !a.Enabled // decided before Create: gorm writes default:true back into the struct
 	if err := createWithEnabled(s.db, &a, disabled); err != nil {
+		if uniqueViolation(err) {
+			// An account of this name exists (a sequential retry or a concurrent
+			// identical create that won): compare it with the request.
+			s.accountCreateRetry(c, &in)
+			return
+		}
 		serverError(c, err)
 		return
 	}
@@ -288,6 +282,71 @@ func (s *Server) createAccount(c *gin.Context) {
 		return
 	}
 	c.JSON(200, s.accountView(&a))
+}
+
+// accountCreateRetry answers a create whose insert hit the unique name: the existing
+// account is read and compared with the request. Identical in every effective field:
+// the runtime is refreshed and the existing account answered (200, the retry of a
+// create whose refresh failed). Different: 409 with the existing resource. A read
+// error is a 500; nothing is ever inserted from here.
+func (s *Server) accountCreateRetry(c *gin.Context, in *accountIn) {
+	var dup model.Account
+	if err := s.db.Preload("Mappings").Where("name = ?", in.Name).First(&dup).Error; err != nil {
+		serverError(c, err)
+		return
+	}
+	key, _ := s.cipher.Decrypt(dup.APIKeyEnc)
+	if accountMatches(&dup, in, key) {
+		if !s.reloadRuntimesFor(c, gin.H{"id": dup.ID, "resource": s.accountView(&dup)}, "gateway") {
+			return
+		}
+		c.JSON(200, s.accountView(&dup))
+		return
+	}
+	c.JSON(409, gin.H{"code": "account_exists", "error": "同名账号已存在且配置不同；请改名，或编辑既有账号", "id": dup.ID, "resource": s.accountView(&dup)})
+}
+
+// accountMatches reports whether a create request would produce exactly the existing
+// account: every effective field, protocols and mappings as sets, key by value.
+func accountMatches(a *model.Account, in *accountIn, key string) bool {
+	weight := in.Weight
+	if weight == 0 {
+		weight = 1 // column default
+	}
+	if a.Provider != in.Provider || a.AccountType != in.AccountType || a.Type != in.Type || a.BaseURL != in.BaseURL ||
+		key != strings.TrimSpace(in.APIKey) || a.TestModel != in.TestModel || a.Priority != in.Priority || a.Weight != weight ||
+		a.MaxConcurrency != in.MaxConcurrency || a.PassthroughModels != in.PassthroughModels || a.Enabled != (in.Enabled == nil || *in.Enabled) || a.Note != in.Note {
+		return false
+	}
+	set := func(xs []string) map[string]bool {
+		m := map[string]bool{}
+		for _, x := range xs {
+			m[x] = true
+		}
+		return m
+	}
+	if p1, p2 := set(a.Protocols), set(in.Protocols); len(p1) != len(p2) {
+		return false
+	} else {
+		for k := range p1 {
+			if !p2[k] {
+				return false
+			}
+		}
+	}
+	m1 := map[string]string{}
+	for _, m := range a.Mappings {
+		m1[m.RequestModel] = m.UpstreamModel
+	}
+	if len(m1) != len(in.Mappings) {
+		return false
+	}
+	for _, m := range in.Mappings {
+		if up, ok := m1[m.RequestModel]; !ok || up != m.UpstreamModel {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) updateAccount(c *gin.Context) {

@@ -72,6 +72,9 @@ func Open(cfg *config.Config) (*gorm.DB, error) {
 	if err := migrateUsageHourlyAttempts(db); err != nil {
 		return nil, fmt.Errorf("migrate usage_hourlies.attempts: %w", err)
 	}
+	if err := migrateIdempotencyKeys(db); err != nil {
+		return nil, fmt.Errorf("migrate create idempotency keys: %w", err)
+	}
 	if err := db.AutoMigrate(model.All()...); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
@@ -80,6 +83,79 @@ func Open(cfg *config.Config) (*gorm.DB, error) {
 	}
 	slog.Info("database ready", "driver", cfg.DBDriver)
 	return db, nil
+}
+
+// migrateIdempotencyKeys prepares databases created before the create idempotency
+// keys were enforced (1.0.34): account names become unique (duplicates are renamed
+// "<name> #<id>", never deleted, so no credential is lost), duplicate sensitive words
+// are removed keeping the oldest, and samples get their text hash column filled and
+// de-duplicated. AutoMigrate then adds the unique indexes without failing on old rows.
+func migrateIdempotencyKeys(db *gorm.DB) error {
+	m := db.Migrator()
+	if m.HasTable(&model.Account{}) && !m.HasIndex(&model.Account{}, "uq_accounts_name") {
+		var dups []struct {
+			ID   uint
+			Name string
+		}
+		if err := db.Raw("SELECT id, name FROM accounts WHERE id NOT IN (SELECT MIN(id) FROM accounts GROUP BY name)").Scan(&dups).Error; err != nil {
+			return err
+		}
+		for _, d := range dups {
+			name := fmt.Sprintf("%s #%d", d.Name, d.ID)
+			if len(name) > 64 {
+				name = name[len(name)-64:]
+			}
+			if err := db.Exec("UPDATE accounts SET name = ? WHERE id = ?", name, d.ID).Error; err != nil {
+				return err
+			}
+			slog.Warn("renamed a duplicate account name so names can be unique", "id", d.ID, "old", d.Name, "new", name)
+		}
+	}
+	if m.HasTable(&model.SensitiveWord{}) && !m.HasIndex(&model.SensitiveWord{}, "uq_sensitive_words_key") {
+		res := db.Exec("DELETE FROM sensitive_words WHERE id NOT IN (SELECT MIN(id) FROM sensitive_words GROUP BY policy_group_id, word)")
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected > 0 {
+			slog.Warn("removed duplicate sensitive words before adding the unique key", "rows", res.RowsAffected)
+		}
+	}
+	for _, t := range []struct {
+		table, model, index, group string
+		has                        bool
+	}{
+		{"audit_samples", "audit_samples", "uq_audit_samples_key", "policy_group_id", m.HasTable(&model.AuditSample{})},
+		{"route_samples", "route_samples", "uq_route_samples_key", "label", m.HasTable(&model.RouteSample{})},
+	} {
+		if !t.has || m.HasIndex(t.model, t.index) {
+			continue
+		}
+		if !m.HasColumn(t.model, "text_hash") {
+			if err := db.Exec("ALTER TABLE " + t.table + " ADD COLUMN text_hash varchar(64) NOT NULL DEFAULT ''").Error; err != nil {
+				return err
+			}
+		}
+		var rows []struct {
+			ID   uint
+			Text string
+		}
+		if err := db.Raw("SELECT id, text FROM " + t.table + " WHERE text_hash = ''").Scan(&rows).Error; err != nil {
+			return err
+		}
+		for _, r := range rows {
+			if err := db.Exec("UPDATE "+t.table+" SET text_hash = ? WHERE id = ?", model.TextKey(r.Text), r.ID).Error; err != nil {
+				return err
+			}
+		}
+		res := db.Exec("DELETE FROM " + t.table + " WHERE id NOT IN (SELECT MIN(id) FROM " + t.table + " GROUP BY " + t.group + ", text_hash)")
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected > 0 {
+			slog.Warn("removed duplicate samples before adding the unique key", "table", t.table, "rows", res.RowsAffected)
+		}
+	}
+	return nil
 }
 
 // migrateModelPriceKey makes (provider, pattern) unique on model_prices. Rows created

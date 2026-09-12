@@ -89,7 +89,13 @@ func (s *Server) reloadRuntimesFor(c *gin.Context, extra gin.H, names ...string)
 // database: the recovery action after a committed write whose refresh failed.
 func (s *Server) reloadRuntime(c *gin.Context) {
 	if failed := s.refreshRuntimes("prices", "gateway", "vector"); len(failed) > 0 {
-		reloadFailed(c, failed, nil)
+		// Nothing was written by this request: it is safe and expected to retry.
+		subs := make([]string, 0, len(failed))
+		for _, f := range failed {
+			subs = append(subs, f.Subsystem)
+		}
+		c.JSON(503, gin.H{"code": "runtime_reload_failed", "committed": false, "failed": failed,
+			"error": "运行态刷新失败（" + strings.Join(subs, "、") + "），数据库未改动，运行态仍是之前的配置；可直接重试，或重启网关"})
 		return
 	}
 	slog.Info("runtimes reloaded on request", "by", cur(c).Username)

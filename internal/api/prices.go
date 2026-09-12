@@ -82,10 +82,19 @@ func createWithEnabled(db *gorm.DB, rec any, disabled bool) error {
 // from the old copy, so the caller gets a 503 that says exactly that.
 func (s *Server) reloadPrices(c *gin.Context) bool { return s.reloadRuntimes(c, "prices") }
 
+// uniqueViolation reports whether a database error is a unique-key conflict (SQLite
+// "UNIQUE constraint failed", PostgreSQL "duplicate key value").
+func uniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unique") || strings.Contains(msg, "duplicate key")
+}
+
 // priceKeyConflict reports a unique-key violation on (provider, pattern) as a 409.
 func priceKeyConflict(c *gin.Context, err error) bool {
-	msg := strings.ToLower(err.Error())
-	if strings.Contains(msg, "unique") || strings.Contains(msg, "duplicate key") {
+	if uniqueViolation(err) {
 		fail(c, 409, "price_exists", "同一供应商下已有同名模型的价格行")
 		return true
 	}
