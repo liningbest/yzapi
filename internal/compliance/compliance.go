@@ -413,6 +413,17 @@ func (e *Engine) BuildVectors(ctx context.Context, ids []uint) (built int, faile
 		return 0, 0, err
 	}
 	claimed := int(res.RowsAffected)
+	// Conservation on every exit: whatever this build claimed is either built or
+	// failed by the time it returns. An upstream error or a wrong vector count in an
+	// early batch stops the build; the later batches, already claimed and never sent,
+	// are failed rows of this build (they keep this token, so a later build claims
+	// them normally). Rows lost before the read are added to failed below and are
+	// therefore not counted twice here.
+	defer func() {
+		if remaining := claimed - built - failed; remaining > 0 {
+			failed += remaining
+		}
+	}()
 	var rows []model.AuditSample
 	if err = read.Order("id").Find(&rows).Error; err != nil {
 		return 0, 0, err

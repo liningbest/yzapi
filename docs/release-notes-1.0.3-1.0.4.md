@@ -339,3 +339,7 @@
 ## 1.0.41：1.0.40 验收修复（`docs/changes-2026-09-12-client-guide-priceimport.md` 第 21 节）
 
 - 向量构建计数守恒：在领取与读回之间被更晚构建抢走的行计入 `failed`，不再静默成功；按 ID 构建的读回按主键限定，领取不改 `updated_at`。
+
+## 1.0.42：1.0.41 验收修复（`docs/changes-2026-09-12-client-guide-priceimport.md` 第 22 节）
+
+- 向量构建的计数守恒覆盖每条退出路径：早期批次报错时，后续已领取未发送的行也计入 `failed`。
