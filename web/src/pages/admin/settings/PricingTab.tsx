@@ -6,6 +6,7 @@ import PriceImportModal from './PriceImportModal';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { pricesApi, providersApi, settingsApi } from '@/api';
+import { committedResult } from '@/api/client';
 import { NeutralTag, ProviderAvatar, SectionTitle } from '@/components';
 import type { ModelPrice, ModelPriceInput, PricingSettings } from '@/types';
 import { useSiteStore } from '@/stores/site';
@@ -45,6 +46,12 @@ export default function PricingTab({ data }: Props) {
     mutationFn: (body: ModelPriceInput) => (editing && editing !== 'new' ? pricesApi.update(editing.id, body) : pricesApi.create(body)),
     onSuccess: () => {
       message.success(t('common:common.saveSuccess'));
+      setEditing(null);
+      invalidate();
+    },
+    onError: (e: unknown) => {
+      if (!committedResult(e)) return;
+      message.warning(t('common:common.savedRuntimeStale'), 8);
       setEditing(null);
       invalidate();
     },

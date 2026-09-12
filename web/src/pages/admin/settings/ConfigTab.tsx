@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Alert, Button, Descriptions, Drawer, Popconfirm, Space, Table, Tag, Typography, message } from 'antd';
+import { Alert, Button, Descriptions, Drawer, Popconfirm, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { CameraOutlined, EyeOutlined, RollbackOutlined } from '@ant-design/icons';
+import { CameraOutlined, EyeOutlined, ReloadOutlined, RollbackOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { configSnapshotsApi } from '@/api';
+import { configSnapshotsApi, runtimeApi } from '@/api';
 import type { NormalizedError } from '@/api/client';
 import { SectionTitle, TimeCell } from '@/components';
 import type { ConfigSnapshotRow, ConfigRestoreResult } from '@/types';
@@ -42,6 +42,13 @@ export default function ConfigTab() {
       message.warning(t('settings:config.priceRowsSkipped', { count: rows.length, rows: rows.slice(0, 5).join('；'), more: rows.length > 5 ? t('settings:config.priceRowsMore', { count: rows.length - 5 }) : '' }), 12);
     }
   };
+  const reloadRuntime = useMutation({
+    mutationFn: () => runtimeApi.reload(),
+    onSuccess: () => {
+      message.success(t('settings:config.reloadRuntimeDone'));
+      invalidateAll();
+    },
+  });
   const restore = useMutation({
     mutationFn: (id: number) => configSnapshotsApi.restore(id),
     onSuccess: (res) => {
@@ -98,9 +105,16 @@ export default function ConfigTab() {
       <Alert type="info" showIcon message={t('settings:config.notice')} style={{ marginBottom: 20 }} />
       <SectionTitle
         extra={
-          <Button size="small" icon={<CameraOutlined />} onClick={() => create.mutate()} loading={create.isPending}>
-            {t('settings:config.snapshotNow')}
-          </Button>
+          <Space>
+            <Tooltip title={t('settings:config.reloadRuntimeHint')}>
+              <Button size="small" icon={<ReloadOutlined />} onClick={() => reloadRuntime.mutate()} loading={reloadRuntime.isPending}>
+                {t('settings:config.reloadRuntime')}
+              </Button>
+            </Tooltip>
+            <Button size="small" icon={<CameraOutlined />} onClick={() => create.mutate()} loading={create.isPending}>
+              {t('settings:config.snapshotNow')}
+            </Button>
+          </Space>
         }
       >
         {t('settings:config.title')}

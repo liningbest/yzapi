@@ -187,7 +187,8 @@
     "inUse": "In use",
     "topK": "Top K",
     "empty": "-",
-    "cost": "Est. cost"
+    "cost": "Est. cost",
+    "savedRuntimeStale": "Saved, but the runtime was not refreshed; requests still use the previous configuration. Do not submit again: use “Reload runtime” under Settings → Config snapshots, or restart the gateway"
   },
   "type": {
     "text": "Text",

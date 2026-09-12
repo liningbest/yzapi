@@ -383,10 +383,15 @@ func (g *Gateway) acquire(req *request) (func(), *GatewayError) {
 func (g *Gateway) candidates(req *request) ([]string, *GatewayError) {
 	snap := req.snap
 	if snap.VirtualModel != "" && req.model == snap.VirtualModel {
-		sr := g.settings.Get().SmartRoute
+		// Everything smart routing needs comes from the request's snapshot generation.
+		sr := snap.SmartRoute
 		res := RouteResult{Label: "simple", Source: "fallback", GroupID: sr.SimpleGroupID}
 		if rp := g.router.Load(); rp != nil && *rp != nil {
-			res = (*rp).Decide(req.r.Context(), req.id, req.text, req.msgCount)
+			if gr, ok := (*rp).(GenerationRouter); ok {
+				res = gr.DecideWith(req.r.Context(), req.id, req.text, req.msgCount, sr)
+			} else {
+				res = (*rp).Decide(req.r.Context(), req.id, req.text, req.msgCount)
+			}
 		}
 		if res.GroupID == 0 {
 			res.GroupID = sr.SimpleGroupID

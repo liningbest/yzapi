@@ -14,6 +14,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { modelGroupsApi, providersApi } from '@/api';
+import { committedResult } from '@/api/client';
 import { FormDrawer, KindTag, NeutralTag, ProviderAvatar } from '@/components';
 import type { ModelGroup, ModelGroupInput, ModelType, RoutableModel } from '@/types';
 import { MODEL_TYPES } from '@/utils/constants';
@@ -253,6 +254,13 @@ export default function ModelGroupDrawer({ open, group, onClose, onSaved }: Prop
     mutationFn: (body: ModelGroupInput) => (group ? modelGroupsApi.update(group.id, body) : modelGroupsApi.create(body)),
     onSuccess: () => {
       message.success(t('common:common.saveSuccess'));
+      void qc.invalidateQueries({ queryKey: ['admin', 'model-groups'] });
+      void qc.invalidateQueries({ queryKey: ['admin', 'models'] });
+      onSaved();
+    },
+    onError: (e: unknown) => {
+      if (!committedResult(e)) return;
+      message.warning(t('common:common.savedRuntimeStale'), 8);
       void qc.invalidateQueries({ queryKey: ['admin', 'model-groups'] });
       void qc.invalidateQueries({ queryKey: ['admin', 'models'] });
       onSaved();

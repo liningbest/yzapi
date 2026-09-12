@@ -153,7 +153,7 @@ func (s *Server) createUserGroup(c *gin.Context) {
 		return
 	}
 	g.Enabled = !disabled
-	if !s.reloadRuntimes(c, "gateway") {
+	if !s.reloadRuntimesFor(c, gin.H{"id": g.ID}, "gateway") {
 		return
 	}
 	s.db.Preload("ModelGroups").First(&g, g.ID)

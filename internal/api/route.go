@@ -78,6 +78,15 @@ func (s *Server) createRouteSample(c *gin.Context) {
 		badRequest(c, "标签必须为 simple/complex，样本文本不能为空且不超过 65536 字符")
 		return
 	}
+	// The same text under the same label is the retry of an earlier create: return it.
+	var dup model.RouteSample
+	if err := s.db.Where("label = ? AND text = ?", in.Label, in.Text).First(&dup).Error; err == nil {
+		if !s.reloadRuntimesFor(c, gin.H{"id": dup.ID, "resource": routeSampleView(&dup)}, "route") {
+			return
+		}
+		c.JSON(200, routeSampleView(&dup))
+		return
+	}
 	x := model.RouteSample{Label: in.Label, Text: in.Text, Threshold: in.Threshold, Note: in.Note}
 	if err := s.db.Create(&x).Error; err != nil {
 		serverError(c, err)
@@ -86,7 +95,7 @@ func (s *Server) createRouteSample(c *gin.Context) {
 	var buildErr string
 	if in.BuildVector && s.eng.Route != nil {
 		if _, failed, err := s.eng.Route.BuildVectors(c.Request.Context(), []uint{x.ID}); err != nil {
-			if buildReloadFailed(c, "route", err, nil) {
+			if buildReloadFailed(c, "route", err, gin.H{"id": x.ID, "resource": routeSampleView(&x)}) {
 				return
 			}
 			buildErr = err.Error()

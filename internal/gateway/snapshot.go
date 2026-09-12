@@ -11,6 +11,7 @@ import (
 	"yzapi/internal/crypto"
 	"yzapi/internal/model"
 	"yzapi/internal/provider"
+	"yzapi/internal/settings"
 )
 
 // Upstream is a decrypted, ready-to-use view of an account.
@@ -78,7 +79,12 @@ type Snapshot struct {
 	ModelGroups  map[uint]*ModelGroupView
 	groupByName  map[string]*ModelGroupView
 	VirtualModel string
-	BuiltAt      time.Time
+	// SmartRoute is the complete smart-route configuration this generation was built
+	// from. The data plane reads group ids, thresholds and rules from here only, so a
+	// generation is either wholly old or wholly new; a failed rebuild never mixes a
+	// previous snapshot with newer settings.
+	SmartRoute settings.SmartRoute
+	BuiltAt    time.Time
 }
 
 func (s *Snapshot) UpstreamsFor(reqModel string) []*Upstream { return s.byModel[reqModel] }
@@ -245,8 +251,10 @@ type snapshotHolder struct {
 
 func (h *snapshotHolder) get() *Snapshot { return h.cur.Load() }
 
-func (h *snapshotHolder) rebuild(virtualModel string, smartEnabled bool) error {
+func (h *snapshotHolder) rebuild(sr settings.SmartRoute) error {
+	virtualModel, smartEnabled := sr.VirtualModel, sr.Enabled
 	snap := &Snapshot{
+		SmartRoute:  sr,
 		Accounts:    map[uint]*Upstream{},
 		byModel:     map[string][]*Upstream{},
 		modelType:   map[string]string{},

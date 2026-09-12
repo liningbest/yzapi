@@ -245,6 +245,22 @@ func (s *Server) createAccount(c *gin.Context) {
 		badRequest(c, "API Key 不能为空")
 		return
 	}
+	// Account names are unique. A create that exactly repeats an existing account
+	// (same endpoint and key) is the retry of a create whose runtime refresh failed:
+	// it refreshes and returns the existing account instead of a second upstream.
+	var dup model.Account
+	if err := s.db.Preload("Mappings").Where("name = ?", in.Name).First(&dup).Error; err == nil {
+		key, _ := s.cipher.Decrypt(dup.APIKeyEnc)
+		if dup.Provider == in.Provider && dup.Type == in.Type && dup.BaseURL == in.BaseURL && key == strings.TrimSpace(in.APIKey) {
+			if !s.reloadRuntimesFor(c, gin.H{"id": dup.ID, "resource": s.accountView(&dup)}, "gateway") {
+				return
+			}
+			c.JSON(200, s.accountView(&dup))
+			return
+		}
+		fail(c, 409, "account_exists", "同名账号已存在；若这是上一次创建的重试，请到「设置 → 配置快照」重新加载运行态")
+		return
+	}
 	if !in.SkipTest {
 		if ok, _, msg := s.probeAccount(c.Request.Context(), &in, in.APIKey); !ok {
 			fail(c, 400, "validation_failed", "连接验证失败: "+msg)
@@ -268,7 +284,7 @@ func (s *Server) createAccount(c *gin.Context) {
 		return
 	}
 	a.Enabled = !disabled
-	if !s.reloadRuntimes(c, "gateway") {
+	if !s.reloadRuntimesFor(c, gin.H{"id": a.ID, "resource": s.accountView(&a)}, "gateway") {
 		return
 	}
 	c.JSON(200, s.accountView(&a))

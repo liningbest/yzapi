@@ -26,6 +26,18 @@ export interface NormalizedError extends Error {
   data?: unknown;
 }
 
+/**
+ * A 503 after a committed write: the resource is saved, only a runtime refresh failed.
+ * Callers must treat it as saved (refresh lists, close the form) and never re-submit
+ * the create; the server reports the committed resource when it has one.
+ */
+export function committedResult(err: unknown): { id?: number; resource?: unknown } | null {
+  const e = err as NormalizedError | undefined;
+  const data = e?.data as { committed?: boolean; id?: number; resource?: unknown } | undefined;
+  if (e?.status !== 503 || !data?.committed) return null;
+  return { id: data.id, resource: data.resource };
+}
+
 export function extractError(err: unknown): NormalizedError {
   const e = err as AxiosError<ApiError>;
   const status = e?.response?.status;

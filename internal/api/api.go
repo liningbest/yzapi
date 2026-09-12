@@ -194,6 +194,7 @@ func (s *Server) Register(r *gin.Engine) {
 		pr.POST("/import/apply", s.importApply)
 		pr.GET("/lookup", s.lookupPrice)
 		admin.POST("/usage/rebuild", s.rebuildUsage)
+		admin.POST("/runtime/reload", s.reloadRuntime) // recovery after a committed write whose refresh failed
 		admin.GET("/usage/reconcile", s.reconcileUsage)
 		admin.GET("/usage/metering", s.meteringStatus)
 

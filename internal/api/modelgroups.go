@@ -117,7 +117,7 @@ func (s *Server) createModelGroup(c *gin.Context) {
 		conflictOrServerError(c, err, "分组名称已存在")
 		return
 	}
-	if !s.reloadRuntimes(c, "gateway") {
+	if !s.reloadRuntimesFor(c, gin.H{"id": mg.ID}, "gateway") {
 		return
 	}
 	c.JSON(200, s.modelGroupView(&mg))

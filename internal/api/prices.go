@@ -112,7 +112,7 @@ func (s *Server) createPrice(c *gin.Context) {
 		return
 	}
 	p.Enabled = !disabled
-	if !s.reloadPrices(c) {
+	if !s.reloadRuntimesFor(c, gin.H{"id": p.ID, "resource": p}, "prices") {
 		return
 	}
 	c.JSON(200, p)

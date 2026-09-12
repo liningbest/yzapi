@@ -177,6 +177,11 @@ export const usageApi = {
   query: (params: UsageParams) => get<UsageResponse>(`${A}/usage`, params),
 };
 
+export const runtimeApi = {
+  /** Recovery after a committed write whose runtime refresh failed. */
+  reload: () => post<{ reloaded: string[] }>(`${A}/runtime/reload`, {}),
+};
+
 export const configSnapshotsApi = {
   list: () => get<{ items: ConfigSnapshotRow[]; total: number }>(`${A}/config/snapshots`),
   create: (reason: string) => post<unknown>(`${A}/config/snapshots`, { reason }),

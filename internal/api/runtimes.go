@@ -67,12 +67,33 @@ func reloadFailed(c *gin.Context, failed []runtimeFailure, extra gin.H) {
 	for _, f := range failed {
 		subs = append(subs, f.Subsystem)
 	}
-	body := gin.H{"code": code, "failed": failed,
-		"error": "数据已写入数据库，但运行态未刷新（" + strings.Join(subs, "、") + "），请求仍按之前的配置处理；请重试或重启网关"}
+	body := gin.H{"code": code, "failed": failed, "committed": true,
+		"error": "数据已写入数据库，但运行态未刷新（" + strings.Join(subs, "、") + "），请求仍按之前的配置处理。请勿重复提交本次修改；请重试运行态刷新（设置 → 配置快照 → 重新加载运行态）或重启网关"}
 	for k, v := range extra {
 		body[k] = v
 	}
 	c.JSON(503, body)
+}
+
+// reloadRuntimesFor is reloadRuntimes with extra fields for the 503 (the committed
+// resource of a create, so a caller never re-creates it).
+func (s *Server) reloadRuntimesFor(c *gin.Context, extra gin.H, names ...string) bool {
+	if failed := s.refreshRuntimes(names...); len(failed) > 0 {
+		reloadFailed(c, failed, extra)
+		return false
+	}
+	return true
+}
+
+// reloadRuntime (POST /api/admin/runtime/reload) refreshes every runtime from the
+// database: the recovery action after a committed write whose refresh failed.
+func (s *Server) reloadRuntime(c *gin.Context) {
+	if failed := s.refreshRuntimes("prices", "gateway", "vector"); len(failed) > 0 {
+		reloadFailed(c, failed, nil)
+		return
+	}
+	slog.Info("runtimes reloaded on request", "by", cur(c).Username)
+	c.JSON(200, gin.H{"reloaded": []string{"prices", "gateway", "route", "compliance"}})
 }
 
 // buildReloadFailed answers 503 when a vector build error is an index reload failure

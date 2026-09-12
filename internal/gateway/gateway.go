@@ -38,6 +38,12 @@ type Router interface {
 	Decide(ctx context.Context, requestID, text string, msgCount int) RouteResult
 }
 
+// GenerationRouter decides with the smart-route configuration of the request's
+// snapshot generation instead of reading live settings; the gateway prefers it.
+type GenerationRouter interface {
+	DecideWith(ctx context.Context, requestID, text string, msgCount int, cfg settings.SmartRoute) RouteResult
+}
+
 // ComplianceVerdict is produced by a Checker.
 type ComplianceVerdict struct {
 	Hit          bool
@@ -203,7 +209,7 @@ func (g *Gateway) buildTransport(perf settings.Performance) {
 // Reload rebuilds the routing snapshot and invalidates caches.
 func (g *Gateway) Reload() error {
 	sr := g.settings.Get().SmartRoute
-	if err := g.snap.rebuild(sr.VirtualModel, sr.Enabled); err != nil {
+	if err := g.snap.rebuild(sr); err != nil {
 		slog.Error("rebuild snapshot", "err", err)
 		return err
 	}

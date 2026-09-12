@@ -184,19 +184,24 @@ func (e *Engine) Samples() []Sample { return *e.index.Load() }
 // Decide classifies text. It never returns an error: embedding failures fall
 // through to rules/fallback.
 func (e *Engine) Decide(ctx context.Context, requestID, text string, msgCount int) Result {
-	res, _ := e.decide(ctx, text, msgCount)
+	return e.DecideWith(ctx, requestID, text, msgCount, e.st.Get().SmartRoute)
+}
+
+// DecideWith is Decide against an explicit smart-route configuration: the gateway
+// passes its snapshot generation's copy so a request never mixes settings.
+func (e *Engine) DecideWith(ctx context.Context, requestID, text string, msgCount int, sr settings.SmartRoute) Result {
+	res, _ := e.decide(ctx, text, msgCount, sr)
 	return res
 }
 
 // Preview is Decide for the admin UI: it also returns the embedding error, if
 // any, so the operator can see why the vector step was skipped.
 func (e *Engine) Preview(ctx context.Context, text string, msgCount int) (Result, error) {
-	return e.decide(ctx, text, msgCount)
+	return e.decide(ctx, text, msgCount, e.st.Get().SmartRoute)
 }
 
-func (e *Engine) decide(ctx context.Context, text string, msgCount int) (res Result, err error) {
+func (e *Engine) decide(ctx context.Context, text string, msgCount int, sr settings.SmartRoute) (res Result, err error) {
 	start := time.Now()
-	sr := e.st.Get().SmartRoute
 	res = Result{Label: LabelSimple, Source: SourceFallback}
 	norm := Normalize(text)
 	res.Normalized = norm

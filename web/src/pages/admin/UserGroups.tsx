@@ -19,6 +19,7 @@ import { CrownOutlined, DeleteOutlined, EditOutlined, PlusOutlined, TeamOutlined
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { modelGroupsApi, userGroupsApi } from '@/api';
+import { committedResult } from '@/api/client';
 import { EmptyState, FilterBar, FormDrawer, NeutralTag, PageHeader, ProportionBar, TokenText, TypeTag } from '@/components';
 import { useTableQuery } from '@/hooks/useTableQuery';
 import type { UserGroup, UserGroupInput } from '@/types';
@@ -109,6 +110,12 @@ export default function UserGroups() {
 
   const invalidate = () => void qc.invalidateQueries({ queryKey: ['user-groups'] });
 
+  const savedButStale = (e: unknown) => {
+    if (!committedResult(e)) return;
+    message.warning(t('common:common.savedRuntimeStale'), 8);
+    setDrawer({ open: false });
+    invalidate();
+  };
   const createMut = useMutation({
     mutationFn: (body: UserGroupInput) => userGroupsApi.create(body),
     onSuccess: () => {
@@ -116,6 +123,7 @@ export default function UserGroups() {
       setDrawer({ open: false });
       invalidate();
     },
+    onError: savedButStale,
   });
   const updateMut = useMutation({
     mutationFn: ({ id, body }: { id: number; body: UserGroupInput }) => userGroupsApi.update(id, body),
@@ -124,6 +132,7 @@ export default function UserGroups() {
       setDrawer({ open: false });
       invalidate();
     },
+    onError: savedButStale,
   });
   const removeMut = useMutation({
     mutationFn: (id: number) => userGroupsApi.remove(id),

@@ -330,6 +330,9 @@
     "missingKeys": "以下账号在快照中没有密钥，已恢复为停用状态，请重新填写密钥：{{names}}",
     "priceRowsMerged": "快照里有 {{count}} 行价目与另一行同键（供应商 + 模型），已合并为一行（改过的优先，其次手工行，再取最早的）",
     "priceRowsSkipped": "快照里有 {{count}} 行价目未通过当前校验，未恢复：{{rows}}{{more}}",
-    "priceRowsMore": "…另 {{count}} 行见服务端日志"
+    "priceRowsMore": "…另 {{count}} 行见服务端日志",
+    "reloadRuntime": "重新加载运行态",
+    "reloadRuntimeDone": "运行态已从数据库重新加载",
+    "reloadRuntimeHint": "某次保存返回「已写入数据库但运行态未刷新」时，在这里重新加载价目、网关、路由与合规的运行态"
   }
 }

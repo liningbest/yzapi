@@ -206,6 +206,13 @@ func (r routeAdapter) Decide(ctx context.Context, requestID, text string, msgCou
 
 func (r routeAdapter) Reload() error { return r.e.Reload() }
 
+// DecideWith routes with the gateway snapshot generation's smart-route configuration.
+func (r routeAdapter) DecideWith(ctx context.Context, requestID, text string, msgCount int, cfg settings.SmartRoute) gateway.RouteResult {
+	res := r.e.DecideWith(ctx, requestID, text, msgCount, cfg)
+	return gateway.RouteResult{Label: res.Label, Source: res.Source, Confidence: res.Confidence, GroupID: res.GroupID,
+		TopK: res.TopK, Normalized: res.Normalized, LatencyMs: res.LatencyMs}
+}
+
 // complianceAdapter bridges compliance.Verdict to gateway.ComplianceVerdict.
 type complianceAdapter struct{ e *compliance.Engine }
 

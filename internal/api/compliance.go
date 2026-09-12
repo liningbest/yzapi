@@ -107,7 +107,7 @@ func (s *Server) createPolicyGroup(c *gin.Context) {
 		return
 	}
 	p.Enabled = !disabled
-	if !s.reloadRuntimes(c, "compliance") {
+	if !s.reloadRuntimesFor(c, gin.H{"id": p.ID}, "compliance") {
 		return
 	}
 	c.JSON(200, policyView(&p, 0, 0))
@@ -262,6 +262,15 @@ func (s *Server) createWord(c *gin.Context) {
 		badRequest(c, "敏感词不能为空，且必须选择有效的策略组")
 		return
 	}
+	// The same word in the same policy group is the retry of an earlier create: return it.
+	var dupWord model.SensitiveWord
+	if err := s.db.Where("policy_group_id = ? AND word = ?", in.PolicyGroupID, in.Word).First(&dupWord).Error; err == nil {
+		if !s.reloadRuntimesFor(c, gin.H{"id": dupWord.ID, "resource": dupWord}, "compliance") {
+			return
+		}
+		c.JSON(200, dupWord)
+		return
+	}
 	w := model.SensitiveWord{PolicyGroupID: in.PolicyGroupID, Word: in.Word, Note: in.Note, Enabled: in.Enabled == nil || *in.Enabled}
 	disabled := !w.Enabled // decided before Create: gorm writes default:true back into the struct
 	if err := createWithEnabled(s.db, &w, disabled); err != nil {
@@ -269,7 +278,7 @@ func (s *Server) createWord(c *gin.Context) {
 		return
 	}
 	w.Enabled = !disabled
-	if !s.reloadRuntimes(c, "compliance") {
+	if !s.reloadRuntimesFor(c, gin.H{"id": w.ID, "resource": w}, "compliance") {
 		return
 	}
 	s.db.Preload("PolicyGroup").First(&w, w.ID)
@@ -425,6 +434,15 @@ func (s *Server) createAuditSample(c *gin.Context) {
 		badRequest(c, "样本文本不能为空，且必须选择有效的策略组")
 		return
 	}
+	// The same text in the same policy group is the retry of an earlier create: return it.
+	var dupSample model.AuditSample
+	if err := s.db.Preload("PolicyGroup").Where("policy_group_id = ? AND text = ?", in.PolicyGroupID, in.Text).First(&dupSample).Error; err == nil {
+		if !s.reloadRuntimesFor(c, gin.H{"id": dupSample.ID, "resource": auditSampleView(&dupSample)}, "compliance") {
+			return
+		}
+		c.JSON(200, auditSampleView(&dupSample))
+		return
+	}
 	x := model.AuditSample{PolicyGroupID: in.PolicyGroupID, Text: in.Text, Note: in.Note, Enabled: in.Enabled == nil || *in.Enabled}
 	disabled := !x.Enabled // decided before Create: gorm writes default:true back into the struct
 	if err := createWithEnabled(s.db, &x, disabled); err != nil {
@@ -435,14 +453,14 @@ func (s *Server) createAuditSample(c *gin.Context) {
 	var buildErr string
 	if in.BuildVector && s.eng.Compliance != nil {
 		if _, failed, err := s.eng.Compliance.BuildVectors(c.Request.Context(), []uint{x.ID}); err != nil {
-			if buildReloadFailed(c, "compliance", err, nil) {
+			if buildReloadFailed(c, "compliance", err, gin.H{"id": x.ID, "resource": auditSampleView(&x)}) {
 				return
 			}
 			buildErr = err.Error()
 		} else if failed > 0 {
 			buildErr = "向量构建失败，请检查向量服务"
 		}
-	} else if !s.reloadRuntimes(c, "compliance") {
+	} else if !s.reloadRuntimesFor(c, gin.H{"id": x.ID, "resource": auditSampleView(&x)}, "compliance") {
 		return
 	}
 	s.db.Preload("PolicyGroup").First(&x, x.ID)

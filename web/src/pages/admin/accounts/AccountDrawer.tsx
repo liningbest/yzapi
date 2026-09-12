@@ -26,6 +26,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { accountsApi } from '@/api';
+import { committedResult } from '@/api/client';
 import type { NormalizedError } from '@/api';
 import { FormDrawer, ProviderAvatar } from '@/components';
 import type { AccountInput, AccountTestResult, ModelMapping, ModelType, Protocol, Provider } from '@/types';
@@ -217,6 +218,12 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
     },
     onError: (e: NormalizedError) => {
       if (e.status === 400 && e.code === 'validation_failed') setValidationError(e.message);
+      if (committedResult(e)) {
+        // Saved; only the runtime refresh failed. Never re-submit the create.
+        message.warning(t('common:common.savedRuntimeStale'), 8);
+        invalidate();
+        onSaved();
+      }
     },
   });
 
