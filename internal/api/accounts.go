@@ -413,8 +413,13 @@ func (s *Server) updateAccount(c *gin.Context) {
 	})
 	if err != nil {
 		if uniqueViolation(err) {
+			// The unique error proves a conflict; the resource is only reported when it
+			// was actually read (a read failure is a 500, never a fabricated 409).
 			var other model.Account
-			s.db.Preload("Mappings").Where("name = ? AND id <> ?", in.Name, a.ID).First(&other)
+			if rerr := s.db.Preload("Mappings").Where("name = ? AND id <> ?", in.Name, a.ID).First(&other).Error; rerr != nil {
+				serverError(c, rerr)
+				return
+			}
 			c.JSON(409, gin.H{"code": "account_exists", "error": "同名账号已存在，请换一个名称", "id": other.ID, "resource": s.accountView(&other)})
 			return
 		}

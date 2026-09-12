@@ -156,3 +156,103 @@ func TestR134MigrationPreservesEffectiveDuplicateRules(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// R135-01: the migration returns with the unique indexes in force (created inside its
+// transaction), so no writer can recreate a duplicate before AutoMigrate.
+func TestR135MigrationIncludesUniqueIndex(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{Logger: logger.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE accounts (id integer primary key autoincrement, name text, provider text, type text, base_url text, api_key_enc text, protocols text, enabled numeric)`,
+		`INSERT INTO accounts (name,provider,type,base_url,api_key_enc,protocols,enabled) VALUES ('only','openai','text','http://a','k','[]',1)`,
+		`CREATE TABLE sensitive_words (id integer primary key autoincrement, policy_group_id integer, word text, note text, enabled numeric)`,
+		`CREATE TABLE audit_samples (id integer primary key autoincrement, policy_group_id integer, text text, note text, enabled numeric, vector blob, vector_dim integer, vector_model text)`,
+		`CREATE TABLE route_samples (id integer primary key autoincrement, label text, text text, threshold real, note text, vector blob, vector_dim integer, vector_model text)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := migrateIdempotencyKeys(db); err != nil {
+		t.Fatal(err)
+	}
+	m := db.Migrator()
+	for mdl, idx := range map[any]string{&model.Account{}: "uq_accounts_name", &model.SensitiveWord{}: "uq_sensitive_words_key", &model.AuditSample{}: "uq_audit_samples_key", &model.RouteSample{}: "uq_route_samples_key"} {
+		if !m.HasIndex(mdl, idx) {
+			t.Fatalf("%s must exist when the migration returns", idx)
+		}
+	}
+	if err := db.Exec(`INSERT INTO accounts (name,provider,type,base_url,api_key_enc,protocols,enabled) VALUES ('only','openai','text','http://b','k','[]',1)`).Error; err == nil {
+		t.Fatal("a duplicate must be refused right after the migration")
+	}
+	if err := db.AutoMigrate(model.All()...); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// R135-02: when both duplicates carry vectors, the one the configured runtime can use
+// survives: the identity from the settings table when it is configured, otherwise the
+// newest vector; the dropped identity is logged, never the only usable copy deleted.
+func TestR135MigrationKeepsUsableVectorIdentity(t *testing.T) {
+	newDB := func(t *testing.T, withSettings string) *gorm.DB {
+		db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{Logger: logger.Discard})
+		if err != nil {
+			t.Fatal(err)
+		}
+		stmts := []string{
+			`CREATE TABLE route_samples (id integer primary key autoincrement, label text, text text, threshold real, note text, vector blob, vector_dim integer, vector_model text)`,
+			`INSERT INTO route_samples (id,label,text,threshold,note,vector,vector_dim,vector_model) VALUES (1,'simple','same',0,'old',x'0100','2','old-identity'),(2,'simple','same',0,'current',x'0001',2,'7:embed-v2')`,
+			`CREATE TABLE audit_samples (id integer primary key autoincrement, policy_group_id integer, text text, note text, enabled numeric, vector blob, vector_dim integer, vector_model text)`,
+			`INSERT INTO audit_samples (id,policy_group_id,text,note,enabled,vector,vector_dim,vector_model) VALUES (1,1,'same','current',1,x'0001',2,'7:embed-v2'),(2,1,'same','old',1,x'0100',2,'old-identity')`,
+		}
+		if withSettings != "" {
+			stmts = append(stmts, `CREATE TABLE settings (key text primary key, value text, updated_at datetime)`, `INSERT INTO settings (key, value) VALUES ('vector', '`+withSettings+`')`)
+		}
+		for _, stmt := range stmts {
+			if err := db.Exec(stmt).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+		return db
+	}
+	t.Run("configured identity wins regardless of age", func(t *testing.T) {
+		db := newDB(t, `{"account_id":7,"model":"embed-v2"}`)
+		if err := migrateIdempotencyKeys(db); err != nil {
+			t.Fatal(err)
+		}
+		var r model.RouteSample
+		db.First(&r)
+		var a model.AuditSample
+		db.First(&a)
+		if r.VectorModel != "7:embed-v2" || a.VectorModel != "7:embed-v2" || r.ID != 2 || a.ID != 1 {
+			t.Fatalf("configured identity must survive: route=%+v audit=%+v", r, a)
+		}
+	})
+	t.Run("old identity configured keeps the old vector", func(t *testing.T) {
+		db := newDB(t, `{"account_id":3,"model":"x"}`)
+		db.Exec(`UPDATE route_samples SET vector_model = '3:x' WHERE id = 1`)
+		if err := migrateIdempotencyKeys(db); err != nil {
+			t.Fatal(err)
+		}
+		var r model.RouteSample
+		db.First(&r)
+		if r.ID != 1 || r.VectorModel != "3:x" {
+			t.Fatalf("the vector matching the configured identity must survive even when older: %+v", r)
+		}
+	})
+	t.Run("unconfigured keeps the newest vector", func(t *testing.T) {
+		db := newDB(t, "")
+		if err := migrateIdempotencyKeys(db); err != nil {
+			t.Fatal(err)
+		}
+		var r model.RouteSample
+		db.First(&r)
+		var a model.AuditSample
+		db.First(&a)
+		if r.ID != 2 || a.ID != 2 {
+			t.Fatalf("without a configured identity the newest vector survives: route=%+v audit=%+v", r, a)
+		}
+	})
+}

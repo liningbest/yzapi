@@ -2,10 +2,12 @@
 package db
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/glebarez/sqlite"
@@ -98,7 +100,10 @@ func Open(cfg *config.Config) (*gorm.DB, error) {
 //     carries the live state (enabled, vectorised), merging what the others had
 //     (vector, non-empty note, threshold) so no effective rule or vector is lost.
 //
-// Every dropped row is logged with its content. AutoMigrate then adds the indexes.
+// Every dropped row is logged with its content. The unique index of each table is
+// created inside the same transaction, right after its cleanup, so the function
+// returns with the keys in force: no writer can recreate a duplicate between the
+// cleanup and the index (AutoMigrate afterwards finds the indexes present).
 func migrateIdempotencyKeys(db *gorm.DB) error {
 	m := db.Migrator()
 	need := (m.HasTable(&model.Account{}) && !m.HasIndex(&model.Account{}, "uq_accounts_name")) ||
@@ -115,8 +120,12 @@ func migrateIdempotencyKeys(db *gorm.DB) error {
 			}
 		}
 		tm := tx.Migrator()
+		identity := currentVectorIdentity(tx)
 		if tm.HasTable(&model.Account{}) && !tm.HasIndex(&model.Account{}, "uq_accounts_name") {
 			if err := migrateAccountNames(tx); err != nil {
+				return err
+			}
+			if err := tx.Exec("CREATE UNIQUE INDEX IF NOT EXISTS uq_accounts_name ON accounts (name)").Error; err != nil {
 				return err
 			}
 		}
@@ -124,19 +133,64 @@ func migrateIdempotencyKeys(db *gorm.DB) error {
 			if err := migrateDuplicateWords(tx); err != nil {
 				return err
 			}
+			if err := tx.Exec("CREATE UNIQUE INDEX IF NOT EXISTS uq_sensitive_words_key ON sensitive_words (policy_group_id, word)").Error; err != nil {
+				return err
+			}
 		}
 		if tm.HasTable(&model.AuditSample{}) && !tm.HasIndex(&model.AuditSample{}, "uq_audit_samples_key") {
-			if err := migrateDuplicateSamples(tx, "audit_samples", "policy_group_id"); err != nil {
+			if err := migrateDuplicateSamples(tx, "audit_samples", "policy_group_id", identity); err != nil {
+				return err
+			}
+			if err := tx.Exec("CREATE UNIQUE INDEX IF NOT EXISTS uq_audit_samples_key ON audit_samples (policy_group_id, text_hash)").Error; err != nil {
 				return err
 			}
 		}
 		if tm.HasTable(&model.RouteSample{}) && !tm.HasIndex(&model.RouteSample{}, "uq_route_samples_key") {
-			if err := migrateDuplicateSamples(tx, "route_samples", "label"); err != nil {
+			if err := migrateDuplicateSamples(tx, "route_samples", "label", identity); err != nil {
+				return err
+			}
+			if err := tx.Exec("CREATE UNIQUE INDEX IF NOT EXISTS uq_route_samples_key ON route_samples (label, text_hash)").Error; err != nil {
 				return err
 			}
 		}
 		return nil
 	})
+}
+
+// currentVectorIdentity reads the configured embedding account and model from the
+// settings table (the engines' vector identity is "<account id>:<model>", or
+// "<account id>|<base url>|<model>" once the account resolves) so the migration can
+// tell which of several stored vectors the runtime will actually use. Empty when the
+// vector service is not configured or the table does not exist yet.
+func currentVectorIdentity(tx *gorm.DB) string {
+	if !tx.Migrator().HasTable("settings") {
+		return ""
+	}
+	var raw string
+	if err := tx.Raw("SELECT value FROM settings WHERE key = 'vector'").Scan(&raw).Error; err != nil || raw == "" {
+		return ""
+	}
+	var v struct {
+		AccountID uint   `json:"account_id"`
+		Model     string `json:"model"`
+	}
+	if json.Unmarshal([]byte(raw), &v) != nil || v.AccountID == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d:%s", v.AccountID, v.Model)
+}
+
+// vectorUsable reports whether a stored vector identity is the configured one:
+// the plain "<id>:<model>" form or the resolved "<id>|<url>|<model>" form of it.
+func vectorUsable(stored, identity string) bool {
+	if stored == "" || identity == "" {
+		return false
+	}
+	if stored == identity {
+		return true
+	}
+	id, mdl, _ := strings.Cut(identity, ":")
+	return strings.HasPrefix(stored, id+"|") && strings.HasSuffix(stored, "|"+mdl)
 }
 
 // migrateAccountNames renames the later copies of a duplicated account name to a
@@ -238,11 +292,13 @@ func migrateDuplicateWords(tx *gorm.DB) error {
 }
 
 // migrateDuplicateSamples fills text_hash and collapses (group, text_hash) duplicates
-// in audit_samples / route_samples. The survivor is the copy with the most live state
-// (enabled and vectorised, then vectorised, then enabled, then the oldest); the merged
-// row is enabled if any copy was, takes a vector from a dropped copy when it has none,
-// and keeps the first non-empty note and non-zero threshold.
-func migrateDuplicateSamples(tx *gorm.DB, table, group string) error {
+// in audit_samples / route_samples. The survivor is the copy with the most live state:
+// a vector built with the configured identity first, then any vector (the newest,
+// since it was built most recently), then enabled, then the oldest. The merged row is
+// enabled if any copy was, takes a vector from a dropped copy when it has none, and
+// keeps the first non-empty note and non-zero threshold. A dropped vector of another
+// identity is logged with that identity so it can be rebuilt.
+func migrateDuplicateSamples(tx *gorm.DB, table, group, identity string) error {
 	if !tx.Migrator().HasColumn(table, "text_hash") {
 		if err := tx.Exec("ALTER TABLE " + table + " ADD COLUMN text_hash varchar(64) NOT NULL DEFAULT ''").Error; err != nil {
 			return err
@@ -293,10 +349,14 @@ func migrateDuplicateSamples(tx *gorm.DB, table, group string) error {
 		}
 		groups[k] = append(groups[k], i)
 	}
+	hasVector := func(r row) bool { return r.VectorDim > 0 && len(r.Vector) > 0 }
 	score := func(r row) int {
 		s := 0
-		if r.VectorDim > 0 && len(r.Vector) > 0 {
+		if hasVector(r) {
 			s += 2
+			if vectorUsable(r.VectorModel, identity) {
+				s += 4
+			}
 		}
 		if !hasEnabled || r.Enabled {
 			s++
@@ -310,7 +370,9 @@ func migrateDuplicateSamples(tx *gorm.DB, table, group string) error {
 		}
 		win := idx[0]
 		for _, i := range idx {
-			if score(rows[i]) > score(rows[win]) {
+			// Strictly better wins; on a tie between two vectorised copies the newer
+			// vector wins (it was built most recently, closest to the current config).
+			if score(rows[i]) > score(rows[win]) || (score(rows[i]) == score(rows[win]) && hasVector(rows[i]) && rows[i].ID > rows[win].ID) {
 				win = i
 			}
 		}

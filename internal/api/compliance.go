@@ -333,7 +333,10 @@ func (s *Server) updateWord(c *gin.Context) {
 	if err := s.db.Model(&w).Updates(upd).Error; err != nil {
 		if uniqueViolation(err) {
 			var other model.SensitiveWord
-			s.db.Where("policy_group_id = ? AND word = ? AND id <> ?", in.PolicyGroupID, in.Word, w.ID).First(&other)
+			if rerr := s.db.Where("policy_group_id = ? AND word = ? AND id <> ?", in.PolicyGroupID, in.Word, w.ID).First(&other).Error; rerr != nil {
+				serverError(c, rerr) // never fabricate a 409 from a failed read
+				return
+			}
 			c.JSON(409, gin.H{"code": "word_exists", "error": "该策略组已有同一敏感词", "id": other.ID, "resource": other})
 			return
 		}

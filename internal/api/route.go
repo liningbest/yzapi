@@ -251,13 +251,14 @@ func (s *Server) batchRouteSamples(c *gin.Context) {
 		err := s.db.Select("id", "note").Where("label = ? AND text_hash = ?", it.Label, model.TextKey(t)).First(&cur).Error
 		switch {
 		case err == nil:
-			if cur.Note != "" && it.Note != "" && cur.Note != it.Note {
+			// Same rule as a single create: the effective configuration must match.
+			if cur.Note != strings.TrimSpace(it.Note) {
 				conflicts++
 				continue
 			}
 			existing = append(existing, cur.ID)
 		case errors.Is(err, gorm.ErrRecordNotFound):
-			rows = append(rows, model.RouteSample{Label: it.Label, Text: t, Note: it.Note})
+			rows = append(rows, model.RouteSample{Label: it.Label, Text: t, Note: strings.TrimSpace(it.Note)})
 		default:
 			serverError(c, err)
 			return
@@ -271,24 +272,77 @@ func (s *Server) batchRouteSamples(c *gin.Context) {
 		badRequest(c, "没有有效的样本")
 		return
 	}
+	created := 0
 	if len(rows) > 0 {
-		// A concurrent import may have inserted the same sample meanwhile: the unique
-		// key skips it instead of failing the batch.
+		// A concurrent import may insert the same sample between the read above and
+		// this insert: the unique key skips it instead of failing the batch, `created`
+		// is what the database really inserted, and every planned row that lost the
+		// race is re-read and classified like a pre-existing one.
 		res := s.db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "label"}, {Name: "text_hash"}}, DoNothing: true}).CreateInBatches(&rows, 200)
 		if res.Error != nil {
 			serverError(c, res.Error)
 			return
 		}
-	}
-	resp := gin.H{"created": len(rows), "existing": len(existing), "skipped": skipped, "conflicts": conflicts}
-	if in.BuildVector && s.eng.Route != nil {
-		ids := make([]uint, 0, len(rows)+len(existing))
+		created = int(res.RowsAffected)
+		for _, r := range rows {
+			if r.ID != 0 && created < len(rows) {
+				// gorm only backfills ids for rows it inserted; re-check by key below.
+			}
+		}
+		var stored []model.RouteSample
+		keys := make([][]any, 0, len(rows))
+		for _, r := range rows {
+			keys = append(keys, []any{r.Label, model.TextKey(r.Text)})
+		}
+		if err := s.db.Select("id", "label", "text_hash", "note").Where("(label, text_hash) IN ?", keys).Find(&stored).Error; err != nil {
+			serverError(c, err)
+			return
+		}
+		byKey := map[string]model.RouteSample{}
+		for _, r := range stored {
+			byKey[r.Label+"|"+r.TextHash] = r
+		}
+		inserted := map[uint]bool{}
 		for _, r := range rows {
 			if r.ID != 0 {
+				inserted[r.ID] = true
+			}
+		}
+		for _, r := range rows {
+			cur, ok := byKey[r.Label+"|"+model.TextKey(r.Text)]
+			if !ok {
+				continue // cannot happen: either we inserted it or the winner is there
+			}
+			if inserted[cur.ID] {
+				continue
+			}
+			if cur.Note != r.Note {
+				conflicts++
+				continue
+			}
+			existing = append(existing, cur.ID) // lost the race to an identical row: build it too
+		}
+		if created != len(inserted) {
+			// The driver did not backfill ids for skipped rows; trust the database count.
+			created = int(res.RowsAffected)
+		}
+	}
+	resp := gin.H{"created": created, "existing": len(existing), "skipped": skipped, "conflicts": conflicts}
+	if in.BuildVector && s.eng.Route != nil {
+		seenID := map[uint]bool{}
+		ids := make([]uint, 0, len(rows)+len(existing))
+		for _, r := range rows {
+			if r.ID != 0 && !seenID[r.ID] {
+				seenID[r.ID] = true
 				ids = append(ids, r.ID)
 			}
 		}
-		ids = append(ids, existing...)
+		for _, id := range existing {
+			if !seenID[id] {
+				seenID[id] = true
+				ids = append(ids, id)
+			}
+		}
 		built, failed, err := s.eng.Route.BuildVectors(c.Request.Context(), ids)
 		resp["built"], resp["failed"] = built, failed
 		if buildReloadFailed(c, "route", err, resp) {
