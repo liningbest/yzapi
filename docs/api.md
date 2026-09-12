@@ -165,7 +165,8 @@
 
 ### 配置版本 `/api/admin/config/snapshots`
 - 修改账号池、模型组、单价表、设置的任何写接口（探测类除外）执行前自动保存一份快照：账号（含加密密钥，以独立的持久化结构保存）与映射、模型组、用户组的模型组授权、完整单价表（空表也是一种状态）、全部设置节；载荷带 `version:2` 与 sha256 `checksum`；最多保留 50 份。
-- `GET` → `{items:[{id,actor,reason,created_at}], total}`；`POST {reason}` 手动快照；`GET /:id` → 摘要（账号不含密钥，带 `version` 与 `corrupt`）；`POST /:id/restore` → `{restored, missing_keys[]}`：先校验 checksum（不符返回 409 `snapshot_corrupt`，不动任何数据），再在一个事务里用快照覆盖当前配置（先自动保存当前状态），随后重载设置、单价、网关快照、路由与合规引擎。1.0.12 早期写入的 v1 快照不含密钥：恢复时沿用同 id 账号当前的密钥；无处可取的账号以停用状态恢复、备注标记并列入 `missing_keys`。用户、用户组、Key、日志不在范围内。 价目表按整套恢复时，每行过与手工新增相同的校验并统一小写，同键多行合并为一行（改过的 > 手工 > 最早），响应另带 `price_rows_skipped[]`（无效行及原因）与 `price_rows_merged`（合并掉的行数），管理界面把两者显示为警告；恢复后运行态价目重载失败返回 503 `price_reload_failed`（网关、合规、路由运行态仍已刷新，只有价目沿用旧副本）。
+- `GET` → `{items:[{id,actor,reason,created_at}], total}`；`POST {reason}` 手动快照；`GET /:id` → 摘要（账号不含密钥，带 `version` 与 `corrupt`）；`POST /:id/restore` → `{restored, missing_keys[]}`：先校验 checksum（不符返回 409 `snapshot_corrupt`，不动任何数据），再在一个事务里用快照覆盖当前配置（先自动保存当前状态），随后重载设置、单价、网关快照、路由与合规引擎。1.0.12 早期写入的 v1 快照不含密钥：恢复时沿用同 id 账号当前的密钥；无处可取的账号以停用状态恢复、备注标记并列入 `missing_keys`。用户、用户组、Key、日志不在范围内。 价目表按整套恢复时，每行过与手工新增相同的校验并统一小写，同键多行合并为一行（改过的 > 手工 > 最早），响应另带 `price_rows_skipped[]`（无效行及原因）与 `price_rows_merged`（合并掉的行数），管理界面把两者显示为警告；恢复后会刷新价目、网关、向量、路由、合规全部运行态，任一失败不跳过其余，最后用一个 503 汇总：单个子系统失败时 `code` 为该子系统的码（`price_reload_failed` / `gateway_reload_failed` / `compliance_reload_failed` / `route_reload_failed`），多个时为 `runtime_reload_failed`；正文 `failed[]:{subsystem, code, error}`，并仍带 `restored` / `missing_keys` / `price_rows_*`。
+- **运行态刷新的统一语义**：所有先写库再刷新内存副本的管理接口（账号、用户组、模型组、价格、策略组 / 敏感词 / 审计样本、路由样本、向量与合规设置、快照恢复）在刷新失败时返回上述 503，正文说明"数据已写入数据库，但运行态未刷新，请求仍按之前的配置处理"。数据库写入不回滚；重试该请求或重启网关即可让运行态收敛。
 - 创建价格 / 用户组 / 账号 / 策略组 / 敏感词 / 审计样本时带 `enabled:false`：插入与禁用在同一个事务里，第二步失败整体回滚，不会留下已启用的行。价格备注、导入备注按 UTF-8 字符边界截断（255 / 250 字节），不会产生非法 UTF-8。
 
 ### 计价 `/api/admin/prices`

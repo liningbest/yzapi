@@ -35,11 +35,8 @@ func (s *Server) registerComplianceAPI(r *gin.RouterGroup) {
 	r.POST("/test", s.complianceTest)
 }
 
-func (s *Server) reloadCompliance() {
-	if s.eng.Compliance != nil {
-		_ = s.eng.Compliance.Reload()
-	}
-}
+// Compliance runtime refreshes go through reloadRuntimes(c, "compliance"): a failed
+// refresh after a committed write is answered with 503, never swallowed.
 
 // ---- policy groups ----
 
@@ -110,7 +107,9 @@ func (s *Server) createPolicyGroup(c *gin.Context) {
 		return
 	}
 	p.Enabled = !disabled
-	s.reloadCompliance()
+	if !s.reloadRuntimes(c, "compliance") {
+		return
+	}
 	c.JSON(200, policyView(&p, 0, 0))
 }
 
@@ -148,7 +147,9 @@ func (s *Server) updatePolicyGroup(c *gin.Context) {
 		conflictOrServerError(c, err, "策略组名称已存在")
 		return
 	}
-	s.reloadCompliance()
+	if !s.reloadRuntimes(c, "compliance") {
+		return
+	}
 	s.db.First(&p, id)
 	c.JSON(200, policyView(&p, 0, 0))
 }
@@ -170,7 +171,9 @@ func (s *Server) deletePolicyGroup(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
-	s.reloadCompliance()
+	if !s.reloadRuntimes(c, "compliance") {
+		return
+	}
 	c.JSON(200, gin.H{})
 }
 
@@ -195,7 +198,9 @@ func (s *Server) setEnabledGeneric(c *gin.Context, tbl any) {
 		notFound(c)
 		return
 	}
-	s.reloadCompliance()
+	if !s.reloadRuntimes(c, "compliance") {
+		return
+	}
 	c.JSON(200, gin.H{"enabled": in.Enabled})
 }
 
@@ -264,7 +269,9 @@ func (s *Server) createWord(c *gin.Context) {
 		return
 	}
 	w.Enabled = !disabled
-	s.reloadCompliance()
+	if !s.reloadRuntimes(c, "compliance") {
+		return
+	}
 	s.db.Preload("PolicyGroup").First(&w, w.ID)
 	c.JSON(200, wordView(&w))
 }
@@ -302,7 +309,9 @@ func (s *Server) updateWord(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
-	s.reloadCompliance()
+	if !s.reloadRuntimes(c, "compliance") {
+		return
+	}
 	s.db.Preload("PolicyGroup").First(&w, id)
 	c.JSON(200, wordView(&w))
 }
@@ -316,7 +325,9 @@ func (s *Server) deleteWord(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
-	s.reloadCompliance()
+	if !s.reloadRuntimes(c, "compliance") {
+		return
+	}
 	c.JSON(200, gin.H{})
 }
 
@@ -351,7 +362,9 @@ func (s *Server) batchWords(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
-	s.reloadCompliance()
+	if !s.reloadRuntimes(c, "compliance") {
+		return
+	}
 	c.JSON(200, gin.H{"created": len(rows)})
 }
 
@@ -424,8 +437,8 @@ func (s *Server) createAuditSample(c *gin.Context) {
 		if _, _, err := s.eng.Compliance.BuildVectors(c.Request.Context(), []uint{x.ID}); err != nil {
 			buildErr = err.Error()
 		}
-	} else {
-		s.reloadCompliance()
+	} else if !s.reloadRuntimes(c, "compliance") {
+		return
 	}
 	s.db.Preload("PolicyGroup").First(&x, x.ID)
 	v := auditSampleView(&x)
@@ -476,8 +489,8 @@ func (s *Server) updateAuditSample(c *gin.Context) {
 	}
 	if s.eng.Compliance != nil && changed && in.BuildVector {
 		_, _, _ = s.eng.Compliance.BuildVectors(c.Request.Context(), []uint{x.ID})
-	} else {
-		s.reloadCompliance()
+	} else if !s.reloadRuntimes(c, "compliance") {
+		return
 	}
 	s.db.Preload("PolicyGroup").First(&x, id)
 	c.JSON(200, auditSampleView(&x))
@@ -492,7 +505,9 @@ func (s *Server) deleteAuditSample(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
-	s.reloadCompliance()
+	if !s.reloadRuntimes(c, "compliance") {
+		return
+	}
 	c.JSON(200, gin.H{})
 }
 

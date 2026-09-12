@@ -80,14 +80,7 @@ func createWithEnabled(db *gorm.DB, rec any, disabled bool) error {
 // reloadPrices refreshes the in-memory price table after a write. A failure is not
 // silent: the database already holds the new rows while requests would still be priced
 // from the old copy, so the caller gets a 503 that says exactly that.
-func (s *Server) reloadPrices(c *gin.Context) bool {
-	if err := s.pricer.Reload(); err != nil {
-		slog.Error("price table written but runtime reload failed", "err", err)
-		fail(c, 503, "price_reload_failed", "价目已写入数据库，但运行态未刷新，当前请求仍按旧价目计费；请重试或重启网关: "+err.Error())
-		return false
-	}
-	return true
-}
+func (s *Server) reloadPrices(c *gin.Context) bool { return s.reloadRuntimes(c, "prices") }
 
 // priceKeyConflict reports a unique-key violation on (provider, pattern) as a 409.
 func priceKeyConflict(c *gin.Context, err error) bool {

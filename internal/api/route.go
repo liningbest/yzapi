@@ -142,8 +142,8 @@ func (s *Server) updateRouteSample(c *gin.Context) {
 			} else if failed > 0 {
 				buildErr = "向量构建失败，请检查向量服务"
 			}
-		} else {
-			_ = s.eng.Route.Reload()
+		} else if !s.reloadRuntimes(c, "route") {
+			return
 		}
 	}
 	s.db.First(&x, id)
@@ -163,8 +163,8 @@ func (s *Server) deleteRouteSample(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
-	if s.eng.Route != nil {
-		_ = s.eng.Route.Reload()
+	if !s.reloadRuntimes(c, "route") {
+		return
 	}
 	c.JSON(200, gin.H{})
 }

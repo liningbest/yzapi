@@ -268,7 +268,9 @@ func (s *Server) createAccount(c *gin.Context) {
 		return
 	}
 	a.Enabled = !disabled
-	_ = s.gw.Reload()
+	if !s.reloadRuntimes(c, "gateway") {
+		return
+	}
 	c.JSON(200, s.accountView(&a))
 }
 
@@ -341,8 +343,9 @@ func (s *Server) updateAccount(c *gin.Context) {
 	if keyChanged || baseChanged {
 		s.gw.ResetHealth(a.ID) // the old cooldown belonged to the old endpoint / credentials
 	}
-	s.vectorChanged()
-	_ = s.gw.Reload()
+	if !s.reloadRuntimes(c, "vector", "gateway") {
+		return
+	}
 	s.db.Preload("Mappings").First(&a, id)
 	c.JSON(200, s.accountView(&a))
 }
@@ -371,8 +374,9 @@ func (s *Server) deleteAccount(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
-	s.vectorChanged()
-	_ = s.gw.Reload()
+	if !s.reloadRuntimes(c, "vector", "gateway") {
+		return
+	}
 	c.JSON(200, gin.H{})
 }
 
@@ -397,8 +401,9 @@ func (s *Server) setAccountEnabled(c *gin.Context) {
 		notFound(c)
 		return
 	}
-	s.vectorChanged()
-	_ = s.gw.Reload()
+	if !s.reloadRuntimes(c, "vector", "gateway") {
+		return
+	}
 	c.JSON(200, gin.H{"enabled": in.Enabled})
 }
 
@@ -753,8 +758,9 @@ func (s *Server) updateAccountMappings(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
-	s.vectorChanged()
-	_ = s.gw.Reload()
+	if !s.reloadRuntimes(c, "vector", "gateway") {
+		return
+	}
 	s.db.Preload("Mappings").First(&a, id)
 	c.JSON(200, s.accountView(&a))
 }

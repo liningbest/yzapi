@@ -153,7 +153,9 @@ func (s *Server) createUserGroup(c *gin.Context) {
 		return
 	}
 	g.Enabled = !disabled
-	_ = s.gw.Reload()
+	if !s.reloadRuntimes(c, "gateway") {
+		return
+	}
 	s.db.Preload("ModelGroups").First(&g, g.ID)
 	c.JSON(200, s.userGroupView(&g, 0))
 }
@@ -208,7 +210,9 @@ func (s *Server) updateUserGroup(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
-	_ = s.gw.Reload()
+	if !s.reloadRuntimes(c, "gateway") {
+		return
+	}
 	s.db.Preload("ModelGroups").First(&g, id)
 	c.JSON(200, s.userGroupView(&g, s.memberCounts()[g.ID]))
 }
@@ -241,7 +245,9 @@ func (s *Server) deleteUserGroup(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
-	_ = s.gw.Reload()
+	if !s.reloadRuntimes(c, "gateway") {
+		return
+	}
 	c.JSON(200, gin.H{})
 }
 
@@ -270,6 +276,8 @@ func (s *Server) setUserGroupEnabled(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
-	_ = s.gw.Reload()
+	if !s.reloadRuntimes(c, "gateway") {
+		return
+	}
 	c.JSON(200, gin.H{"enabled": in.Enabled})
 }

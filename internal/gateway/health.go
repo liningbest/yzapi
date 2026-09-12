@@ -178,12 +178,19 @@ func (h *healthTracker) persist(id uint, seq uint64, upd map[string]any) {
 	}()
 }
 
+// truncate keeps s within n bytes, ellipsis included, without splitting a multi-byte
+// character (the result fits a size:n column on every database).
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	for n > 0 && !utf8.RuneStart(s[n]) {
-		n-- // never split a multi-byte character
+	const ellipsis = "…"
+	cut := n - len(ellipsis)
+	if cut < 0 {
+		cut = 0
 	}
-	return s[:n] + "…"
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + ellipsis
 }

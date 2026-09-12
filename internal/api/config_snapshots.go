@@ -365,29 +365,19 @@ func (s *Server) restoreConfigSnapshot(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
-	// The database now holds the restored configuration. Every runtime copy is refreshed;
-	// a failed price reload is reported at the end (503), never swallowed, and does not
-	// stop the gateway, compliance and route runtimes from picking up the restore.
-	priceErr := s.pricer.Reload()
-	s.vectorChanged()
-	if err := s.gw.Reload(); err != nil {
-		serverError(c, err)
-		return
-	}
-	s.reloadCompliance()
-	if s.eng.Route != nil {
-		_ = s.eng.Route.Reload()
-	}
-	if priceErr != nil {
-		slog.Error("config restore: price table written but runtime reload failed", "snapshot", snap.ID, "err", priceErr)
-		fail(c, 503, "price_reload_failed", "配置已恢复，但价目运行态未刷新，当前请求仍按旧价目计费；请重试或重启网关: "+priceErr.Error())
-		return
-	}
 	if len(missingKeys) > 0 {
 		slog.Warn("config restore: accounts restored disabled because the snapshot carries no key", "snapshot", snap.ID, "accounts", missingKeys)
 	}
 	if len(priceRowsSkipped) > 0 || priceRowsMerged > 0 {
 		slog.Warn("config restore: price rows normalised for the unique key", "snapshot", snap.ID, "skipped", priceRowsSkipped, "merged", priceRowsMerged)
 	}
-	c.JSON(200, gin.H{"restored": snap.ID, "missing_keys": missingKeys, "price_rows_skipped": priceRowsSkipped, "price_rows_merged": priceRowsMerged})
+	out := gin.H{"restored": snap.ID, "missing_keys": missingKeys, "price_rows_skipped": priceRowsSkipped, "price_rows_merged": priceRowsMerged}
+	// The database now holds the restored configuration. Every runtime copy is
+	// refreshed (one failure never skips the others) and every failure is reported in
+	// one 503 that still carries the restore report.
+	if failed := s.refreshRuntimes("prices", "gateway", "vector"); len(failed) > 0 {
+		reloadFailed(c, failed, out)
+		return
+	}
+	c.JSON(200, out)
 }

@@ -117,7 +117,9 @@ func (s *Server) createModelGroup(c *gin.Context) {
 		conflictOrServerError(c, err, "分组名称已存在")
 		return
 	}
-	_ = s.gw.Reload()
+	if !s.reloadRuntimes(c, "gateway") {
+		return
+	}
 	c.JSON(200, s.modelGroupView(&mg))
 }
 
@@ -145,7 +147,9 @@ func (s *Server) updateModelGroup(c *gin.Context) {
 		conflictOrServerError(c, err, "分组名称已存在")
 		return
 	}
-	_ = s.gw.Reload()
+	if !s.reloadRuntimes(c, "gateway") {
+		return
+	}
 	s.db.First(&mg, id)
 	c.JSON(200, s.modelGroupView(&mg))
 }
@@ -197,6 +201,8 @@ func (s *Server) deleteModelGroup(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
-	_ = s.gw.Reload()
+	if !s.reloadRuntimes(c, "gateway") {
+		return
+	}
 	c.JSON(200, gin.H{})
 }

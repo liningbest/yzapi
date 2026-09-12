@@ -176,18 +176,9 @@ func (l *vecLimiter) current() int {
 	return l.inflight
 }
 
-// vectorChanged is called whenever the vector account, its mappings or the vector
-// settings change: it drops the cached client/embeddings and re-evaluates sample
-// compatibility in both engines.
-func (s *Server) vectorChanged() {
-	s.InvalidateVector()
-	if s.eng.Route != nil {
-		_ = s.eng.Route.Reload()
-	}
-	if s.eng.Compliance != nil {
-		_ = s.eng.Compliance.Reload()
-	}
-}
+// Whenever the vector account, its mappings or the vector settings change, handlers
+// call reloadRuntimes(c, "vector"): it drops the cached client/embeddings and
+// re-evaluates sample compatibility in both engines, reporting a failed refresh.
 
 func (s *Server) InvalidateVector() {
 	s.vec.mu.Lock()
@@ -401,7 +392,9 @@ func (s *Server) putVector(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
-	s.vectorChanged()
+	if !s.reloadRuntimes(c, "vector") {
+		return
+	}
 	c.JSON(200, in)
 }
 
@@ -488,8 +481,8 @@ func (s *Server) putCompliance(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
-	if s.eng.Compliance != nil {
-		_ = s.eng.Compliance.Reload()
+	if !s.reloadRuntimes(c, "compliance") {
+		return
 	}
 	c.JSON(200, in)
 }
