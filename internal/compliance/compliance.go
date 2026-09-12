@@ -401,17 +401,27 @@ func (e *Engine) BuildVectors(ctx context.Context, ids []uint) (built int, faile
 	// the write-back safe against A→B→A sequences of a repeatable identity.
 	token := model.NewBuildToken()
 	claim := e.db.Model(&model.AuditSample{})
+	read := e.db.Model(&model.AuditSample{}).Select("id", "text", "text_hash").Where("build_token = ?", token)
 	if ids != nil {
 		claim = claim.Where("id IN ?", ids)
+		read = read.Where("id IN ?", ids) // primary-key bounded: no scan of the whole table
 	} else {
 		claim = claim.Where("1 = 1")
 	}
-	if err = claim.Update("build_token", token).Error; err != nil {
+	res := claim.UpdateColumn("build_token", token) // UpdateColumn: a claim is not an edit, updated_at stays
+	if err = res.Error; err != nil {
 		return 0, 0, err
 	}
+	claimed := int(res.RowsAffected)
 	var rows []model.AuditSample
-	if err = e.db.Model(&model.AuditSample{}).Select("id", "text", "text_hash").Where("build_token = ?", token).Order("id").Find(&rows).Error; err != nil {
+	if err = read.Order("id").Find(&rows).Error; err != nil {
 		return 0, 0, err
+	}
+	// Conservation: every row this build claimed is accounted for. A row re-claimed by
+	// a later build between the claim and this read is not ours any more and counts as
+	// failed here (the later build owns it), never as a silent success.
+	if lost := claimed - len(rows); lost > 0 {
+		failed += lost
 	}
 	// The stored vectors are only served once the index is reloaded; a failed reload
 	// is part of the result (joined with any build error, never replacing it).
