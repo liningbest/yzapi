@@ -91,16 +91,21 @@ func (s *Server) createPrice(c *gin.Context) {
 		badRequest(c, msg)
 		return
 	}
+	disabled := in.Enabled != nil && !*in.Enabled // decided before Create: gorm writes default:true back into the struct
 	p := model.ModelPrice{Pattern: in.Pattern, Provider: in.Provider, InputPerM: in.InputPerM, OutputPerM: in.OutputPerM,
-		CachedInputPerM: in.CachedInputPerM, CacheWritePerM: in.CacheWritePerM, Currency: in.Currency, Enabled: in.Enabled == nil || *in.Enabled, Note: in.Note}
+		CachedInputPerM: in.CachedInputPerM, CacheWritePerM: in.CacheWritePerM, Currency: in.Currency, Enabled: !disabled, Note: in.Note}
 	if err := s.db.Create(&p).Error; err != nil {
 		if !priceKeyConflict(c, err) {
 			serverError(c, err)
 		}
 		return
 	}
-	if !p.Enabled {
-		s.db.Model(&p).Update("enabled", false)
+	if disabled {
+		if err := s.db.Model(&p).Update("enabled", false).Error; err != nil {
+			serverError(c, err)
+			return
+		}
+		p.Enabled = false
 	}
 	if !s.reloadPrices(c) {
 		return
@@ -241,6 +246,7 @@ const (
 	importMaxBytes  = 32 << 20
 	importPlanTTL   = 30 * time.Minute
 	importPlanCap   = 16
+	importRowBudget = 50000 // rows held across all pending previews; oldest evicted first
 	importSourceUA  = "yzapi-gateway/1.0"
 	importFetchWait = 60 * time.Second
 )
@@ -262,6 +268,7 @@ type storedImport struct {
 	opts    pricing.ImportOptions
 	by      string
 	created time.Time
+	claimed bool // an apply is in progress; a second apply of the same id is refused
 }
 
 type importPlans struct {
@@ -274,37 +281,64 @@ type importPlans struct {
 
 func newImportPlans() *importPlans { return &importPlans{plans: map[string]*storedImport{}} }
 
-func (ip *importPlans) put(si *storedImport) {
-	ip.mu.Lock()
-	defer ip.mu.Unlock()
+// sweepLocked drops expired previews and, when over the count or row budget, the
+// oldest unclaimed ones. Caller holds mu.
+func (ip *importPlans) sweepLocked(extraRows int) {
 	now := time.Now()
+	rows := extraRows
 	for id, p := range ip.plans {
-		if now.Sub(p.created) > importPlanTTL {
+		if now.Sub(p.created) > importPlanTTL && !p.claimed {
 			delete(ip.plans, id)
+			continue
 		}
+		rows += len(p.catalog.Rows)
 	}
-	for len(ip.plans) >= importPlanCap {
+	for len(ip.plans) >= importPlanCap || rows > importRowBudget {
 		oldest := ""
 		for id, p := range ip.plans {
+			if p.claimed {
+				continue
+			}
 			if oldest == "" || p.created.Before(ip.plans[oldest].created) {
 				oldest = id
 			}
 		}
+		if oldest == "" {
+			return
+		}
+		rows -= len(ip.plans[oldest].catalog.Rows)
 		delete(ip.plans, oldest)
 	}
+}
+
+func (ip *importPlans) put(si *storedImport) {
+	ip.mu.Lock()
+	defer ip.mu.Unlock()
+	ip.sweepLocked(len(si.catalog.Rows))
 	ip.plans[si.id] = si
 }
 
-// get returns a stored preview that has not expired; it stays stored until done().
-func (ip *importPlans) get(id string) *storedImport {
+// claim atomically takes a stored preview for applying: absent, expired or already
+// claimed ids return nil, so two concurrent applies of one id cannot both proceed.
+// release() puts it back on failure; done() removes it after a successful write.
+func (ip *importPlans) claim(id string) *storedImport {
 	ip.mu.Lock()
 	defer ip.mu.Unlock()
+	ip.sweepLocked(0)
 	p, ok := ip.plans[id]
-	if !ok || time.Since(p.created) > importPlanTTL {
-		delete(ip.plans, id)
+	if !ok || p.claimed || time.Since(p.created) > importPlanTTL {
 		return nil
 	}
+	p.claimed = true
 	return p
+}
+
+func (ip *importPlans) release(id string) {
+	ip.mu.Lock()
+	if p, ok := ip.plans[id]; ok {
+		p.claimed = false
+	}
+	ip.mu.Unlock()
 }
 
 // done removes a plan once it has been applied: a plan id is single-use.
@@ -312,6 +346,17 @@ func (ip *importPlans) done(id string) {
 	ip.mu.Lock()
 	delete(ip.plans, id)
 	ip.mu.Unlock()
+}
+
+// pending reports how many previews are stored and how many rows they hold.
+func (ip *importPlans) pending() (plans, rows int) {
+	ip.mu.Lock()
+	defer ip.mu.Unlock()
+	for _, p := range ip.plans {
+		plans++
+		rows += len(p.catalog.Rows)
+	}
+	return
 }
 
 func newPlanID() string {
@@ -443,27 +488,31 @@ func (s *Server) importApply(c *gin.Context) {
 		badRequest(c, "缺少 plan_id：请先预览")
 		return
 	}
-	si := s.imports.get(strings.TrimSpace(in.PlanID))
+	si := s.imports.claim(strings.TrimSpace(in.PlanID))
 	if si == nil {
-		fail(c, 409, "import_plan_expired", "预览已过期或已被使用，请重新预览")
+		fail(c, 409, "import_plan_expired", "预览已过期、正在应用或已被使用，请重新预览")
 		return
 	}
 	if in.SHA256 != "" && !strings.EqualFold(in.SHA256, si.sha) {
+		s.imports.release(si.id)
 		fail(c, 409, "import_plan_mismatch", "预览内容与应用请求不一致，请重新预览")
 		return
 	}
 	s.imports.applying.Lock()
 	defer s.imports.applying.Unlock()
 	if err := s.snapshotConfig(cur(c).Username, "POST "+c.Request.URL.Path); err != nil {
+		s.imports.release(si.id) // nothing written: the same preview may be retried
 		serverError(c, err)
 		return
 	}
 	plan, err := pricing.PlanImportWith(s.db, si.catalog, si.opts)
 	if err != nil {
+		s.imports.release(si.id)
 		serverError(c, err)
 		return
 	}
 	if err := plan.Apply(s.db); err != nil {
+		s.imports.release(si.id)
 		if !priceKeyConflict(c, err) {
 			serverError(c, err)
 		}

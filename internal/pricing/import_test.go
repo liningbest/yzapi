@@ -258,3 +258,46 @@ func TestR126ImportKeepsProviderPatternUnique(t *testing.T) {
 		t.Fatalf("manual row wins over built-in and keys are lower-cased: %+v", left)
 	}
 }
+
+// R127-05: an invalid entry never shadows a later valid entry for the same key, in
+// either format; a later invalid duplicate of a valid entry is counted as invalid.
+func TestR127InvalidDuplicateDoesNotSuppressValidRow(t *testing.T) {
+	cat, err := ParseCatalog([]byte(`{"schemaVersion":1,"models":[
+		{"id":"r127-dup","inputPer1M":-1,"outputPer1M":2},
+		{"id":"R127-DUP","inputPer1M":1,"outputPer1M":2},
+		{"id":"r127-dup","inputPer1M":3,"outputPer1M":3}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cat.Rows) != 1 || cat.Rows[0].Pattern != "r127-dup" || cat.Rows[0].InputPerM != 1 || cat.Invalid != 1 || cat.Skipped != 1 {
+		t.Fatalf("easycpa array: rows=%+v invalid=%d skipped=%d", cat.Rows, cat.Invalid, cat.Skipped)
+	}
+	cat, err = ParseCatalog([]byte(`{"schemaVersion":1,"models":{"R127-Obj":{"inputPer1M":-1,"outputPer1M":2},"r127-obj":{"inputPer1M":2,"outputPer1M":2}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cat.Rows) != 1 || cat.Rows[0].InputPerM != 2 || cat.Invalid != 1 {
+		t.Fatalf("easycpa object: rows=%+v invalid=%d skipped=%d", cat.Rows, cat.Invalid, cat.Skipped)
+	}
+	cat, err = ParseCatalog([]byte(`{
+		"openai/r127-lite": {"litellm_provider":"openai","mode":"chat","input_cost_per_token":-1,"output_cost_per_token":1e-06},
+		"r127-lite": {"litellm_provider":"openai","mode":"chat","input_cost_per_token":1e-06,"output_cost_per_token":1e-06}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cat.Rows) != 1 || cat.Rows[0].Pattern != "r127-lite" || cat.Rows[0].InputPerM != 1 || cat.Invalid != 1 {
+		t.Fatalf("litellm prefix collision: rows=%+v invalid=%d skipped=%d", cat.Rows, cat.Invalid, cat.Skipped)
+	}
+}
+
+// NormalizeRows is what a pre-1.0.27 snapshot goes through on restore.
+func TestR127NormalizeRows(t *testing.T) {
+	kept, skipped, merged := NormalizeRows([]model.ModelPrice{
+		{ID: 1, Pattern: "A-Model", Provider: "OpenAI", InputPerM: 1, OutputPerM: 1, Currency: "usd"},
+		{ID: 2, Pattern: "a-model", Provider: "openai", InputPerM: 2, OutputPerM: 2, Currency: "USD", Builtin: true},
+		{ID: 3, Pattern: "b-model", Provider: "openai", InputPerM: 1, OutputPerM: 1, Currency: "EUR"},
+	})
+	if len(kept) != 1 || kept[0].ID != 1 || kept[0].Pattern != "a-model" || kept[0].Provider != "openai" || kept[0].Currency != "USD" || merged != 1 || len(skipped) != 1 {
+		t.Fatalf("kept=%+v skipped=%v merged=%d", kept, skipped, merged)
+	}
+}

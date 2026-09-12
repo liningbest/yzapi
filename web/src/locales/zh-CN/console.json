@@ -213,12 +213,14 @@
     "opencode": {
       "s1": "把下面的内容写进 ~/.config/opencode/opencode.json",
       "s2": "配置里 Key 写成 {env:YZAPI_API_KEY}，再在 shell 里导出该变量（不要把 Key 明文写进配置文件）",
-      "s3": "启动 opencode，用 /models 选择 yzapi 下的模型"
+      "s3": "启动 opencode，用 /models 选择 yzapi 下的模型",
+      "s4": "以上是 OpenCode 稳定版（V1）的 provider 结构；OpenCode V2 改为 providers / package / settings，请按你装的版本对照官方文档改键名"
     },
     "geminiCli": {
       "s1": "导出下面两个环境变量",
       "s2": "用 -m 指定模型，或写进 ~/.gemini/settings.json",
-      "s3": "该入口走原生 Gemini 协议，网关也支持把它转到其他供应商的模型"
+      "s3": "该入口走原生 Gemini 协议，网关也支持把它转到其他供应商的模型",
+      "s4": "Gemini CLI 只接受 HTTPS 的 Base URL（localhost 例外），网关请配置 HTTPS 域名"
     },
     "cline": {
       "s1": "在插件设置里选择 API Provider",

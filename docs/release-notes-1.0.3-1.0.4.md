@@ -257,3 +257,11 @@
 - 价格行 `(provider, pattern)` 唯一（小写存储，启动时去重并建唯一索引），新增 / 修改撞键 409。
 - 客户端识别按整个产品名与 Referer 主机名匹配，不再用子串；`by_client` 与用量汇总使用同一小时窗口。
 - 接入指引 OpenCode 示例改用 `{env:YZAPI_API_KEY}`。
+
+## 1.0.28：1.0.27 验收修复（`docs/changes-2026-09-12-client-guide-priceimport.md` 第 8 节）
+
+- 价目同步的 `plan_id` 原子领取（并发应用只有一个成功，失败可重试）；预览缓存加行数预算。
+- 升级前的配置快照恢复价目时统一小写、按规则合并同键行、跳过并报告无效行；恢复后价目重载失败返回 503。
+- 创建价目 / 用户组 / 账号 / 策略组 / 敏感词 / 审计样本时 `enabled:false` 真正生效。
+- 目录解析里无效条目不再遮蔽同键的有效条目；PostgreSQL 上唯一索引迁移加 advisory lock。
+- 接入指引：OpenCode V1/V2 结构说明、Gemini CLI 仅 HTTPS 说明。

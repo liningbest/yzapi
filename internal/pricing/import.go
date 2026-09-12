@@ -74,16 +74,51 @@ func ValidateRow(r *CatalogRow) string {
 
 const invalidRowsListed = 50
 
-// add validates a row and files it as a row or an invalid entry.
-func (c *Catalog) add(r CatalogRow) {
+// add validates a row and files it as a row or an invalid entry; it reports whether the
+// row entered the catalog so callers only mark a key as seen for rows that did (an
+// invalid entry must not shadow a later valid one for the same key).
+func (c *Catalog) add(r CatalogRow) bool {
 	if msg := ValidateRow(&r); msg != "" {
 		c.Invalid++
 		if len(c.InvalidRows) < invalidRowsListed {
 			c.InvalidRows = append(c.InvalidRows, r.Pattern+": "+msg)
 		}
-		return
+		return false
 	}
 	c.Rows = append(c.Rows, r)
+	return true
+}
+
+// NormalizeRows prepares price rows written before the unique key existed (a
+// configuration snapshot, for example) for insertion: every row is validated and
+// lower-cased like a manual row, rows failing validation are dropped with a reason,
+// and rows sharing a key collapse to the preferred one. merged counts the rows dropped
+// by de-duplication.
+func NormalizeRows(rows []model.ModelPrice) (kept []model.ModelPrice, skipped []string, merged int) {
+	valid := make([]model.ModelPrice, 0, len(rows))
+	for _, p := range rows {
+		r := CatalogRow{Pattern: p.Pattern, Provider: p.Provider, InputPerM: p.InputPerM, OutputPerM: p.OutputPerM,
+			CachedPerM: p.CachedInputPerM, WritePerM: p.CacheWritePerM, Currency: p.Currency, Note: p.Note}
+		if msg := ValidateRow(&r); msg != "" {
+			skipped = append(skipped, fmt.Sprintf("%s/%s: %s", p.Provider, p.Pattern, msg))
+			continue
+		}
+		p.Pattern, p.Provider, p.Currency, p.Note = r.Pattern, r.Provider, r.Currency, r.Note
+		valid = append(valid, p)
+	}
+	byKey, drop := indexPrices(valid)
+	dropped := map[uint]bool{}
+	for _, id := range drop {
+		dropped[id] = true
+	}
+	for _, p := range valid {
+		if dropped[p.ID] && byKey[priceKey(p.Provider, p.Pattern)].ID != p.ID {
+			merged++
+			continue
+		}
+		kept = append(kept, p)
+	}
+	return kept, skipped, merged
 }
 
 // KnownSources are the catalogs the UI offers by name.
@@ -170,7 +205,6 @@ func parseEasyCPA(data []byte) (*Catalog, error) {
 			cat.Skipped++
 			continue
 		}
-		seen[id] = true
 		row := CatalogRow{Pattern: id, Provider: "", InputPerM: *m.Input, OutputPerM: *m.Output, Currency: "USD", Note: "导入自 EasyCLIProxyAPI " + in.UpdatedAt}
 		if m.CacheRd != nil {
 			row.CachedPerM = *m.CacheRd
@@ -178,7 +212,9 @@ func parseEasyCPA(data []byte) (*Catalog, error) {
 		if m.CacheCrt != nil {
 			row.WritePerM = *m.CacheCrt
 		}
-		cat.add(row)
+		if cat.add(row) {
+			seen[id] = true
+		}
 	}
 	return cat, nil
 }
@@ -239,7 +275,6 @@ func parseLiteLLM(data []byte) (*Catalog, error) {
 			cat.Skipped++
 			continue
 		}
-		seen[prov+"|"+name] = true
 		note := "导入自 LiteLLM"
 		if e.Source != "" {
 			note += " · " + e.Source
@@ -247,8 +282,10 @@ func parseLiteLLM(data []byte) (*Catalog, error) {
 		if len(note) > 250 {
 			note = note[:250]
 		}
-		cat.add(CatalogRow{Pattern: name, Provider: prov, InputPerM: perM(e.In), OutputPerM: perM(e.Out),
-			CachedPerM: perM(e.CacheRead), WritePerM: perM(e.CacheWrite), Currency: "USD", Note: note})
+		if cat.add(CatalogRow{Pattern: name, Provider: prov, InputPerM: perM(e.In), OutputPerM: perM(e.Out),
+			CachedPerM: perM(e.CacheRead), WritePerM: perM(e.CacheWrite), Currency: "USD", Note: note}) {
+			seen[prov+"|"+name] = true
+		}
 	}
 	return cat, nil
 }

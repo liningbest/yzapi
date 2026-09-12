@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -97,7 +98,12 @@ func New(cfg *config.Config, db *gorm.DB, gw *gateway.Gateway, st *settings.Stor
 	gw.SetPricer(pr)
 	convert.SetReasoningToContent(st.Get().Basic.ReasoningToContent)
 	st.OnApply(func(all settings.All) {
-		_ = pr.Reload()
+		// Settings changes only affect the display currency and rate; the price rows
+		// themselves are reloaded by every write path with reloadPrices. A failure here
+		// is still logged rather than dropped.
+		if err := pr.Reload(); err != nil {
+			slog.Error("price table reload after settings change failed; runtime keeps the previous copy", "err", err)
+		}
 		convert.SetReasoningToContent(all.Basic.ReasoningToContent)
 	})
 	return &Server{cfg: cfg, db: db, gw: gw, st: st, cipher: cipher, eng: eng, auth: a, version: version, started: time.Now(), pricer: pr, imports: newImportPlans()}, nil

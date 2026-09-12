@@ -213,12 +213,14 @@
     "opencode": {
       "s1": "Write the block below to ~/.config/opencode/opencode.json",
       "s2": "Keep the key out of the file: the config uses {env:YZAPI_API_KEY}; export that variable in your shell",
-      "s3": "Start opencode and pick the yzapi model with /models"
+      "s3": "Start opencode and pick the yzapi model with /models",
+      "s4": "This is the OpenCode stable (V1) provider layout; OpenCode V2 uses providers / package / settings, so check the docs for the version you installed"
     },
     "geminiCli": {
       "s1": "Export the two environment variables below",
       "s2": "Pick the model with -m or in ~/.gemini/settings.json",
-      "s3": "This entry speaks the native Gemini protocol; the gateway can also route it to other providers’ models"
+      "s3": "This entry speaks the native Gemini protocol; the gateway can also route it to other providers’ models",
+      "s4": "Gemini CLI only accepts an HTTPS base URL (localhost excepted), so point it at the gateway's HTTPS domain"
     },
     "cline": {
       "s1": "Choose the API Provider in the extension settings",

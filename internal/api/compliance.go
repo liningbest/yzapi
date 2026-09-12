@@ -104,12 +104,17 @@ func (s *Server) createPolicyGroup(c *gin.Context) {
 		return
 	}
 	p := model.PolicyGroup{Name: in.Name, Action: in.Action, RiskLevel: in.RiskLevel, Enabled: in.Enabled == nil || *in.Enabled, Description: in.Description}
+	disabled := !p.Enabled // decided before Create: gorm writes default:true back into the struct
 	if err := s.db.Create(&p).Error; err != nil {
 		conflictOrServerError(c, err, "策略组名称已存在")
 		return
 	}
-	if !p.Enabled {
-		s.db.Model(&p).Update("enabled", false)
+	if disabled {
+		if err := s.db.Model(&p).Update("enabled", false).Error; err != nil {
+			serverError(c, err)
+			return
+		}
+		p.Enabled = false
 	}
 	s.reloadCompliance()
 	c.JSON(200, policyView(&p, 0, 0))
@@ -259,12 +264,17 @@ func (s *Server) createWord(c *gin.Context) {
 		return
 	}
 	w := model.SensitiveWord{PolicyGroupID: in.PolicyGroupID, Word: in.Word, Note: in.Note, Enabled: in.Enabled == nil || *in.Enabled}
+	disabled := !w.Enabled // decided before Create: gorm writes default:true back into the struct
 	if err := s.db.Create(&w).Error; err != nil {
 		serverError(c, err)
 		return
 	}
-	if !w.Enabled {
-		s.db.Model(&w).Update("enabled", false)
+	if disabled {
+		if err := s.db.Model(&w).Update("enabled", false).Error; err != nil {
+			serverError(c, err)
+			return
+		}
+		w.Enabled = false
 	}
 	s.reloadCompliance()
 	s.db.Preload("PolicyGroup").First(&w, w.ID)
@@ -415,12 +425,17 @@ func (s *Server) createAuditSample(c *gin.Context) {
 		return
 	}
 	x := model.AuditSample{PolicyGroupID: in.PolicyGroupID, Text: in.Text, Note: in.Note, Enabled: in.Enabled == nil || *in.Enabled}
+	disabled := !x.Enabled // decided before Create: gorm writes default:true back into the struct
 	if err := s.db.Create(&x).Error; err != nil {
 		serverError(c, err)
 		return
 	}
-	if !x.Enabled {
-		s.db.Model(&x).Update("enabled", false)
+	if disabled {
+		if err := s.db.Model(&x).Update("enabled", false).Error; err != nil {
+			serverError(c, err)
+			return
+		}
+		x.Enabled = false
 	}
 	var buildErr string
 	if in.BuildVector && s.eng.Compliance != nil {

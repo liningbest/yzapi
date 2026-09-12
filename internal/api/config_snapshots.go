@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"yzapi/internal/model"
+	"yzapi/internal/pricing"
 	"yzapi/internal/settings"
 )
 
@@ -250,6 +251,8 @@ func (s *Server) restoreConfigSnapshot(c *gin.Context) {
 		return
 	}
 	var missingKeys []string
+	var priceRowsSkipped []string
+	var priceRowsMerged int
 	err = s.st.WithTx(func(tx *gorm.DB, _ settings.All) error {
 		// v1 snapshots carry no keys: keep the key the same account (by id) has now, and
 		// restore an account whose key is nowhere to be found disabled rather than with an
@@ -315,8 +318,14 @@ func (s *Server) restoreConfigSnapshot(c *gin.Context) {
 			if err := tx.Exec("DELETE FROM model_prices").Error; err != nil {
 				return err
 			}
-			for i := range *p.Prices {
-				pr := (*p.Prices)[i]
+			// A snapshot written before the unique (provider, pattern) key existed may
+			// hold rows that only differ in case, or rows the current validation rejects:
+			// normalise and de-duplicate exactly like the upgrade migration does, and
+			// report what was dropped instead of restoring a table that breaks the key.
+			rows, skipped, merged := pricing.NormalizeRows(*p.Prices)
+			priceRowsSkipped, priceRowsMerged = skipped, merged
+			for i := range rows {
+				pr := rows[i]
 				disabled := !pr.Enabled // read before Create: gorm writes the default:true back into the struct
 				if err := tx.Create(&pr).Error; err != nil {
 					return err
@@ -356,7 +365,11 @@ func (s *Server) restoreConfigSnapshot(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
-	_ = s.pricer.Reload()
+	// The database now holds the restored table; a failed price reload would leave
+	// requests priced from the old copy, so it is reported, never swallowed.
+	if !s.reloadPrices(c) {
+		return
+	}
 	s.vectorChanged()
 	if err := s.gw.Reload(); err != nil {
 		serverError(c, err)
@@ -369,5 +382,8 @@ func (s *Server) restoreConfigSnapshot(c *gin.Context) {
 	if len(missingKeys) > 0 {
 		slog.Warn("config restore: accounts restored disabled because the snapshot carries no key", "snapshot", snap.ID, "accounts", missingKeys)
 	}
-	c.JSON(200, gin.H{"restored": snap.ID, "missing_keys": missingKeys})
+	if len(priceRowsSkipped) > 0 || priceRowsMerged > 0 {
+		slog.Warn("config restore: price rows normalised for the unique key", "snapshot", snap.ID, "skipped", priceRowsSkipped, "merged", priceRowsMerged)
+	}
+	c.JSON(200, gin.H{"restored": snap.ID, "missing_keys": missingKeys, "price_rows_skipped": priceRowsSkipped, "price_rows_merged": priceRowsMerged})
 }

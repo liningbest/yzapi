@@ -91,14 +91,28 @@ func migrateModelPriceKey(db *gorm.DB) error {
 	if !m.HasTable(&model.ModelPrice{}) || m.HasIndex(&model.ModelPrice{}, "uq_model_prices_key") {
 		return nil
 	}
-	removed, err := pricing.DedupePrices(db)
-	if err != nil {
-		return err
-	}
-	if removed > 0 {
-		slog.Warn("removed duplicate price rows before adding the unique (provider, pattern) index", "rows", removed)
-	}
-	return db.Exec("CREATE UNIQUE INDEX uq_model_prices_key ON model_prices (provider, pattern)").Error
+	// Several instances may start against one PostgreSQL at once: the whole
+	// normalise → de-duplicate → index step runs under an advisory lock and re-checks
+	// the index inside it, so only the first instance does the work and the others
+	// find it done. SQLite has a single writer, so the transaction itself serialises.
+	return db.Transaction(func(tx *gorm.DB) error {
+		if tx.Dialector.Name() == "postgres" {
+			if err := tx.Exec("SELECT pg_advisory_xact_lock(7461226)").Error; err != nil { // arbitrary constant: model_prices key migration
+				return err
+			}
+			if tx.Migrator().HasIndex(&model.ModelPrice{}, "uq_model_prices_key") {
+				return nil
+			}
+		}
+		removed, err := pricing.DedupePrices(tx)
+		if err != nil {
+			return err
+		}
+		if removed > 0 {
+			slog.Warn("removed duplicate price rows before adding the unique (provider, pattern) index", "rows", removed)
+		}
+		return tx.Exec("CREATE UNIQUE INDEX IF NOT EXISTS uq_model_prices_key ON model_prices (provider, pattern)").Error
+	})
 }
 
 // migrateUsageHourlyAttempts prepares databases where usage_hourlies.attempts was added

@@ -64,7 +64,7 @@ export default function Guide() {
         ],
       },
       opencode: {
-        steps: [t('console:guide.opencode.s1'), t('console:guide.opencode.s2'), t('console:guide.opencode.s3')],
+        steps: [t('console:guide.opencode.s1'), t('console:guide.opencode.s2'), t('console:guide.opencode.s3'), t('console:guide.opencode.s4')],
         blocks: [
           {
             title: '~/.config/opencode/opencode.json',
@@ -89,7 +89,7 @@ export default function Guide() {
         ],
       },
       'gemini-cli': {
-        steps: [t('console:guide.geminiCli.s1'), t('console:guide.geminiCli.s2'), t('console:guide.geminiCli.s3')],
+        steps: [t('console:guide.geminiCli.s1'), t('console:guide.geminiCli.s2'), t('console:guide.geminiCli.s3'), t('console:guide.geminiCli.s4')],
         blocks: [
           {
             title: t('console:guide.orShell'),
