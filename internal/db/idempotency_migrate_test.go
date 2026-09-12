@@ -10,6 +10,9 @@ import (
 	"gorm.io/gorm/logger"
 
 	"yzapi/internal/model"
+	"yzapi/internal/routing"
+	"yzapi/internal/settings"
+	"yzapi/internal/vector"
 )
 
 // A database from before the create idempotency keys: duplicate account names are
@@ -255,4 +258,113 @@ func TestR135MigrationKeepsUsableVectorIdentity(t *testing.T) {
 			t.Fatalf("without a configured identity the newest vector survives: route=%+v audit=%+v", r, a)
 		}
 	})
+}
+
+func r136LoadRoute(t *testing.T, db *gorm.DB, identity string) int {
+	t.Helper()
+	if err := db.AutoMigrate(model.All()...); err != nil {
+		t.Fatal(err)
+	}
+	st, err := settings.New(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng := routing.New(db, st, nil)
+	if err := eng.SetVectorIdentity(func() string { return identity }); err != nil {
+		t.Fatal(err)
+	}
+	return len(eng.Samples())
+}
+
+// R136-01: the migration resolves the identity the runtime really uses (account base
+// URL and mapped upstream model) and treats legacy empty identities as compatible.
+func TestR136MigrationResolvesActualVectorIdentity(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{Logger: logger.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE route_samples (id integer primary key autoincrement, label text, text text, threshold real, note text, vector blob, vector_dim integer, vector_model text)`,
+		`CREATE TABLE settings (key text primary key, value text, updated_at datetime)`,
+		`INSERT INTO settings (key,value) VALUES ('vector','{"account_id":7,"model":"embed"}')`,
+		`CREATE TABLE accounts (id integer primary key autoincrement, name text, provider text, type text, base_url text, api_key_enc text, protocols text, enabled numeric)`,
+		`INSERT INTO accounts (id,name,provider,type,base_url,api_key_enc,protocols,enabled) VALUES (7,'vec','custom','embedding','http://current','k','[]',1)`,
+		`CREATE TABLE model_mappings (id integer primary key autoincrement, account_id integer, request_model text, upstream_model text)`,
+		`INSERT INTO model_mappings (account_id,request_model,upstream_model) VALUES (7,'embed','provider-embed-v2')`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatal(stmt, err)
+		}
+	}
+	if err := db.Exec(`INSERT INTO route_samples (id,label,text,threshold,note,vector,vector_dim,vector_model) VALUES (1,'simple','same',0,'current',?,2,'7|http://current|provider-embed-v2'),(2,'simple','same',0,'stale',?,2,'7|http://old|embed'),(3,'simple','legacy',0,'legacy',?,2,''),(4,'simple','legacy',0,'wrong',?,2,'8|http://old|other')`,
+		vector.Encode([]float32{1, 0}), vector.Encode([]float32{0, 1}), vector.Encode([]float32{1, 0}), vector.Encode([]float32{0, 1})).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateIdempotencyKeys(db); err != nil {
+		t.Fatal(err)
+	}
+	if got := r136LoadRoute(t, db, "7|http://current|provider-embed-v2"); got != 2 {
+		t.Fatalf("the resolved-identity vector and the legacy vector must survive: loaded=%d", got)
+	}
+	var ids []uint
+	db.Model(&model.RouteSample{}).Order("id").Pluck("id", &ids)
+	if len(ids) != 2 || ids[0] != 1 || ids[1] != 3 {
+		t.Fatalf("survivors: %v", ids)
+	}
+	// A malformed vector setting aborts the destructive migration.
+	db2, _ := gorm.Open(sqlite.Open("file:"+t.Name()+"2?mode=memory&cache=shared"), &gorm.Config{Logger: logger.Discard})
+	for _, stmt := range []string{
+		`CREATE TABLE route_samples (id integer primary key autoincrement, label text, text text, threshold real, note text, vector blob, vector_dim integer, vector_model text)`,
+		`INSERT INTO route_samples (label,text,threshold,note,vector,vector_dim,vector_model) VALUES ('simple','same',0,'',x'0100',2,'a'),('simple','same',0,'',x'0001',2,'b')`,
+		`CREATE TABLE settings (key text primary key, value text, updated_at datetime)`,
+		`INSERT INTO settings (key,value) VALUES ('vector','not json')`,
+	} {
+		if err := db2.Exec(stmt).Error; err != nil {
+			t.Fatal(stmt, err)
+		}
+	}
+	if err := migrateIdempotencyKeys(db2); err == nil {
+		t.Fatal("a malformed vector setting must abort the migration instead of guessing")
+	}
+	var n int64
+	db2.Raw("SELECT COUNT(*) FROM route_samples").Scan(&n)
+	if n != 2 {
+		t.Fatalf("aborted migration must not delete: %d", n)
+	}
+}
+
+// R136-02: a same-named index that is not the correct unique index is replaced, for
+// every key table.
+func TestR136MigrationVerifiesIndexIsUnique(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{Logger: logger.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE accounts (id integer primary key autoincrement, name text, provider text, type text, base_url text, api_key_enc text, protocols text, enabled numeric)`,
+		`CREATE INDEX uq_accounts_name ON accounts (name)`,
+		`INSERT INTO accounts (name,provider,type,base_url,api_key_enc,protocols,enabled) VALUES ('dup','openai','text','http://a','k','[]',1),('dup','openai','text','http://b','k','[]',1)`,
+		`CREATE TABLE sensitive_words (id integer primary key autoincrement, policy_group_id integer, word text, note text, enabled numeric)`,
+		`CREATE UNIQUE INDEX uq_sensitive_words_key ON sensitive_words (word)`, // unique but the wrong columns
+		`INSERT INTO sensitive_words (policy_group_id, word, note, enabled) VALUES (1,'w','',1)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatal(stmt, err)
+		}
+	}
+	if err := migrateIdempotencyKeys(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO accounts (name,provider,type,base_url,api_key_enc,protocols,enabled) VALUES ('dup','openai','text','http://c','k','[]',1)`).Error; err == nil {
+		t.Fatal("the non-unique same-name index must have been replaced by the unique key")
+	}
+	if err := db.Exec(`INSERT INTO sensitive_words (policy_group_id, word, note, enabled) VALUES (2,'w','',1)`).Error; err != nil {
+		t.Fatalf("the wrong-column unique index must have been replaced: same word in another group is allowed: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO sensitive_words (policy_group_id, word, note, enabled) VALUES (1,'w','',1)`).Error; err == nil {
+		t.Fatal("duplicate (group, word) must be refused")
+	}
+	if err := db.AutoMigrate(&model.Account{}, &model.SensitiveWord{}); err != nil {
+		t.Fatal(err)
+	}
 }

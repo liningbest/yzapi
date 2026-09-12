@@ -106,15 +106,13 @@ func (s *Server) vectorClient(accountID uint, mdl string) (*vector.Client, strin
 		return nil, "所选账号已禁用"
 	}
 	key, _ := s.cipher.Decrypt(a.APIKeyEnc)
-	if mdl == "" {
-		mdl = a.TestModel
+	// The upstream model (test model fallback, then the account's mapping) comes from
+	// the shared identity rule, so the runtime key and the upgrade migration agree.
+	r, err := vector.Identity(s.db, a.ID, mdl)
+	if err != nil || !r.Live {
+		return nil, "向量账号无法解析"
 	}
-	// map request model to upstream name if a mapping exists
-	var mm model.ModelMapping
-	if err := s.db.Where("account_id = ? AND request_model = ?", a.ID, mdl).First(&mm).Error; err == nil && mm.UpstreamModel != "" {
-		mdl = mm.UpstreamModel
-	}
-	return vector.New(a.BaseURL, key, mdl, s.gw.HTTPClient()), ""
+	return vector.New(r.BaseURL, key, r.Upstream, s.gw.HTTPClient()), ""
 }
 
 // vectorRuntime caches the embedding client and recent embeddings, and bounds the number

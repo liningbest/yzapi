@@ -18,6 +18,7 @@ import (
 	"yzapi/internal/config"
 	"yzapi/internal/model"
 	"yzapi/internal/pricing"
+	"yzapi/internal/vector"
 )
 
 func Open(cfg *config.Config) (*gorm.DB, error) {
@@ -106,10 +107,10 @@ func Open(cfg *config.Config) (*gorm.DB, error) {
 // cleanup and the index (AutoMigrate afterwards finds the indexes present).
 func migrateIdempotencyKeys(db *gorm.DB) error {
 	m := db.Migrator()
-	need := (m.HasTable(&model.Account{}) && !m.HasIndex(&model.Account{}, "uq_accounts_name")) ||
-		(m.HasTable(&model.SensitiveWord{}) && !m.HasIndex(&model.SensitiveWord{}, "uq_sensitive_words_key")) ||
-		(m.HasTable(&model.AuditSample{}) && !m.HasIndex(&model.AuditSample{}, "uq_audit_samples_key")) ||
-		(m.HasTable(&model.RouteSample{}) && !m.HasIndex(&model.RouteSample{}, "uq_route_samples_key"))
+	need := false
+	for _, k := range idempotencyKeys {
+		need = need || keyMissing(m, k.table, k.index, k.cols)
+	}
 	if !need {
 		return nil
 	}
@@ -120,36 +121,29 @@ func migrateIdempotencyKeys(db *gorm.DB) error {
 			}
 		}
 		tm := tx.Migrator()
-		identity := currentVectorIdentity(tx)
-		if tm.HasTable(&model.Account{}) && !tm.HasIndex(&model.Account{}, "uq_accounts_name") {
-			if err := migrateAccountNames(tx); err != nil {
-				return err
-			}
-			if err := tx.Exec("CREATE UNIQUE INDEX IF NOT EXISTS uq_accounts_name ON accounts (name)").Error; err != nil {
-				return err
-			}
+		identity, err := currentVectorIdentity(tx)
+		if err != nil {
+			return fmt.Errorf("resolve the vector identity before de-duplicating samples: %w", err)
 		}
-		if tm.HasTable(&model.SensitiveWord{}) && !tm.HasIndex(&model.SensitiveWord{}, "uq_sensitive_words_key") {
-			if err := migrateDuplicateWords(tx); err != nil {
+		for _, k := range idempotencyKeys {
+			if !keyMissing(tm, k.table, k.index, k.cols) {
+				continue
+			}
+			var err error
+			switch k.table {
+			case "accounts":
+				err = migrateAccountNames(tx)
+			case "sensitive_words":
+				err = migrateDuplicateWords(tx)
+			case "audit_samples":
+				err = migrateDuplicateSamples(tx, "audit_samples", "policy_group_id", identity)
+			case "route_samples":
+				err = migrateDuplicateSamples(tx, "route_samples", "label", identity)
+			}
+			if err != nil {
 				return err
 			}
-			if err := tx.Exec("CREATE UNIQUE INDEX IF NOT EXISTS uq_sensitive_words_key ON sensitive_words (policy_group_id, word)").Error; err != nil {
-				return err
-			}
-		}
-		if tm.HasTable(&model.AuditSample{}) && !tm.HasIndex(&model.AuditSample{}, "uq_audit_samples_key") {
-			if err := migrateDuplicateSamples(tx, "audit_samples", "policy_group_id", identity); err != nil {
-				return err
-			}
-			if err := tx.Exec("CREATE UNIQUE INDEX IF NOT EXISTS uq_audit_samples_key ON audit_samples (policy_group_id, text_hash)").Error; err != nil {
-				return err
-			}
-		}
-		if tm.HasTable(&model.RouteSample{}) && !tm.HasIndex(&model.RouteSample{}, "uq_route_samples_key") {
-			if err := migrateDuplicateSamples(tx, "route_samples", "label", identity); err != nil {
-				return err
-			}
-			if err := tx.Exec("CREATE UNIQUE INDEX IF NOT EXISTS uq_route_samples_key ON route_samples (label, text_hash)").Error; err != nil {
+			if err := ensureUniqueIndex(tx, k.table, k.index, k.cols); err != nil {
 				return err
 			}
 		}
@@ -157,40 +151,108 @@ func migrateIdempotencyKeys(db *gorm.DB) error {
 	})
 }
 
-// currentVectorIdentity reads the configured embedding account and model from the
-// settings table (the engines' vector identity is "<account id>:<model>", or
-// "<account id>|<base url>|<model>" once the account resolves) so the migration can
-// tell which of several stored vectors the runtime will actually use. Empty when the
-// vector service is not configured or the table does not exist yet.
-func currentVectorIdentity(tx *gorm.DB) string {
+// currentVectorIdentity resolves the identity the runtime will stamp on and load
+// vectors with, through the same rule as the runtime (vector.Identity: account base
+// URL and mapped upstream model). Empty when the vector service is not configured or
+// the settings table does not exist yet; a malformed setting or a query error aborts
+// the migration rather than letting it pick vectors on a guess.
+func currentVectorIdentity(tx *gorm.DB) (string, error) {
 	if !tx.Migrator().HasTable("settings") {
-		return ""
+		return "", nil
 	}
 	var raw string
-	if err := tx.Raw("SELECT value FROM settings WHERE key = 'vector'").Scan(&raw).Error; err != nil || raw == "" {
-		return ""
+	if err := tx.Raw("SELECT value FROM settings WHERE key = 'vector'").Scan(&raw).Error; err != nil {
+		return "", err
+	}
+	if raw == "" {
+		return "", nil
 	}
 	var v struct {
 		AccountID uint   `json:"account_id"`
 		Model     string `json:"model"`
 	}
-	if json.Unmarshal([]byte(raw), &v) != nil || v.AccountID == 0 {
-		return ""
+	if err := json.Unmarshal([]byte(raw), &v); err != nil {
+		return "", fmt.Errorf("vector setting is not valid JSON: %w", err)
 	}
-	return fmt.Sprintf("%d:%s", v.AccountID, v.Model)
+	r, err := vector.Identity(tx, v.AccountID, v.Model)
+	if err != nil {
+		return "", err
+	}
+	return r.Identity, nil
 }
 
-// vectorUsable reports whether a stored vector identity is the configured one:
-// the plain "<id>:<model>" form or the resolved "<id>|<url>|<model>" form of it.
+// vectorUsable reports whether a stored vector loads under the current identity: the
+// engines' rule (exact match, or a legacy vector stored without an identity).
 func vectorUsable(stored, identity string) bool {
-	if stored == "" || identity == "" {
+	return vector.Compatible(stored, identity)
+}
+
+// correctUniqueIndex reports whether table has an index of that name that is UNIQUE
+// over exactly these columns in this order. A same-named index with another
+// definition (a legacy non-unique index, a manual repair) is not the key.
+func correctUniqueIndex(m gorm.Migrator, table, name string, cols []string) (exists, correct bool) {
+	idxs, err := m.GetIndexes(table)
+	if err != nil {
+		return m.HasIndex(table, name), false
+	}
+	for _, ix := range idxs {
+		if ix.Name() != name {
+			continue
+		}
+		unique, _ := ix.Unique()
+		got := ix.Columns()
+		if !unique || len(got) != len(cols) {
+			return true, false
+		}
+		for i := range cols {
+			if got[i] != cols[i] {
+				return true, false
+			}
+		}
+		return true, true
+	}
+	return false, false
+}
+
+// ensureUniqueIndex drops a same-named index whose definition is wrong and creates
+// the unique index; cleanup must have run before.
+func ensureUniqueIndex(tx *gorm.DB, table, name string, cols []string) error {
+	exists, correct := correctUniqueIndex(tx.Migrator(), table, name, cols)
+	if correct {
+		return nil
+	}
+	if exists {
+		slog.Warn("replacing an index whose definition does not match the create idempotency key", "table", table, "index", name)
+		if err := tx.Migrator().DropIndex(table, name); err != nil {
+			return err
+		}
+	}
+	if err := tx.Exec("CREATE UNIQUE INDEX " + name + " ON " + table + " (" + strings.Join(cols, ", ") + ")").Error; err != nil {
+		return err
+	}
+	if _, ok := correctUniqueIndex(tx.Migrator(), table, name, cols); !ok {
+		return fmt.Errorf("index %s on %s is not the expected unique index after creation", name, table)
+	}
+	return nil
+}
+
+var idempotencyKeys = []struct {
+	table, index string
+	cols         []string
+}{
+	{"accounts", "uq_accounts_name", []string{"name"}},
+	{"sensitive_words", "uq_sensitive_words_key", []string{"policy_group_id", "word"}},
+	{"audit_samples", "uq_audit_samples_key", []string{"policy_group_id", "text_hash"}},
+	{"route_samples", "uq_route_samples_key", []string{"label", "text_hash"}},
+}
+
+// keyMissing reports whether a table exists without its correct unique key.
+func keyMissing(m gorm.Migrator, table, index string, cols []string) bool {
+	if !m.HasTable(table) {
 		return false
 	}
-	if stored == identity {
-		return true
-	}
-	id, mdl, _ := strings.Cut(identity, ":")
-	return strings.HasPrefix(stored, id+"|") && strings.HasSuffix(stored, "|"+mdl)
+	_, correct := correctUniqueIndex(m, table, index, cols)
+	return !correct
 }
 
 // migrateAccountNames renames the later copies of a duplicated account name to a
