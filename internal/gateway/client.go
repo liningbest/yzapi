@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -9,15 +10,28 @@ import (
 // identifying headers some tools send. The label is short and stable ("claude-code",
 // "codex", ...), so logs and reports can be filtered by it; anything unknown is reduced
 // to its first User-Agent product token so a new tool still shows up as itself.
+//
+// Matching is by whole product token, never by substring: "decline/1.0" is not Cline,
+// and a Referer only counts by its host name.
 func DetectClient(h http.Header) string {
-	ua := strings.ToLower(strings.TrimSpace(h.Get("User-Agent")))
 	// Headers that name the client explicitly take precedence over the SDK's User-Agent.
-	for _, v := range []string{h.Get("x-app"), h.Get("originator"), h.Get("X-Title"), h.Get("x-client-name"), h.Get("HTTP-Referer")} {
-		if l := clientFromToken(strings.ToLower(strings.TrimSpace(v))); l != "" {
+	if v := strings.ToLower(strings.TrimSpace(h.Get("x-app"))); v == "cli" || v == "claude-code" {
+		return "claude-code" // Claude Code sends x-app: cli next to its anthropic-sdk User-Agent
+	}
+	for _, name := range []string{"originator", "X-Title", "x-client-name"} {
+		if l := clientFromTokens(productTokens(h.Get(name))); l != "" {
 			return l
 		}
 	}
-	if l := clientFromToken(ua); l != "" {
+	// Referer (standard) and HTTP-Referer (the OpenRouter convention several editors
+	// adopted): only the host decides.
+	for _, name := range []string{"Referer", "HTTP-Referer"} {
+		if l := clientFromHost(h.Get(name)); l != "" {
+			return l
+		}
+	}
+	ua := strings.ToLower(strings.TrimSpace(h.Get("User-Agent")))
+	if l := clientFromTokens(productTokens(ua)); l != "" {
 		return l
 	}
 	switch {
@@ -52,48 +66,120 @@ func DetectClient(h http.Header) string {
 	return tok
 }
 
-// clientFromToken maps a header value or User-Agent to a known client label.
-func clientFromToken(v string) string {
+// productTokens splits a header value into lower-cased product names: for a User-Agent
+// the part before each "/" (comments in parentheses dropped), for a plain name the
+// words. "codex_cli_rs/0.48 (Mac OS)" -> [codex_cli_rs]; "Roo Code" -> [roo code].
+func productTokens(v string) []string {
+	v = strings.ToLower(strings.TrimSpace(v))
+	if v == "" {
+		return nil
+	}
+	// Drop parenthesised comments.
+	var b strings.Builder
+	depth := 0
+	for _, r := range v {
+		switch {
+		case r == '(':
+			depth++
+		case r == ')':
+			if depth > 0 {
+				depth--
+			}
+		case depth == 0:
+			b.WriteRune(r)
+		}
+	}
+	var out []string
+	for _, f := range strings.Fields(b.String()) {
+		if i := strings.IndexByte(f, '/'); i >= 0 {
+			f = f[:i]
+		}
+		f = strings.Trim(f, ",;")
+		if f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// knownProducts maps a whole product token to a client label.
+var knownProducts = map[string]string{
+	"claude-cli": "claude-code", "claude-code": "claude-code", "claudecode": "claude-code",
+	"claude-desktop": "claude-desktop",
+	"codex":          "codex", "codex_cli_rs": "codex", "codex-cli": "codex", "codex_cli": "codex",
+	"geminicli": "gemini-cli", "gemini-cli": "gemini-cli",
+	"opencode": "opencode",
+	"roo-code": "roo-code", "roocode": "roo-code", "roo-cline": "roo-code",
+	"cline":    "cline",
+	"cursor":   "cursor",
+	"kimi-cli": "kimi-code", "kimi-code": "kimi-code", "kimi": "kimi-code",
+	"zcode":  "zcode",
+	"hermes": "hermes", "hermes-agent": "hermes",
+	"deepseek-harness": "deepseek-harness", "deepseek_harness": "deepseek-harness",
+	"openclaw":      "openclaw",
+	"continue":      "continue",
+	"aider":         "aider",
+	"cherry-studio": "cherry-studio", "cherrystudio": "cherry-studio",
+	"chatbox":   "chatbox",
+	"lobe-chat": "lobe-chat", "lobechat": "lobe-chat", "lobehub": "lobe-chat",
+}
+
+// clientFromTokens maps product tokens to a known client label. Two-word names ("roo
+// code") are matched on their first word.
+func clientFromTokens(toks []string) string {
+	for i, t := range toks {
+		if l, ok := knownProducts[t]; ok {
+			return l
+		}
+		if t == "roo" && i+1 < len(toks) && toks[i+1] == "code" {
+			return "roo-code"
+		}
+		if t == "cherry" && i+1 < len(toks) && toks[i+1] == "studio" {
+			return "cherry-studio"
+		}
+	}
+	return ""
+}
+
+// knownHosts maps a Referer host (or a parent domain of it) to a client label.
+var knownHosts = map[string]string{
+	"cursor.com": "cursor", "cursor.sh": "cursor",
+	"cline.bot":     "cline",
+	"roocode.com":   "roo-code",
+	"opencode.ai":   "opencode",
+	"continue.dev":  "continue",
+	"aider.chat":    "aider",
+	"cherry-ai.com": "cherry-studio",
+	"chatboxai.app": "chatbox",
+	"lobehub.com":   "lobe-chat",
+	"openclaw.ai":   "openclaw",
+}
+
+// clientFromHost resolves a Referer-style value by its host name only.
+func clientFromHost(v string) string {
+	v = strings.TrimSpace(v)
 	if v == "" {
 		return ""
 	}
-	switch {
-	case strings.Contains(v, "claude-cli") || strings.Contains(v, "claude-code") || v == "cli":
-		return "claude-code"
-	case strings.Contains(v, "claude-desktop"):
-		return "claude-desktop"
-	case strings.Contains(v, "codex"):
-		return "codex"
-	case strings.Contains(v, "geminicli") || strings.Contains(v, "gemini-cli"):
-		return "gemini-cli"
-	case strings.Contains(v, "opencode"):
-		return "opencode"
-	case strings.Contains(v, "roo code") || strings.Contains(v, "roo-code") || strings.Contains(v, "roocode"):
-		return "roo-code"
-	case strings.Contains(v, "cline"):
-		return "cline"
-	case strings.Contains(v, "cursor"):
-		return "cursor"
-	case strings.Contains(v, "kimi"):
-		return "kimi-code"
-	case strings.Contains(v, "zcode"):
-		return "zcode"
-	case strings.Contains(v, "hermes"):
-		return "hermes"
-	case strings.Contains(v, "deepseek-harness") || strings.Contains(v, "deepseek_harness"):
-		return "deepseek-harness"
-	case strings.Contains(v, "openclaw"):
-		return "openclaw"
-	case strings.Contains(v, "continue"):
-		return "continue"
-	case strings.Contains(v, "aider"):
-		return "aider"
-	case strings.Contains(v, "cherry"):
-		return "cherry-studio"
-	case strings.Contains(v, "chatbox"):
-		return "chatbox"
-	case strings.Contains(v, "lobe"):
-		return "lobe-chat"
+	host := strings.ToLower(v)
+	if strings.Contains(v, "://") {
+		u, err := url.Parse(v)
+		if err != nil {
+			return ""
+		}
+		host = strings.ToLower(u.Hostname())
+	} else if i := strings.IndexAny(host, "/:"); i >= 0 {
+		host = host[:i]
+	}
+	for host != "" {
+		if l, ok := knownHosts[host]; ok {
+			return l
+		}
+		i := strings.IndexByte(host, '.')
+		if i < 0 {
+			return ""
+		}
+		host = host[i+1:]
 	}
 	return ""
 }

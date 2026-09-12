@@ -44,3 +44,35 @@ func TestDetectClient(t *testing.T) {
 		}
 	}
 }
+
+// R126-06 and the canvas leftover: the standard Referer counts by host, and product
+// names match as whole tokens, never as substrings.
+func TestR126DetectsStandardRefererHeader(t *testing.T) {
+	cases := []struct {
+		ua, hdrK, hdrV, want string
+	}{
+		{"OpenAI/JS 4.98", "Referer", "https://cursor.com/workspace", "cursor"},
+		{"OpenAI/JS 4.98", "Referer", "https://www.cursor.sh/", "cursor"},
+		{"OpenAI/JS 4.98", "HTTP-Referer", "https://cline.bot", "cline"},
+		{"OpenAI/JS 4.98", "Referer", "https://cursor.com.evil.example/", "openai-sdk"}, // suffix only, not substring
+		{"OpenAI/JS 4.98", "Referer", "https://example.com/?next=cursor.com", "openai-sdk"},
+		{"OpenAI/JS 4.98", "Referer", "not a url", "openai-sdk"},
+		{"decline/1.0", "", "", "decline"},
+		{"OpenAI/JS 4.98", "X-Title", "Decline", "openai-sdk"},
+		{"OpenAI/JS 4.98", "X-Title", "Roo Code", "roo-code"},
+		{"OpenAI/JS 4.98", "X-Title", "cline", "cline"},
+		{"OpenAI/JS 4.98", "x-app", "climb", "openai-sdk"},
+		{"kimi-cli/0.4 python/3.12", "", "", "kimi-code"},
+		{"cherry studio/1.0", "", "", "cherry-studio"},
+	}
+	for _, c := range cases {
+		h := http.Header{}
+		h.Set("User-Agent", c.ua)
+		if c.hdrK != "" {
+			h.Set(c.hdrK, c.hdrV)
+		}
+		if got := DetectClient(h); got != c.want {
+			t.Errorf("ua=%q %s=%q: got %q want %q", c.ua, c.hdrK, c.hdrV, got, c.want)
+		}
+	}
+}

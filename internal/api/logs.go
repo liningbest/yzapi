@@ -12,7 +12,12 @@ import (
 
 func applyLogFilters(c *gin.Context, q *gorm.DB, scopedUser uint) *gorm.DB {
 	from, to := timeRange(c)
-	q = q.Where("created_at >= ? AND created_at <= ?", from, to)
+	return applyLogFiltersWindow(c, q.Where("created_at >= ? AND created_at <= ?", from, to), scopedUser)
+}
+
+// applyLogFiltersWindow applies every log filter except the time range, which the
+// caller has already added (the usage report uses hour bounds, the log list exact ones).
+func applyLogFiltersWindow(c *gin.Context, q *gorm.DB, scopedUser uint) *gorm.DB {
 	if scopedUser > 0 {
 		q = q.Where("user_id = ?", scopedUser)
 	} else if v := queryUint(c, "user_id"); v > 0 {

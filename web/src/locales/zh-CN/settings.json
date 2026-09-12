@@ -288,7 +288,22 @@
       "status": "状态",
       "done": "已写入",
       "previewOnly": "仅预览",
-      "changesHint": "下表列出新增、更新与保留的行（最多 500 条）；单价均为每百万 Token，导入行一律按美元。"
+      "changesHint": "下表列出新增、更新与保留的行（最多 500 条）；单价均为每百万 Token，并标出币种。",
+      "overwriteCurrency": "允许改币种（人民币内置行会按来源改成美元）",
+      "overwriteCurrencyHint": "国内供应商的内置价按人民币官网价维护；LiteLLM 等来源给的是美元国际价，两者不是同一份价目。默认这些行保留，勾选后才改。",
+      "invalid": "未通过校验",
+      "invalidHint": "以下条目单价越界或名称非法，已跳过：",
+      "duplicates": "重复行",
+      "duplicatesHint": "现表中同一供应商 + 模型有多行，应用时合并为一行（改过的优先，其次手工行，再取最早的）。",
+      "currency": "币种",
+      "currencyChanged": "币种变化",
+      "reasons": {
+        "manual": "手工行",
+        "currency": "币种不同"
+      },
+      "stale": "来源或选项已变，请重新预览后再应用。",
+      "boundHint": "应用只写入本次预览的内容（plan {{id}}，SHA-256 {{sha}}），30 分钟内有效，用一次即失效。",
+      "reloadFailed": "价目已写入数据库但运行态未刷新，请重试或重启网关"
     },
     "sourceHint": "导入自 {{source}}（来源日期 {{date}}）",
     "edited": "已改",

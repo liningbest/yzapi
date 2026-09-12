@@ -1,5 +1,6 @@
 import { del, get, http, patch, post, put } from './client';
 import type {
+  PriceImportOptions,
   PriceImportResult,
   ModelMapping,
   Account,
@@ -188,14 +189,17 @@ export const pricesApi = {
   update: (id: number, body: ModelPriceInput) => put<ModelPrice>(`${A}/prices/${id}`, body),
   remove: (id: number) => del(`${A}/prices/${id}`),
   resetBuiltin: () => post<{ builtin_updated: string }>(`${A}/prices/reset-builtin`, {}),
-  import: (body: { source: string; url?: string; apply: boolean; overwrite_edited: boolean }) => post<PriceImportResult>(`${A}/prices/import`, body),
-  importFile: (file: File, apply: boolean, overwrite: boolean) => {
+  /** Preview only: downloads the catalog and returns a plan bound to a plan_id. */
+  importPreview: (body: { source: string; url?: string } & PriceImportOptions) => post<PriceImportResult>(`${A}/prices/import`, body),
+  importPreviewFile: (file: File, opts: PriceImportOptions) => {
     const fd = new FormData();
     fd.append('file', file);
-    fd.append('apply', apply ? '1' : '0');
-    fd.append('overwrite_edited', overwrite ? '1' : '0');
+    fd.append('overwrite_edited', opts.overwrite_edited ? '1' : '0');
+    fd.append('overwrite_currency', opts.overwrite_currency ? '1' : '0');
     return http.post<PriceImportResult>(`${A}/prices/import-file`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data);
   },
+  /** Writes exactly the previewed catalog; the server re-plans inside the transaction. */
+  importApply: (body: { plan_id: string; sha256: string }) => post<PriceImportResult>(`${A}/prices/import/apply`, body),
 };
 
 export const settingsApi = {

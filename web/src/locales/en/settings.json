@@ -288,7 +288,22 @@
       "status": "Status",
       "done": "Written",
       "previewOnly": "Preview only",
-      "changesHint": "New, updated and kept rows (up to 500); all prices per 1M tokens, imported rows are in USD."
+      "changesHint": "New, updated and kept rows (up to 500); prices per 1M tokens, currency shown per row.",
+      "overwriteCurrency": "Allow currency changes (CNY built-in rows become USD from the source)",
+      "overwriteCurrencyHint": "Built-in prices for the Chinese vendors follow their CNY domestic pages; LiteLLM and similar sources publish USD international prices, which is a different list. Such rows are kept unless you tick this.",
+      "invalid": "Rejected",
+      "invalidHint": "These entries have out-of-range prices or invalid names and were skipped:",
+      "duplicates": "Duplicate rows",
+      "duplicatesHint": "The current table has several rows for one provider + model; apply collapses them to one (edited first, then manual, then the oldest).",
+      "currency": "Currency",
+      "currencyChanged": "Currency change",
+      "reasons": {
+        "manual": "manual row",
+        "currency": "different currency"
+      },
+      "stale": "Source or options changed: preview again before applying.",
+      "boundHint": "Apply writes exactly what this preview showed (plan {{id}}, SHA-256 {{sha}}); valid for 30 minutes, single use.",
+      "reloadFailed": "Prices were written but the runtime did not reload; retry or restart the gateway"
     },
     "sourceHint": "Imported from {{source}} (source date {{date}})",
     "edited": "Edited",

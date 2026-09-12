@@ -1,6 +1,8 @@
 package pricing
 
 import (
+	"math"
+	"strings"
 	"testing"
 
 	"yzapi/internal/model"
@@ -70,12 +72,30 @@ func TestImportPlanAndApply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err := PlanImport(db, cat, false)
+	// Default options: gpt-5.5 manual -> kept (manual); gemini-3.8-flash builtin -> same
+	// numbers (0.75/3.75/0.075) -> same; qwen3.8-max builtin is 12/36 CNY and the catalog
+	// prices it in USD -> kept (currency) with both currencies in the change; embedding -> same.
+	plan0, err := PlanImport(db, cat, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// gpt-5.5 manual -> kept; gemini-3.8-flash builtin -> same numbers (0.75/3.75/0.075) -> same;
-	// qwen3.8-max builtin CNY row is 12/36 -> update (numbers differ, currency differs); embedding -> same.
+	if plan0.Kept != 2 || plan0.Same != 2 || plan0.Updated != 0 || plan0.New != 0 {
+		t.Fatalf("default plan: %s", plan0.Summary())
+	}
+	var qwenCh *ImportChange
+	for i := range plan0.Changes {
+		if plan0.Changes[i].Pattern == "qwen3.8-max" {
+			qwenCh = &plan0.Changes[i]
+		}
+	}
+	if qwenCh == nil || qwenCh.Action != "keep" || qwenCh.Reason != "currency" || qwenCh.OldCurrency != "CNY" || qwenCh.NewCurrency != "USD" || !qwenCh.CurrencyChanged {
+		t.Fatalf("currency-differing built-in must be kept by default and show both currencies: %+v", qwenCh)
+	}
+	// Opting in to currency changes turns it into an update.
+	plan, err := PlanImportWith(db, cat, ImportOptions{OverwriteCurrency: true})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if plan.Kept != 1 || plan.Same != 2 || plan.Updated != 1 || plan.New != 0 {
 		t.Fatalf("plan: %s", plan.Summary())
 	}
@@ -104,6 +124,9 @@ func TestImportPlanAndApply(t *testing.T) {
 	if err := plan3.Apply(db); err != nil {
 		t.Fatal(err)
 	}
+	if plan3.Updated != 1 || plan3.Same != 3 { // Apply leaves the in-transaction counts on the plan
+		t.Fatalf("applied counts: %s", plan3.Summary())
+	}
 	db.Where("pattern = ? AND provider = ?", "gpt-5.5", "openai").First(&manual)
 	if manual.InputPerM != 5 || manual.Source != "litellm" || manual.Edited {
 		t.Fatalf("overwrite: %+v", manual)
@@ -128,5 +151,110 @@ func TestImportPlanAndApply(t *testing.T) {
 	db.Model(&model.ModelPrice{}).Where("provider = '' AND pattern = ?", "gpt-6-astra").Count(&generic)
 	if qwen.InputPerM != 12 || qwen.Currency != "CNY" || generic != 1 {
 		t.Fatalf("reset: qwen=%+v generic=%d", qwen, generic)
+	}
+}
+
+// R126-01: the configured EasyCLIProxyAPI source keys "models" by model id (an object),
+// not an array; both shapes parse and keys are visited in sorted order.
+func TestR126EasyCPAObjectCatalog(t *testing.T) {
+	raw := []byte(`{"schemaVersion":1,"updatedAt":"2026-09-07","models":{
+		"gpt-6-astra":{"inputPer1M":10,"outputPer1M":50,"cacheReadPer1M":1,"cacheCreationPer1M":12.5},
+		"GPT-5.5":{"inputPer1M":5,"outputPer1M":30,"cacheReadPer1M":0.5},
+		"empty":{}}}`)
+	cat, err := ParseCatalog(raw)
+	if err != nil {
+		t.Fatalf("configured EasyCLIProxyAPI source format must parse: %v", err)
+	}
+	if len(cat.Rows) != 2 || cat.Skipped != 1 || cat.Rows[0].Pattern != "gpt-5.5" || cat.Rows[1].Pattern != "gpt-6-astra" || cat.Rows[1].InputPerM != 10 || cat.Rows[1].WritePerM != 12.5 {
+		t.Fatalf("object catalog rows: %+v", cat)
+	}
+	if _, err := ParseCatalog([]byte(`{"schemaVersion":1,"models":"nope"}`)); err == nil {
+		t.Fatal("models of a wrong type must be an error")
+	}
+}
+
+// R126-04: every catalog row passes the same validation as a manual row: negative or
+// huge prices, over-long names and unknown currencies are rejected with a reason, not
+// written.
+func TestR126CatalogRejectsOutOfRangePrices(t *testing.T) {
+	raw := []byte(`{"schemaVersion":1,"models":[
+		{"id":"negative-price","inputPer1M":-1,"outputPer1M":2},
+		{"id":"huge-output","inputPer1M":1,"outputPer1M":1000001},
+		{"id":"bad-cache","inputPer1M":1,"outputPer1M":2,"cacheReadPer1M":-0.5},
+		{"id":"bad-write","inputPer1M":1,"outputPer1M":2,"cacheCreationPer1M":1e9},
+		{"id":"` + strings.Repeat("x", 129) + `","inputPer1M":1,"outputPer1M":2},
+		{"id":"fine","inputPer1M":1,"outputPer1M":2}]}`)
+	cat, err := ParseCatalog(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cat.Rows) != 1 || cat.Rows[0].Pattern != "fine" || cat.Invalid != 5 || len(cat.InvalidRows) != 5 {
+		t.Fatalf("validation: rows=%+v invalid=%d reasons=%v", cat.Rows, cat.Invalid, cat.InvalidRows)
+	}
+	for _, bad := range []CatalogRow{
+		{Pattern: "m", Currency: "EUR", InputPerM: 1}, {Pattern: "m", Currency: "USD", InputPerM: math.NaN()},
+		{Pattern: "m", Currency: "USD", OutputPerM: math.Inf(1)}, {Pattern: "m", Provider: strings.Repeat("p", 33), Currency: "USD"},
+	} {
+		if ValidateRow(&bad) == "" {
+			t.Fatalf("row must be rejected: %+v", bad)
+		}
+	}
+	good := CatalogRow{Pattern: " GPT-5.5 ", Provider: "OpenAI", Currency: "usd", InputPerM: 1}
+	if msg := ValidateRow(&good); msg != "" || good.Pattern != "gpt-5.5" || good.Provider != "openai" || good.Currency != "USD" {
+		t.Fatalf("normalisation: %q %+v", msg, good)
+	}
+	_, db, _ := testSvc(t)
+	plan, err := PlanImport(db, cat, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Invalid != 5 || plan.New != 1 {
+		t.Fatalf("plan carries the invalid count: %s", plan.Summary())
+	}
+}
+
+// R126-03: rows sharing a (provider, pattern) key collapse to one on import (edited over
+// untouched, manual over built-in, then the older id), and DedupePrices prepares an old
+// table for the unique index. Lookups never see two candidates for one key.
+func TestR126ImportKeepsProviderPatternUnique(t *testing.T) {
+	_, db, _ := testSvc(t)
+	const pattern = "review-duplicate-model"
+	rows := []model.ModelPrice{
+		{Pattern: pattern, Provider: "openai", InputPerM: 1, OutputPerM: 2, Currency: "USD", Enabled: true, Source: "litellm"},
+		{Pattern: pattern, Provider: "openai", InputPerM: 3, OutputPerM: 4, Currency: "USD", Enabled: true, Source: "litellm"},
+		{Pattern: pattern, Provider: "OpenAI", InputPerM: 7, OutputPerM: 8, Currency: "USD", Enabled: true, Edited: true},
+	}
+	if err := db.Create(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	cat := &Catalog{Source: "litellm", Rows: []CatalogRow{{Pattern: pattern, Provider: "openai", InputPerM: 5, OutputPerM: 6, Currency: "USD"}}}
+	plan, err := PlanImport(db, cat, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Duplicate != 2 || plan.Kept != 1 {
+		t.Fatalf("plan must report the duplicates and keep the edited survivor: %s", plan.Summary())
+	}
+	if err := plan.Apply(db); err != nil {
+		t.Fatal(err)
+	}
+	var got []model.ModelPrice
+	if err := db.Where("LOWER(provider) = ? AND pattern = ?", "openai", pattern).Find(&got).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || !got[0].Edited || got[0].InputPerM != 7 {
+		t.Fatalf("price lookup key is not unique after import or the wrong row survived: %+v", got)
+	}
+	// DedupePrices on a pre-index table: lower-cases keys and removes the losers.
+	db.Create(&model.ModelPrice{Pattern: "Dup-Model", Provider: "Gemini", InputPerM: 1, OutputPerM: 1, Currency: "USD", Enabled: true})
+	db.Create(&model.ModelPrice{Pattern: "dup-model", Provider: "gemini", InputPerM: 2, OutputPerM: 2, Currency: "USD", Enabled: true, Builtin: true})
+	removed, err := DedupePrices(db)
+	if err != nil || removed != 1 {
+		t.Fatalf("dedupe: removed=%d err=%v", removed, err)
+	}
+	var left []model.ModelPrice
+	db.Where("pattern = ?", "dup-model").Find(&left)
+	if len(left) != 1 || left[0].Provider != "gemini" || left[0].Builtin || left[0].InputPerM != 1 {
+		t.Fatalf("manual row wins over built-in and keys are lower-cased: %+v", left)
 	}
 }

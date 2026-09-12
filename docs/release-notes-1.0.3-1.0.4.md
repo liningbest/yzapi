@@ -250,3 +250,10 @@
 - 日志记录客户端标签（从 User-Agent 与识别头判断：claude-code、codex、gemini-cli、opencode、cline …）与 User-Agent；管理端日志可按客户端筛选，详情显示；用量报表新增按客户端分布（按明细日志统计，保留期内）。
 - 用户中心新页「接入指引」：Claude Code / Codex / OpenCode / Gemini CLI / Cline / SDK 的可复制配置。
 - 「设置 → 计价 → 同步价目」：从 LiteLLM、EasyCLIProxyAPI、自定义 URL 或上传文件导入，先预览后应用，手工行默认保留，内置行可恢复；价目行带来源与"已改"标记。
+
+## 1.0.27：1.0.26 验收修复（`docs/changes-2026-09-12-client-guide-priceimport.md` 第 7 节）
+
+- 价目同步改为「预览取得 plan_id → 应用只写预览过的内容」；EasyCLIProxyAPI 真实文件（对象形 `models`）可解析；每行过与手工新增相同的校验，无效行列出不写入；预览不再消耗配置快照；币种不同的行默认保留并在预览标出币种，勾选后才改；写库后运行态重载失败返回 503。
+- 价格行 `(provider, pattern)` 唯一（小写存储，启动时去重并建唯一索引），新增 / 修改撞键 409。
+- 客户端识别按整个产品名与 Referer 主机名匹配，不再用子串；`by_client` 与用量汇总使用同一小时窗口。
+- 接入指引 OpenCode 示例改用 `{env:YZAPI_API_KEY}`。

@@ -203,8 +203,27 @@ func ResetBuiltin(db *gorm.DB) error {
 		if err := tx.Where("builtin = ?", true).Delete(&model.ModelPrice{}).Error; err != nil {
 			return err
 		}
+		var rest []model.ModelPrice
+		if err := tx.Select("id", "pattern", "provider").Find(&rest).Error; err != nil {
+			return err
+		}
+		have := map[string]uint{}
+		for _, r := range rest {
+			have[priceKey(r.Provider, r.Pattern)] = r.ID
+		}
 		for _, p := range Builtin() {
 			p.UpdatedAt = time.Now()
+			// A custom or imported row already holds this key: it becomes the built-in
+			// row again (the unique index allows one row per key).
+			if id, ok := have[priceKey(p.Provider, p.Pattern)]; ok {
+				upd := map[string]any{"input_per_m": p.InputPerM, "output_per_m": p.OutputPerM, "cached_input_per_m": p.CachedInputPerM,
+					"cache_write_per_m": p.CacheWritePerM, "currency": p.Currency, "note": p.Note, "builtin": true, "enabled": true,
+					"source": "", "source_date": "", "edited": false, "updated_at": p.UpdatedAt}
+				if err := tx.Model(&model.ModelPrice{}).Where("id = ?", id).Updates(upd).Error; err != nil {
+					return err
+				}
+				continue
+			}
 			if err := tx.Create(&p).Error; err != nil {
 				return err
 			}

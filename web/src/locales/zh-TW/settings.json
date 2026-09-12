@@ -288,7 +288,22 @@
       "status": "狀態",
       "done": "已寫入",
       "previewOnly": "僅預覽",
-      "changesHint": "下表列出新增、更新與保留的行（最多 500 條）；單價均為每百萬 Token，匯入行一律按美元。"
+      "changesHint": "下表列出新增、更新與保留的行（最多 500 條）；單價均為每百萬 Token，並標出幣種。",
+      "overwriteCurrency": "允許改幣種（人民幣內建行會按來源改成美元）",
+      "overwriteCurrencyHint": "中國供應商的內建價按人民幣官網價維護；LiteLLM 等來源給的是美元國際價，兩者不是同一份價目。預設這些行保留，勾選後才改。",
+      "invalid": "未通過校驗",
+      "invalidHint": "以下條目單價越界或名稱非法，已跳過：",
+      "duplicates": "重複行",
+      "duplicatesHint": "現表中同一供應商 + 模型有多行，套用時合併為一行（改過的優先，其次手工行，再取最早的）。",
+      "currency": "幣種",
+      "currencyChanged": "幣種變化",
+      "reasons": {
+        "manual": "手工行",
+        "currency": "幣種不同"
+      },
+      "stale": "來源或選項已變，請重新預覽後再套用。",
+      "boundHint": "套用只寫入本次預覽的內容（plan {{id}}，SHA-256 {{sha}}），30 分鐘內有效，用一次即失效。",
+      "reloadFailed": "價目已寫入資料庫但執行態未刷新，請重試或重啟閘道"
     },
     "sourceHint": "匯入自 {{source}}（來源日期 {{date}}）",
     "edited": "已改",

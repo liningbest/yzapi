@@ -212,7 +212,7 @@
     },
     "opencode": {
       "s1": "Write the block below to ~/.config/opencode/opencode.json",
-      "s2": "Replace <YOUR_API_KEY> with your key",
+      "s2": "Keep the key out of the file: the config uses {env:YZAPI_API_KEY}; export that variable in your shell",
       "s3": "Start opencode and pick the yzapi model with /models"
     },
     "geminiCli": {

@@ -75,7 +75,7 @@ export default function Guide() {
                   yzapi: {
                     npm: '@ai-sdk/openai-compatible',
                     name: 'yzapi',
-                    options: { baseURL: `${root}/v1`, apiKey: KEY },
+                    options: { baseURL: `${root}/v1`, apiKey: '{env:YZAPI_API_KEY}' },
                     models: { [chosen]: { name: chosen } },
                   },
                 },
@@ -85,6 +85,7 @@ export default function Guide() {
               2,
             ),
           },
+          { title: t('console:guide.orShell'), code: [`export YZAPI_API_KEY="${KEY}"`, `opencode`].join('\n') },
         ],
       },
       'gemini-cli': {

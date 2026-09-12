@@ -15,6 +15,7 @@ import (
 
 	"yzapi/internal/config"
 	"yzapi/internal/model"
+	"yzapi/internal/pricing"
 )
 
 func Open(cfg *config.Config) (*gorm.DB, error) {
@@ -74,8 +75,30 @@ func Open(cfg *config.Config) (*gorm.DB, error) {
 	if err := db.AutoMigrate(model.All()...); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
+	if err := migrateModelPriceKey(db); err != nil {
+		return nil, fmt.Errorf("migrate model_prices key: %w", err)
+	}
 	slog.Info("database ready", "driver", cfg.DBDriver)
 	return db, nil
+}
+
+// migrateModelPriceKey makes (provider, pattern) unique on model_prices. Rows created
+// before the index are lower-cased and de-duplicated first (edited over untouched,
+// manual over built-in, then the older row), then the unique index is created. Lookups
+// always lower-cased both sides, so nothing changes for pricing.
+func migrateModelPriceKey(db *gorm.DB) error {
+	m := db.Migrator()
+	if !m.HasTable(&model.ModelPrice{}) || m.HasIndex(&model.ModelPrice{}, "uq_model_prices_key") {
+		return nil
+	}
+	removed, err := pricing.DedupePrices(db)
+	if err != nil {
+		return err
+	}
+	if removed > 0 {
+		slog.Warn("removed duplicate price rows before adding the unique (provider, pattern) index", "rows", removed)
+	}
+	return db.Exec("CREATE UNIQUE INDEX uq_model_prices_key ON model_prices (provider, pattern)").Error
 }
 
 // migrateUsageHourlyAttempts prepares databases where usage_hourlies.attempts was added

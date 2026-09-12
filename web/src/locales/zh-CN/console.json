@@ -212,7 +212,7 @@
     },
     "opencode": {
       "s1": "把下面的内容写进 ~/.config/opencode/opencode.json",
-      "s2": "把 <YOUR_API_KEY> 换成你的 Key",
+      "s2": "配置里 Key 写成 {env:YZAPI_API_KEY}，再在 shell 里导出该变量（不要把 Key 明文写进配置文件）",
       "s3": "启动 opencode，用 /models 选择 yzapi 下的模型"
     },
     "geminiCli": {

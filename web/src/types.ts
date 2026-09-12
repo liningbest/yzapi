@@ -774,7 +774,15 @@ export interface PriceImportChange {
   provider: string;
   old?: [number, number, number, number];
   new: [number, number, number, number];
-  reason?: string;
+  old_currency?: string;
+  new_currency: string;
+  currency_changed?: boolean;
+  reason?: 'manual' | 'currency' | string;
+}
+
+export interface PriceImportOptions {
+  overwrite_edited: boolean;
+  overwrite_currency: boolean;
 }
 
 export interface PriceImportPlan {
@@ -786,12 +794,20 @@ export interface PriceImportPlan {
   same: number;
   kept: number;
   skipped: number;
+  invalid: number;
+  invalid_rows?: string[];
+  duplicates: number;
   changes: PriceImportChange[];
 }
 
+/** A preview is bound to a plan_id (single use, expires_in seconds); apply takes that id. */
 export interface PriceImportResult {
   applied: boolean;
+  plan_id: string;
+  sha256: string;
   origin: string;
+  options: PriceImportOptions;
+  expires_in?: number;
   plan: PriceImportPlan;
 }
 

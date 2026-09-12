@@ -143,7 +143,11 @@ func applyUsageFilters(c *gin.Context, q *gorm.DB, scopedUser uint) (*gorm.DB, t
 // no client dimension, so this reads raw logs (retention window only) and follows the
 // same filters; unverified-currency rows contribute no cost.
 func (s *Server) clientDist(c *gin.Context, scopedUser uint) []*dist {
-	q := applyLogFilters(c, s.db.Model(&model.CallLog{}), scopedUser)
+	// Same hour window as the rollup query (applyUsageFilters): [from truncated to the
+	// hour, the hour containing `to` inclusive), so the rows add up to the summary.
+	from, to := timeRange(c)
+	q := applyLogFiltersWindow(c, s.db.Model(&model.CallLog{}).
+		Where("created_at >= ? AND created_at < ?", from.Truncate(time.Hour), to.Truncate(time.Hour).Add(time.Hour)), scopedUser)
 	var rows []struct {
 		Client       string
 		Requests     int64

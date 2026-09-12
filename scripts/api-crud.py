@@ -298,7 +298,8 @@ try:
         import io, urllib.request
         cat = {"schemaVersion": 1, "updatedAt": "2026-09-07", "models": [
             {"id": "import-test-model", "inputPer1M": 1.5, "outputPer1M": 6, "cacheReadPer1M": 0.15, "cacheCreationPer1M": 0},
-            {"id": "mock-mini", "inputPer1M": 9, "outputPer1M": 9}]}
+            {"id": "mock-mini", "inputPer1M": 9, "outputPer1M": 9},
+            {"id": "negative-price", "inputPer1M": -1, "outputPer1M": 2}]}
         body = json.dumps(cat).encode()
         boundary = "----yzapicrud"
         def multipart(apply):
@@ -308,25 +309,47 @@ try:
             parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"prices.json\"\r\nContent-Type: application/json\r\n\r\n".encode() + body + b"\r\n")
             parts.append(f"--{boundary}--\r\n".encode())
             return b"".join(parts)
-        def upload(apply):
-            req = urllib.request.Request(f"{BASE}/api/admin/prices/import-file", data=multipart(apply), method="POST")
-            req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
-            req.add_header("Authorization", f"Bearer {TOKEN}")
-            with urllib.request.urlopen(req, timeout=30) as r:
-                return json.loads(r.read())
+        def upload(apply, expect=200):
+            rq = urllib.request.Request(f"{BASE}/api/admin/prices/import-file", data=multipart(apply), method="POST")
+            rq.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+            rq.add_header("Authorization", f"Bearer {TOKEN}")
+            try:
+                with urllib.request.urlopen(rq, timeout=30) as r:
+                    eq(r.status, expect, "upload status"); return json.loads(r.read())
+            except urllib.error.HTTPError as e:
+                eq(e.code, expect, "upload status"); return None
         # a manual generic row for mock-mini: the import must keep it (not overwrite) unless overwrite_edited is set
         manual = req("POST", "/api/admin/prices", {"pattern": "mock-mini", "provider": "", "input_per_m": 1, "output_per_m": 2, "currency": "USD"}, expect=200)
+        # R126-03: the (provider, pattern) key is unique (case-insensitively) -> 409
+        req("POST", "/api/admin/prices", {"pattern": "Mock-Mini", "provider": "", "input_per_m": 3, "output_per_m": 3, "currency": "USD"}, expect=409)
+        snaps0 = req("GET", "/api/admin/config/snapshots", expect=200)["total"]
         pv = upload(False)
         eq(pv["applied"], False); eq(pv["plan"]["source"], "easycpa"); eq(pv["plan"]["new"] >= 1, True, "preview lists new rows")
         eq(pv["plan"]["kept"], 1, "manual row listed as kept")
+        eq(pv["plan"]["invalid"], 1, "negative price row rejected (R126-04)"); eq(len(pv["plan"]["invalid_rows"]), 1)
+        eq(bool(pv.get("plan_id")) and len(pv.get("sha256", "")) == 64, True, "preview is bound to a plan id + sha (R126-02)")
         eq(req("GET", "/api/admin/prices/lookup?model=import-test-model", expect=200)["found"], False, "preview writes nothing")
-        ap = upload(True)
-        eq(ap["applied"], True)
+        eq(req("GET", "/api/admin/config/snapshots", expect=200)["total"], snaps0, "preview takes no config snapshot (R126-07)")
+        # R126-02: the old direct apply is refused; apply needs the plan id; a wrong sha is refused
+        upload(True, expect=400)
+        req("POST", "/api/admin/prices/import/apply", {"plan_id": pv["plan_id"], "sha256": "0" * 64}, expect=409)
+        ap = req("POST", "/api/admin/prices/import/apply", {"plan_id": pv["plan_id"], "sha256": pv["sha256"]}, expect=200)
+        eq(ap["applied"], True); eq(ap["plan"]["new"], pv["plan"]["new"], "apply reports the in-transaction counts")
+        eq(req("GET", "/api/admin/config/snapshots", expect=200)["total"], min(snaps0 + 1, 50), "apply takes exactly one snapshot")
+        req("POST", "/api/admin/prices/import/apply", {"plan_id": pv["plan_id"]}, expect=409)  # single use
         got = req("GET", "/api/admin/prices/lookup?provider=custom&model=import-test-model", expect=200)
         eq(got["found"], True, "imported row prices"); eq(got["price"]["source"], "easycpa"); eq(got["price"]["input_per_m"], 1.5)
+        eq(req("GET", "/api/admin/prices/lookup?model=negative-price", expect=200)["found"], False, "invalid row never written")
         kept = req("GET", "/api/admin/prices/lookup?model=mock-mini", expect=200)["price"]
         eq((kept["id"], kept["input_per_m"], kept["source"]), (manual["id"], 1, ""), "manual row kept by import")
-        eq(upload(True)["plan"]["same"] >= 1, True, "second import reports unchanged rows")
+        eq(upload(False)["plan"]["same"] >= 1, True, "second preview reports unchanged rows")
+        # R126-08: a CNY built-in row against a USD catalog is kept by default and the change carries both currencies
+        lite = {"dashscope/qwen3.8-max": {"litellm_provider": "dashscope", "mode": "chat", "input_cost_per_token": 2e-06, "output_cost_per_token": 6e-06}}
+        body = json.dumps(lite).encode()
+        pc = upload(False)
+        ch = next(c for c in pc["plan"]["changes"] if c["pattern"] == "qwen3.8-max")
+        eq((ch["action"], ch["reason"], ch["old_currency"], ch["new_currency"], ch["currency_changed"]), ("keep", "currency", "CNY", "USD", True), "currency-differing built-in kept and labelled")
+        body = json.dumps(cat).encode()
         req("DELETE", f"/api/admin/prices/{manual['id']}", expect=200)
         req("POST", "/api/admin/prices/import", {"source": "url", "url": "not-a-url", "apply": False}, expect=400)
         # log carries the detected client

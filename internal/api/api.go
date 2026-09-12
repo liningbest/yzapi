@@ -72,6 +72,7 @@ type Server struct {
 	cipher  *crypto.Cipher
 	eng     Engines
 	pricer  *pricing.Service
+	imports *importPlans // previewed price catalogs waiting for apply
 	auth    *authService
 	version string
 	started time.Time
@@ -99,7 +100,7 @@ func New(cfg *config.Config, db *gorm.DB, gw *gateway.Gateway, st *settings.Stor
 		_ = pr.Reload()
 		convert.SetReasoningToContent(all.Basic.ReasoningToContent)
 	})
-	return &Server{cfg: cfg, db: db, gw: gw, st: st, cipher: cipher, eng: eng, auth: a, version: version, started: time.Now(), pricer: pr}, nil
+	return &Server{cfg: cfg, db: db, gw: gw, st: st, cipher: cipher, eng: eng, auth: a, version: version, started: time.Now(), pricer: pr, imports: newImportPlans()}, nil
 }
 
 // SetEngines installs subsystems after construction (they need the server's embed func).
@@ -180,8 +181,11 @@ func (s *Server) Register(r *gin.Engine) {
 		pr.PUT("/:id", s.updatePrice)
 		pr.DELETE("/:id", s.deletePrice)
 		pr.POST("/reset-builtin", s.resetBuiltinPrices)
+		// Preview endpoints are read-only (autoSnapshot skips /prices/import); apply
+		// snapshots itself right before the write.
 		pr.POST("/import", s.importPrices)
 		pr.POST("/import-file", s.importPricesFile)
+		pr.POST("/import/apply", s.importApply)
 		pr.GET("/lookup", s.lookupPrice)
 		admin.POST("/usage/rebuild", s.rebuildUsage)
 		admin.GET("/usage/reconcile", s.reconcileUsage)

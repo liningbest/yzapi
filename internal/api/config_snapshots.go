@@ -151,7 +151,7 @@ func (s *Server) snapshotConfig(actor, reason string) error {
 // autoSnapshot is a middleware for mutating routing/settings endpoints: it captures the
 // configuration before the handler runs. Read-only and probe endpoints are excluded.
 func (s *Server) autoSnapshot() gin.HandlerFunc {
-	skip := []string{"/test", "/discover", "/test-model", "/cache-check", "/reset-health", "/vector/test", "/elasticsearch/test", "/config/snapshots", "/prices/lookup"}
+	skip := []string{"/test", "/discover", "/test-model", "/cache-check", "/reset-health", "/vector/test", "/elasticsearch/test", "/config/snapshots", "/prices/lookup", "/prices/import"}
 	return func(c *gin.Context) {
 		if c.Request.Method == "GET" {
 			c.Next()

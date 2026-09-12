@@ -2,11 +2,15 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -44,22 +48,37 @@ type priceIn struct {
 	Note            string  `json:"note"`
 }
 
+// validatePrice normalises and checks a manual row with the same rule the importer
+// uses (pricing.ValidateRow): the key is lower-cased so the unique index is
+// case-insensitive on every database.
 func validatePrice(in *priceIn) string {
-	in.Pattern = strings.TrimSpace(in.Pattern)
-	in.Provider = strings.TrimSpace(strings.ToLower(in.Provider))
-	in.Currency = strings.ToUpper(strings.TrimSpace(in.Currency))
-	if in.Pattern == "" || len(in.Pattern) > 128 {
-		return "模型名称（或前缀）不能为空，最长 128 字符"
+	r := pricing.CatalogRow{Pattern: in.Pattern, Provider: in.Provider, InputPerM: in.InputPerM, OutputPerM: in.OutputPerM,
+		CachedPerM: in.CachedInputPerM, WritePerM: in.CacheWritePerM, Currency: in.Currency, Note: in.Note}
+	msg := pricing.ValidateRow(&r)
+	in.Pattern, in.Provider, in.Currency, in.Note = r.Pattern, r.Provider, r.Currency, r.Note
+	return msg
+}
+
+// reloadPrices refreshes the in-memory price table after a write. A failure is not
+// silent: the database already holds the new rows while requests would still be priced
+// from the old copy, so the caller gets a 503 that says exactly that.
+func (s *Server) reloadPrices(c *gin.Context) bool {
+	if err := s.pricer.Reload(); err != nil {
+		slog.Error("price table written but runtime reload failed", "err", err)
+		fail(c, 503, "price_reload_failed", "价目已写入数据库，但运行态未刷新，当前请求仍按旧价目计费；请重试或重启网关: "+err.Error())
+		return false
 	}
-	if in.Currency != "USD" && in.Currency != "CNY" {
-		return "货币只支持 USD / CNY"
+	return true
+}
+
+// priceKeyConflict reports a unique-key violation on (provider, pattern) as a 409.
+func priceKeyConflict(c *gin.Context, err error) bool {
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "unique") || strings.Contains(msg, "duplicate key") {
+		fail(c, 409, "price_exists", "同一供应商下已有同名模型的价格行")
+		return true
 	}
-	for _, v := range []float64{in.InputPerM, in.OutputPerM, in.CachedInputPerM, in.CacheWritePerM} {
-		if v < 0 || v > 1e6 {
-			return "单价范围 0 - 1000000（每百万 Token）"
-		}
-	}
-	return ""
+	return false
 }
 
 func (s *Server) createPrice(c *gin.Context) {
@@ -75,13 +94,17 @@ func (s *Server) createPrice(c *gin.Context) {
 	p := model.ModelPrice{Pattern: in.Pattern, Provider: in.Provider, InputPerM: in.InputPerM, OutputPerM: in.OutputPerM,
 		CachedInputPerM: in.CachedInputPerM, CacheWritePerM: in.CacheWritePerM, Currency: in.Currency, Enabled: in.Enabled == nil || *in.Enabled, Note: in.Note}
 	if err := s.db.Create(&p).Error; err != nil {
-		serverError(c, err)
+		if !priceKeyConflict(c, err) {
+			serverError(c, err)
+		}
 		return
 	}
 	if !p.Enabled {
 		s.db.Model(&p).Update("enabled", false)
 	}
-	_ = s.pricer.Reload()
+	if !s.reloadPrices(c) {
+		return
+	}
 	c.JSON(200, p)
 }
 
@@ -110,10 +133,14 @@ func (s *Server) updatePrice(c *gin.Context) {
 		upd["enabled"] = *in.Enabled
 	}
 	if err := s.db.Model(&p).Updates(upd).Error; err != nil {
-		serverError(c, err)
+		if !priceKeyConflict(c, err) {
+			serverError(c, err)
+		}
 		return
 	}
-	_ = s.pricer.Reload()
+	if !s.reloadPrices(c) {
+		return
+	}
 	s.db.First(&p, id)
 	c.JSON(200, p)
 }
@@ -132,7 +159,9 @@ func (s *Server) deletePrice(c *gin.Context) {
 		notFound(c)
 		return
 	}
-	_ = s.pricer.Reload()
+	if !s.reloadPrices(c) {
+		return
+	}
 	c.JSON(200, gin.H{})
 }
 
@@ -142,7 +171,9 @@ func (s *Server) resetBuiltinPrices(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
-	_ = s.pricer.Reload()
+	if !s.reloadPrices(c) {
+		return
+	}
 	c.JSON(200, gin.H{"builtin_updated": pricing.BuiltinUpdated})
 }
 
@@ -199,23 +230,106 @@ func (s *Server) fillCost(l *model.CallLog) {
 }
 
 // ---- price catalog import ----
+//
+// Importing is a two-step, bound flow: a preview parses the catalog, stores it under a
+// plan_id together with its SHA-256, and returns the plan; apply takes that plan_id and
+// writes exactly the bytes that were previewed (re-planned inside the write transaction
+// so the counts describe what actually changed). Nothing is downloaded again at apply
+// time, so a remote file that changed between the two clicks cannot slip in.
 
-const importMaxBytes = 32 << 20
+const (
+	importMaxBytes  = 32 << 20
+	importPlanTTL   = 30 * time.Minute
+	importPlanCap   = 16
+	importSourceUA  = "yzapi-gateway/1.0"
+	importFetchWait = 60 * time.Second
+)
 
 type importIn struct {
-	Source          string `json:"source"` // litellm | easycpa | url
-	URL             string `json:"url"`
-	Apply           bool   `json:"apply"`
-	OverwriteEdited bool   `json:"overwrite_edited"`
+	Source            string `json:"source"` // litellm | easycpa | url
+	URL               string `json:"url"`
+	Apply             bool   `json:"apply"` // rejected: apply goes through /import/apply with a plan_id
+	OverwriteEdited   bool   `json:"overwrite_edited"`
+	OverwriteCurrency bool   `json:"overwrite_currency"`
 }
 
-// importPrices downloads a price catalog (LiteLLM or EasyCLIProxyAPI format) and either
-// previews the changes or applies them. Manual and edited rows are kept unless
-// overwrite_edited is set.
+// storedImport is a previewed catalog waiting for apply.
+type storedImport struct {
+	id      string
+	sha     string
+	origin  string
+	catalog *pricing.Catalog
+	opts    pricing.ImportOptions
+	by      string
+	created time.Time
+}
+
+type importPlans struct {
+	mu    sync.Mutex
+	plans map[string]*storedImport
+	// applying serialises Apply calls in this process; the unique index on
+	// (provider, pattern) is what guarantees one row per key across processes.
+	applying sync.Mutex
+}
+
+func newImportPlans() *importPlans { return &importPlans{plans: map[string]*storedImport{}} }
+
+func (ip *importPlans) put(si *storedImport) {
+	ip.mu.Lock()
+	defer ip.mu.Unlock()
+	now := time.Now()
+	for id, p := range ip.plans {
+		if now.Sub(p.created) > importPlanTTL {
+			delete(ip.plans, id)
+		}
+	}
+	for len(ip.plans) >= importPlanCap {
+		oldest := ""
+		for id, p := range ip.plans {
+			if oldest == "" || p.created.Before(ip.plans[oldest].created) {
+				oldest = id
+			}
+		}
+		delete(ip.plans, oldest)
+	}
+	ip.plans[si.id] = si
+}
+
+// get returns a stored preview that has not expired; it stays stored until done().
+func (ip *importPlans) get(id string) *storedImport {
+	ip.mu.Lock()
+	defer ip.mu.Unlock()
+	p, ok := ip.plans[id]
+	if !ok || time.Since(p.created) > importPlanTTL {
+		delete(ip.plans, id)
+		return nil
+	}
+	return p
+}
+
+// done removes a plan once it has been applied: a plan id is single-use.
+func (ip *importPlans) done(id string) {
+	ip.mu.Lock()
+	delete(ip.plans, id)
+	ip.mu.Unlock()
+}
+
+func newPlanID() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}
+
+// importPrices downloads a price catalog (LiteLLM or EasyCLIProxyAPI format) and
+// returns a preview bound to a plan_id. It never writes.
 func (s *Server) importPrices(c *gin.Context) {
 	var in importIn
 	if err := c.ShouldBindJSON(&in); err != nil {
 		badRequest(c, "invalid body")
+		return
+	}
+	if in.Apply {
+		badRequest(c, "预览与应用已分离：先预览取得 plan_id，再调用 /api/admin/prices/import/apply")
 		return
 	}
 	url := strings.TrimSpace(in.URL)
@@ -226,14 +340,14 @@ func (s *Server) importPrices(c *gin.Context) {
 		badRequest(c, "来源地址必须为 http(s) URL，或 source 取 litellm / easycpa")
 		return
 	}
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), importFetchWait)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		badRequest(c, "来源地址无效")
 		return
 	}
-	req.Header.Set("User-Agent", "yzapi-gateway/1.0")
+	req.Header.Set("User-Agent", importSourceUA)
 	resp, err := s.gw.HTTPClient().Do(req)
 	if err != nil {
 		fail(c, 502, "import_fetch_failed", "下载价目失败: "+err.Error())
@@ -253,11 +367,11 @@ func (s *Server) importPrices(c *gin.Context) {
 		badRequest(c, "价目文件超过 32 MB")
 		return
 	}
-	s.importCatalog(c, data, url, in.Apply, in.OverwriteEdited)
+	s.importPreview(c, data, url, pricing.ImportOptions{OverwriteEdited: in.OverwriteEdited, OverwriteCurrency: in.OverwriteCurrency})
 }
 
-// importPricesFile is the upload variant: multipart field "file", plus "apply" and
-// "overwrite_edited" form fields ("1" / "true").
+// importPricesFile is the upload variant: multipart field "file" plus the option
+// fields "overwrite_edited" / "overwrite_currency" ("1" / "true"). Preview only.
 func (s *Server) importPricesFile(c *gin.Context) {
 	fh, err := c.FormFile("file")
 	if err != nil {
@@ -283,31 +397,82 @@ func (s *Server) importPricesFile(c *gin.Context) {
 		v = strings.ToLower(strings.TrimSpace(v))
 		return v == "1" || v == "true" || v == "yes"
 	}
-	s.importCatalog(c, data, "upload:"+fh.Filename, truthy(c.PostForm("apply")), truthy(c.PostForm("overwrite_edited")))
+	if truthy(c.PostForm("apply")) {
+		badRequest(c, "预览与应用已分离：先预览取得 plan_id，再调用 /api/admin/prices/import/apply")
+		return
+	}
+	s.importPreview(c, data, "upload:"+fh.Filename, pricing.ImportOptions{OverwriteEdited: truthy(c.PostForm("overwrite_edited")), OverwriteCurrency: truthy(c.PostForm("overwrite_currency"))})
 }
 
-func (s *Server) importCatalog(c *gin.Context, data []byte, origin string, apply, overwrite bool) {
+func (s *Server) importPreview(c *gin.Context, data []byte, origin string, opts pricing.ImportOptions) {
 	cat, err := pricing.ParseCatalog(data)
 	if err != nil {
 		badRequest(c, "价目文件格式无法识别（支持 LiteLLM model_prices_and_context_window.json 与 EasyCLIProxyAPI model_prices.json）: "+err.Error())
 		return
 	}
 	if len(cat.Rows) == 0 {
-		badRequest(c, "价目文件里没有可用的行")
+		msg := "价目文件里没有可用的行"
+		if cat.Invalid > 0 {
+			msg += fmt.Sprintf("（%d 条未通过校验）", cat.Invalid)
+		}
+		badRequest(c, msg)
 		return
 	}
-	plan, err := pricing.PlanImport(s.db, cat, overwrite)
+	plan, err := pricing.PlanImportWith(s.db, cat, opts)
 	if err != nil {
 		serverError(c, err)
 		return
 	}
-	if apply {
-		if err := plan.Apply(s.db); err != nil {
-			serverError(c, err)
-			return
-		}
-		_ = s.pricer.Reload()
-		slog.Info("price catalog imported", "origin", origin, "plan", plan.Summary(), "by", cur(c).Username)
+	sum := sha256.Sum256(data)
+	si := &storedImport{id: newPlanID(), sha: hex.EncodeToString(sum[:]), origin: origin, catalog: cat, opts: opts, by: cur(c).Username, created: time.Now()}
+	s.imports.put(si)
+	c.JSON(200, gin.H{"applied": false, "plan_id": si.id, "sha256": si.sha, "origin": origin, "options": opts,
+		"expires_in": int(importPlanTTL.Seconds()), "plan": plan})
+}
+
+type importApplyIn struct {
+	PlanID string `json:"plan_id"`
+	SHA256 string `json:"sha256"` // optional double-check against the preview
+}
+
+// importApply writes a previewed catalog. The configuration snapshot is taken here,
+// immediately before the write transaction, so a preview never consumes one.
+func (s *Server) importApply(c *gin.Context) {
+	var in importApplyIn
+	if err := c.ShouldBindJSON(&in); err != nil || strings.TrimSpace(in.PlanID) == "" {
+		badRequest(c, "缺少 plan_id：请先预览")
+		return
 	}
-	c.JSON(200, gin.H{"applied": apply, "origin": origin, "plan": plan})
+	si := s.imports.get(strings.TrimSpace(in.PlanID))
+	if si == nil {
+		fail(c, 409, "import_plan_expired", "预览已过期或已被使用，请重新预览")
+		return
+	}
+	if in.SHA256 != "" && !strings.EqualFold(in.SHA256, si.sha) {
+		fail(c, 409, "import_plan_mismatch", "预览内容与应用请求不一致，请重新预览")
+		return
+	}
+	s.imports.applying.Lock()
+	defer s.imports.applying.Unlock()
+	if err := s.snapshotConfig(cur(c).Username, "POST "+c.Request.URL.Path); err != nil {
+		serverError(c, err)
+		return
+	}
+	plan, err := pricing.PlanImportWith(s.db, si.catalog, si.opts)
+	if err != nil {
+		serverError(c, err)
+		return
+	}
+	if err := plan.Apply(s.db); err != nil {
+		if !priceKeyConflict(c, err) {
+			serverError(c, err)
+		}
+		return
+	}
+	s.imports.done(si.id)
+	slog.Info("price catalog imported", "origin", si.origin, "sha256", si.sha, "plan", plan.Summary(), "by", cur(c).Username)
+	if !s.reloadPrices(c) {
+		return
+	}
+	c.JSON(200, gin.H{"applied": true, "plan_id": si.id, "sha256": si.sha, "origin": si.origin, "options": si.opts, "plan": plan})
 }
