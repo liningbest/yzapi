@@ -6,26 +6,29 @@ import (
 	"gorm.io/gorm"
 )
 
-// Identity is the single rule for "which embedding does this configuration use". It is
-// what the engines stamp on every stored vector and compare on reload, and what the
-// upgrade migration uses to decide which of two duplicate vectors the runtime can load.
-//
-// With the account readable, of embedding type and enabled it is
-// "<account id>|<base url>|<upstream model>", the upstream model being the request
-// model (or the account's test model when empty) after the account's model mapping.
-// Otherwise it degrades to "<account id>:<request model>"; an unconfigured vector
-// service (account 0) has the empty identity.
-//
-// The lookups use plain SQL so the resolver also works on a database that predates
-// some columns or tables (the migration runs before AutoMigrate); missing tables or
-// columns mean "not resolvable", a query error is returned.
+// Resolved is one consistent snapshot of the embedding account as the runtime and
+// the upgrade migration see it. Every field comes from a single SQL statement (the
+// account joined with its model mapping), so a concurrent account update can only
+// produce a complete old or a complete new generation, never a mix of the two.
 type Resolved struct {
-	Identity string
+	Identity string // "<id>|<base url>|<upstream model>", or "<id>:<request model>" when the account does not resolve; "" when unconfigured
+	Exists   bool
+	Type     string
+	Enabled  bool
 	BaseURL  string
-	Upstream string
-	Live     bool // the account resolved: BaseURL / Upstream are meaningful
+	KeyEnc   string // the encrypted API key of the same snapshot
+	Upstream string // request model (or the account's test model when empty) after the account's mapping
+	Live     bool   // the account exists, is an embedding account and is enabled
 }
 
+// Identity resolves the embedding account in one statement. It is the single rule for
+// "which embedding does this configuration use": the engines stamp it on every stored
+// vector and compare it on reload, and the migration uses it to decide which of two
+// duplicate vectors the runtime can load.
+//
+// The lookup uses plain SQL so it also works on a database that predates some columns
+// or tables (the migration runs before AutoMigrate); a missing table or column means
+// "not resolvable", a query error is returned.
 func Identity(db *gorm.DB, accountID uint, requestModel string) (Resolved, error) {
 	if accountID == 0 {
 		return Resolved{}, nil
@@ -35,39 +38,54 @@ func Identity(db *gorm.DB, accountID uint, requestModel string) (Resolved, error
 	if !m.HasTable("accounts") {
 		return fallback, nil
 	}
-	cols := "base_url, type, enabled"
 	hasTest := m.HasColumn("accounts", "test_model")
+	hasMap := m.HasTable("model_mappings")
+	testExpr := "''"
 	if hasTest {
-		cols += ", test_model"
+		testExpr = "a.test_model"
 	}
-	var acc struct {
+	// The requested model (or the account's test model when empty) is resolved in the
+	// join condition, so the mapping row belongs to the same snapshot as the account.
+	sql := "SELECT a.base_url AS base_url, a.type AS type, a.enabled AS enabled, a.api_key_enc AS key_enc, " + testExpr + " AS test_model"
+	args := []any{}
+	if hasMap {
+		sql += ", COALESCE(m.upstream_model, '') AS mapped FROM accounts a LEFT JOIN model_mappings m ON m.account_id = a.id AND m.request_model = CASE WHEN ? = '' THEN " + testExpr + " ELSE ? END"
+		args = append(args, requestModel, requestModel)
+	} else {
+		sql += ", '' AS mapped FROM accounts a"
+	}
+	sql += " WHERE a.id = ?"
+	args = append(args, accountID)
+	var row struct {
 		BaseURL   string
 		Type      string
 		Enabled   bool
+		KeyEnc    string
 		TestModel string
+		Mapped    string
 	}
-	res := db.Raw("SELECT "+cols+" FROM accounts WHERE id = ?", accountID).Scan(&acc)
+	res := db.Raw(sql, args...).Scan(&row)
 	if res.Error != nil {
 		return Resolved{}, res.Error
 	}
-	if res.RowsAffected == 0 || acc.Type != "embedding" || !acc.Enabled {
+	if res.RowsAffected == 0 {
 		return fallback, nil
+	}
+	out := Resolved{Exists: true, Type: row.Type, Enabled: row.Enabled, BaseURL: row.BaseURL, KeyEnc: row.KeyEnc, Identity: fallback.Identity}
+	if row.Type != "embedding" || !row.Enabled {
+		return out, nil
 	}
 	upstream := requestModel
 	if upstream == "" {
-		upstream = acc.TestModel
+		upstream = row.TestModel
 	}
-	if m.HasTable("model_mappings") {
-		var mm struct{ UpstreamModel string }
-		r := db.Raw("SELECT upstream_model FROM model_mappings WHERE account_id = ? AND request_model = ?", accountID, upstream).Scan(&mm)
-		if r.Error != nil {
-			return Resolved{}, r.Error
-		}
-		if r.RowsAffected > 0 && mm.UpstreamModel != "" {
-			upstream = mm.UpstreamModel
-		}
+	if row.Mapped != "" {
+		upstream = row.Mapped
 	}
-	return Resolved{Identity: fmt.Sprintf("%d|%s|%s", accountID, acc.BaseURL, upstream), BaseURL: acc.BaseURL, Upstream: upstream, Live: true}, nil
+	out.Upstream = upstream
+	out.Live = true
+	out.Identity = fmt.Sprintf("%d|%s|%s", accountID, row.BaseURL, upstream)
+	return out, nil
 }
 
 // Compatible reports whether a stored vector identity can be loaded under the current

@@ -106,10 +106,9 @@ func Open(cfg *config.Config) (*gorm.DB, error) {
 // returns with the keys in force: no writer can recreate a duplicate between the
 // cleanup and the index (AutoMigrate afterwards finds the indexes present).
 func migrateIdempotencyKeys(db *gorm.DB) error {
-	m := db.Migrator()
 	need := false
 	for _, k := range idempotencyKeys {
-		need = need || keyMissing(m, k.table, k.index, k.cols)
+		need = need || keyMissing(db, k.table, k.index, k.cols)
 	}
 	if !need {
 		return nil
@@ -120,13 +119,12 @@ func migrateIdempotencyKeys(db *gorm.DB) error {
 				return err
 			}
 		}
-		tm := tx.Migrator()
 		identity, err := currentVectorIdentity(tx)
 		if err != nil {
 			return fmt.Errorf("resolve the vector identity before de-duplicating samples: %w", err)
 		}
 		for _, k := range idempotencyKeys {
-			if !keyMissing(tm, k.table, k.index, k.cols) {
+			if !keyMissing(tx, k.table, k.index, k.cols) {
 				continue
 			}
 			var err error
@@ -188,12 +186,18 @@ func vectorUsable(stored, identity string) bool {
 }
 
 // correctUniqueIndex reports whether table has an index of that name that is UNIQUE
-// over exactly these columns in this order. A same-named index with another
-// definition (a legacy non-unique index, a manual repair) is not the key.
-func correctUniqueIndex(m gorm.Migrator, table, name string, cols []string) (exists, correct bool) {
+// over exactly these columns in this order, with no predicate and no expression (a
+// partial or expression index does not cover the whole table and is not the key). A
+// same-named index with any other definition is replaced. When the dialect's index
+// metadata cannot be read the check fails closed (an error, never "correct").
+func correctUniqueIndex(db *gorm.DB, table, name string, cols []string) (exists, correct bool, err error) {
+	m := db.Migrator()
 	idxs, err := m.GetIndexes(table)
 	if err != nil {
-		return m.HasIndex(table, name), false
+		// The driver could not describe the table's indexes (SQLite's reader trips on
+		// expression indexes, for example). A same-named index whose definition cannot
+		// be read is treated as wrong and rebuilt under the lock; nothing is trusted.
+		return m.HasIndex(table, name), false, nil
 	}
 	for _, ix := range idxs {
 		if ix.Name() != name {
@@ -202,22 +206,86 @@ func correctUniqueIndex(m gorm.Migrator, table, name string, cols []string) (exi
 		unique, _ := ix.Unique()
 		got := ix.Columns()
 		if !unique || len(got) != len(cols) {
-			return true, false
+			return true, false, nil
 		}
 		for i := range cols {
 			if got[i] != cols[i] {
-				return true, false
+				return true, false, nil
 			}
 		}
-		return true, true
+		plain, perr := indexIsPlain(db, table, name)
+		if perr != nil {
+			return true, false, perr
+		}
+		return true, plain, nil
 	}
-	return false, false
+	return false, false, nil
 }
+
+// indexIsPlain reports whether an index has no WHERE predicate and no expression
+// column, per dialect: SQLite from PRAGMA index_list / index_xinfo, PostgreSQL from
+// pg_index. Any other dialect is an error (fail closed).
+func indexIsPlain(db *gorm.DB, table, name string) (bool, error) {
+	switch db.Dialector.Name() {
+	case "sqlite", "sqlite3":
+		var list []struct {
+			Seq     int
+			Name    string
+			Unique  int
+			Origin  string
+			Partial int
+		}
+		if err := db.Raw("PRAGMA index_list(" + quoteIdent(table) + ")").Scan(&list).Error; err != nil {
+			return false, err
+		}
+		found := false
+		for _, ix := range list {
+			if ix.Name == name {
+				found = true
+				if ix.Partial != 0 {
+					return false, nil
+				}
+			}
+		}
+		if !found {
+			return false, nil
+		}
+		var xinfo []struct {
+			Seqno int
+			Cid   int
+			Name  *string
+			Desc  int
+			Coll  string
+			Key   int
+		}
+		if err := db.Raw("PRAGMA index_xinfo(" + quoteIdent(name) + ")").Scan(&xinfo).Error; err != nil {
+			return false, err
+		}
+		for _, x := range xinfo {
+			if x.Key == 1 && (x.Cid < 0 || x.Name == nil) { // -2: expression column
+				return false, nil
+			}
+		}
+		return true, nil
+	case "postgres":
+		var plain bool
+		if err := db.Raw("SELECT (i.indpred IS NULL AND i.indexprs IS NULL) FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = ?", name).Scan(&plain).Error; err != nil {
+			return false, err
+		}
+		return plain, nil
+	}
+	return false, fmt.Errorf("cannot verify index %s on %s: unsupported dialect %s", name, table, db.Dialector.Name())
+}
+
+func quoteIdent(s string) string { return "\"" + strings.ReplaceAll(s, "\"", "\"\"") + "\"" }
 
 // ensureUniqueIndex drops a same-named index whose definition is wrong and creates
 // the unique index; cleanup must have run before.
 func ensureUniqueIndex(tx *gorm.DB, table, name string, cols []string) error {
-	exists, correct := correctUniqueIndex(tx.Migrator(), table, name, cols)
+	exists, correct, err := correctUniqueIndex(tx, table, name, cols)
+	if err != nil {
+		return err
+	}
 	if correct {
 		return nil
 	}
@@ -230,8 +298,8 @@ func ensureUniqueIndex(tx *gorm.DB, table, name string, cols []string) error {
 	if err := tx.Exec("CREATE UNIQUE INDEX " + name + " ON " + table + " (" + strings.Join(cols, ", ") + ")").Error; err != nil {
 		return err
 	}
-	if _, ok := correctUniqueIndex(tx.Migrator(), table, name, cols); !ok {
-		return fmt.Errorf("index %s on %s is not the expected unique index after creation", name, table)
+	if _, ok, err := correctUniqueIndex(tx, table, name, cols); err != nil || !ok {
+		return fmt.Errorf("index %s on %s is not the expected unique index after creation (%v)", name, table, err)
 	}
 	return nil
 }
@@ -246,12 +314,13 @@ var idempotencyKeys = []struct {
 	{"route_samples", "uq_route_samples_key", []string{"label", "text_hash"}},
 }
 
-// keyMissing reports whether a table exists without its correct unique key.
-func keyMissing(m gorm.Migrator, table, index string, cols []string) bool {
-	if !m.HasTable(table) {
+// keyMissing reports whether a table exists without its correct unique key. A
+// metadata read error counts as missing so the locked migration re-examines it.
+func keyMissing(db *gorm.DB, table, index string, cols []string) bool {
+	if !db.Migrator().HasTable(table) {
 		return false
 	}
-	_, correct := correctUniqueIndex(m, table, index, cols)
+	_, correct, _ := correctUniqueIndex(db, table, index, cols)
 	return !correct
 }
 

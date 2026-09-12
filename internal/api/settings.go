@@ -94,23 +94,27 @@ func (s *Server) putPerformance(c *gin.Context) {
 	c.JSON(200, in)
 }
 
+// vectorClient builds the embedding client from ONE snapshot of the account and its
+// mapping (vector.Identity reads them in a single statement): base URL, key and
+// upstream model always belong to the same account generation, so a concurrent
+// account update can never yield the old key against the new endpoint.
 func (s *Server) vectorClient(accountID uint, mdl string) (*vector.Client, string) {
-	var a model.Account
-	if err := s.db.First(&a, accountID).Error; err != nil {
+	r, err := vector.Identity(s.db, accountID, mdl)
+	if err != nil {
+		return nil, "向量账号读取失败: " + err.Error()
+	}
+	if !r.Exists {
 		return nil, "向量账号不存在"
 	}
-	if a.Type != model.TypeEmbedding {
+	if r.Type != model.TypeEmbedding {
 		return nil, "所选账号不是向量类型"
 	}
-	if !a.Enabled {
+	if !r.Enabled {
 		return nil, "所选账号已禁用"
 	}
-	key, _ := s.cipher.Decrypt(a.APIKeyEnc)
-	// The upstream model (test model fallback, then the account's mapping) comes from
-	// the shared identity rule, so the runtime key and the upgrade migration agree.
-	r, err := vector.Identity(s.db, a.ID, mdl)
-	if err != nil || !r.Live {
-		return nil, "向量账号无法解析"
+	key, err := s.cipher.Decrypt(r.KeyEnc)
+	if err != nil {
+		return nil, "向量账号密钥无法解密"
 	}
 	return vector.New(r.BaseURL, key, r.Upstream, s.gw.HTTPClient()), ""
 }
@@ -248,11 +252,22 @@ func (s *Server) resolveVectorClient(v settings.Vector) (*vector.Client, string)
 // VectorEmbedFunc returns an embedding function bound to the current vector settings.
 func (s *Server) VectorEmbedFunc() func(ctx context.Context, inputs []string) ([][]float32, error) {
 	return func(ctx context.Context, inputs []string) ([][]float32, error) {
+		out, _, err := s.EmbedWithIdentity(ctx, inputs)
+		return out, err
+	}
+}
+
+// EmbedWithIdentity embeds and reports the identity of the client snapshot that did
+// the work, taken before the upstream call: vectors are stored under the identity
+// that produced them even if the configuration switches while the request is in
+// flight (the engines then treat them as stale under the new identity).
+func (s *Server) EmbedWithIdentity(ctx context.Context, inputs []string) ([][]float32, string, error) {
+	{
 		v := s.st.Get().Vector
 		perf := s.st.Get().Performance
 		snap, msg := s.snapshotVector(v)
 		if snap.client == nil {
-			return nil, errVector(msg)
+			return nil, "", errVector(msg)
 		}
 		cl, key, gen, cache := snap.client, snap.key, snap.gen, snap.cache
 
@@ -267,13 +282,13 @@ func (s *Server) VectorEmbedFunc() func(ctx context.Context, inputs []string) ([
 			}
 		}
 		if len(missing) == 0 {
-			return out, nil
+			return out, key, nil
 		}
 		timeout := time.Duration(max(perf.VectorTimeoutSec, 1)) * time.Second
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		if !s.vec.limiter.acquire(ctx, max(perf.VectorMaxConcurrency, 1)) {
-			return nil, errVector("embedding concurrency limit reached (timeout waiting)")
+			return nil, key, errVector("embedding concurrency limit reached (timeout waiting)")
 		}
 		defer s.vec.limiter.release()
 		batch := make([]string, len(missing))
@@ -282,10 +297,10 @@ func (s *Server) VectorEmbedFunc() func(ctx context.Context, inputs []string) ([
 		}
 		vecs, err := cl.Embed(ctx, batch)
 		if err != nil {
-			return nil, err
+			return nil, key, err
 		}
 		if len(vecs) != len(batch) {
-			return nil, errVector("embedding returned wrong number of vectors")
+			return nil, key, errVector("embedding returned wrong number of vectors")
 		}
 		for j, i := range missing {
 			out[i] = vecs[j]
@@ -300,7 +315,7 @@ func (s *Server) VectorEmbedFunc() func(ctx context.Context, inputs []string) ([
 			}
 		}
 		s.vec.mu.Unlock()
-		return out, nil
+		return out, key, nil
 	}
 }
 

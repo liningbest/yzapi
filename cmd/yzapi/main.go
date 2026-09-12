@@ -104,6 +104,9 @@ func main() {
 	embed := mgmt.VectorEmbedFunc()
 	routeEng := routing.New(database, st, embed)
 	compEng := compliance.New(database, st, embed)
+	// Stored vectors carry the identity of the snapshot that embedded them.
+	routeEng.SetIdentifiedEmbed(mgmt.EmbedWithIdentity)
+	compEng.SetIdentifiedEmbed(mgmt.EmbedWithIdentity)
 	// Checked initial loads: the data plane must not start on an unloaded rule set.
 	// Compliance enabled + rules unreadable refuses to start (the engine would block
 	// everything until a reload succeeds); a failed route load only loses smart

@@ -31,6 +31,14 @@ import (
 // EmbedFunc produces one unit-normalized vector per input, in order.
 type EmbedFunc func(ctx context.Context, inputs []string) ([][]float32, error)
 
+// IdentifiedEmbedFunc embeds and reports the vector identity of the client snapshot
+// that produced the vectors, so they are stored under exactly that identity.
+type IdentifiedEmbedFunc func(ctx context.Context, inputs []string) ([][]float32, string, error)
+
+// SetIdentifiedEmbed installs the embed function that reports its snapshot identity;
+// BuildVectors prefers it over the plain one.
+func (e *Engine) SetIdentifiedEmbed(fn IdentifiedEmbedFunc) { e.embedID = fn }
+
 // Labels and decision sources.
 const (
 	LabelSimple  = "simple"
@@ -107,6 +115,7 @@ type Engine struct {
 	db       *gorm.DB
 	st       *settings.Store
 	embed    EmbedFunc
+	embedID  IdentifiedEmbedFunc // preferred when set: returns the identity of the snapshot that embedded
 	index    atomic.Pointer[[]Sample]
 	identity func() string
 }
@@ -450,7 +459,7 @@ func round4(f float64) float64 { return float64(int64(f*10000+0.5)) / 10000 }
 // reloads the index. On an embedding error it stops and returns the counts so
 // far together with the error.
 func (e *Engine) BuildVectors(ctx context.Context, ids []uint) (built int, failed int, err error) {
-	if e.embed == nil {
+	if e.embed == nil && e.embedID == nil {
 		return 0, 0, errors.New("vector service is not configured")
 	}
 	q := e.db.Model(&model.RouteSample{}).Select("id", "text")
@@ -478,7 +487,19 @@ func (e *Engine) BuildVectors(ctx context.Context, ids []uint) (built int, faile
 				inputs[j] = " "
 			}
 		}
-		vecs, eerr := e.embed(ctx, inputs)
+		// The identity these vectors are stamped with is the one that produced them:
+		// the embed function reports the snapshot it used, or, for a plain embed
+		// function, the identity read before the call. A configuration switch while
+		// the upstream request is in flight can then never label old-model vectors
+		// as the new model (they are stale under the new identity and get rebuilt).
+		stamp := e.vectorID()
+		var vecs [][]float32
+		var eerr error
+		if e.embedID != nil {
+			vecs, stamp, eerr = e.embedID(ctx, inputs)
+		} else {
+			vecs, eerr = e.embed(ctx, inputs)
+		}
 		if eerr != nil {
 			return built, failed + len(batch), eerr
 		}
@@ -492,7 +513,7 @@ func (e *Engine) BuildVectors(ctx context.Context, ids []uint) (built int, faile
 				continue
 			}
 			uerr := e.db.Model(&model.RouteSample{}).Where("id = ?", r.ID).
-				Updates(map[string]any{"vector": vector.Encode(v), "vector_dim": len(v), "vector_model": e.vectorID(), "updated_at": time.Now()}).Error
+				Updates(map[string]any{"vector": vector.Encode(v), "vector_dim": len(v), "vector_model": stamp, "updated_at": time.Now()}).Error
 			if uerr != nil {
 				failed++
 				continue

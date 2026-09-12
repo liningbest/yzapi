@@ -368,3 +368,59 @@ func TestR136MigrationVerifiesIndexIsUnique(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// R137-03: a partial or expression unique index is not the key: it is replaced by the
+// plain whole-table unique index after the cleanup, for every key table.
+func TestR137MigrationRejectsPartialUniqueIndex(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{Logger: logger.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE accounts (id integer primary key autoincrement, name text, provider text, type text, base_url text, api_key_enc text, protocols text, enabled numeric)`,
+		`CREATE UNIQUE INDEX uq_accounts_name ON accounts(name) WHERE enabled = 1`,
+		`INSERT INTO accounts (name,provider,type,base_url,api_key_enc,protocols,enabled) VALUES ('dup','openai','text','http://a','k','[]',0),('dup','openai','text','http://b','k','[]',0)`,
+		`CREATE TABLE sensitive_words (id integer primary key autoincrement, policy_group_id integer, word text, note text, enabled numeric)`,
+		`CREATE UNIQUE INDEX uq_sensitive_words_key ON sensitive_words(policy_group_id, lower(word))`,
+		`INSERT INTO sensitive_words (policy_group_id, word, note, enabled) VALUES (1,'w','',1),(1,'x','',1)`,
+		`CREATE TABLE route_samples (id integer primary key autoincrement, label text, text text, threshold real, note text, vector blob, vector_dim integer, vector_model text, text_hash varchar(64) NOT NULL DEFAULT '')`,
+		`CREATE UNIQUE INDEX uq_route_samples_key ON route_samples(label, text_hash) WHERE vector_dim > 0`,
+		`INSERT INTO route_samples (label, text, note) VALUES ('simple','same',''),('simple','same','')`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatal(stmt, err)
+		}
+	}
+	if err := migrateIdempotencyKeys(db); err != nil {
+		t.Fatal(err)
+	}
+	var n int64
+	db.Table("accounts").Where("name = ?", "dup").Count(&n)
+	if n != 1 {
+		t.Fatalf("partial unique index must not be trusted: %d duplicate account names left", n)
+	}
+	if err := db.Exec(`INSERT INTO accounts (name,provider,type,base_url,api_key_enc,protocols,enabled) VALUES ('dup','openai','text','http://c','k','[]',0)`).Error; err == nil {
+		t.Fatal("a disabled duplicate account name must be refused after the migration")
+	}
+	if err := db.Exec(`INSERT INTO sensitive_words (policy_group_id, word, note, enabled) VALUES (1,'w','',1)`).Error; err == nil {
+		t.Fatal("the plain key must refuse the duplicate word")
+	}
+	if err := db.Exec(`INSERT INTO sensitive_words (policy_group_id, word, note, enabled) VALUES (1,'W','',1)`).Error; err != nil {
+		t.Fatalf("the expression index (lower(word)) must have been replaced by the plain case-sensitive key: %v", err)
+	}
+	db.Table("route_samples").Where("label = ? AND text_hash = ?", "simple", model.TextKey("same")).Count(&n)
+	if n != 1 {
+		t.Fatalf("partial route index must not be trusted: %d rows", n)
+	}
+	for _, k := range idempotencyKeys {
+		if !db.Migrator().HasTable(k.table) {
+			continue
+		}
+		if _, ok, err := correctUniqueIndex(db, k.table, k.index, k.cols); err != nil || !ok {
+			t.Fatalf("%s must be a plain unique index after the migration: ok=%v err=%v", k.index, ok, err)
+		}
+	}
+	if err := db.AutoMigrate(model.All()...); err != nil {
+		t.Fatal(err)
+	}
+}
