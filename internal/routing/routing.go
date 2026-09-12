@@ -456,8 +456,10 @@ func truncateRunes(s string, n int) string {
 func round4(f float64) float64 { return float64(int64(f*10000+0.5)) / 10000 }
 
 // BuildVectors embeds the given samples (nil = all), stores their vectors and
-// reloads the index. On an embedding error it stops and returns the counts so
-// far together with the error.
+// reloads the index. It claims the rows first and its counts are conserved: on every
+// return, built + failed equals the rows claimed, so an embedding error (which stops
+// the build) reports the current and every later, never-sent batch as failed together
+// with the error.
 func (e *Engine) BuildVectors(ctx context.Context, ids []uint) (built int, failed int, err error) {
 	if e.embed == nil && e.embedID == nil {
 		return 0, 0, errors.New("vector service is not configured")

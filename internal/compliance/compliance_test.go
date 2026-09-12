@@ -108,9 +108,14 @@ func TestAggregate(t *testing.T) {
 
 func newTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{Logger: logger.Discard})
+	// A unique in-memory database per call: the name carries a random suffix so
+	// -count=N and parallel runs never share rows, and the pool is closed with the test.
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"-"+model.NewBuildToken()+"?mode=memory&cache=shared"), &gorm.Config{Logger: logger.Discard})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
+	}
+	if raw, err := db.DB(); err == nil {
+		t.Cleanup(func() { _ = raw.Close() })
 	}
 	if err := db.AutoMigrate(model.All()...); err != nil {
 		t.Fatalf("migrate: %v", err)
