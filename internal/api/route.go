@@ -86,6 +86,9 @@ func (s *Server) createRouteSample(c *gin.Context) {
 	var buildErr string
 	if in.BuildVector && s.eng.Route != nil {
 		if _, _, err := s.eng.Route.BuildVectors(c.Request.Context(), []uint{x.ID}); err != nil {
+			if buildReloadFailed(c, "route", err, nil) {
+				return
+			}
 			buildErr = err.Error()
 		}
 		s.db.First(&x, x.ID)
@@ -137,6 +140,9 @@ func (s *Server) updateRouteSample(c *gin.Context) {
 	if s.eng.Route != nil {
 		if in.BuildVector && textChanged {
 			_, failed, err := s.eng.Route.BuildVectors(c.Request.Context(), []uint{x.ID})
+			if buildReloadFailed(c, "route", err, nil) {
+				return
+			}
 			if err != nil {
 				buildErr = err.Error()
 			} else if failed > 0 {
@@ -206,6 +212,9 @@ func (s *Server) batchRouteSamples(c *gin.Context) {
 		}
 		built, failed, err := s.eng.Route.BuildVectors(c.Request.Context(), ids)
 		resp["built"], resp["failed"] = built, failed
+		if buildReloadFailed(c, "route", err, resp) {
+			return
+		}
 		if err != nil {
 			resp["error"] = err.Error()
 		}
@@ -235,6 +244,9 @@ func (s *Server) buildRouteVectors(c *gin.Context) {
 	}
 	built, failed, err := s.eng.Route.BuildVectors(c.Request.Context(), ids)
 	resp := gin.H{"built": built, "failed": failed}
+	if buildReloadFailed(c, "route", err, resp) {
+		return
+	}
 	if err != nil {
 		resp["error"] = err.Error()
 	}

@@ -434,8 +434,13 @@ func (s *Server) createAuditSample(c *gin.Context) {
 	x.Enabled = !disabled
 	var buildErr string
 	if in.BuildVector && s.eng.Compliance != nil {
-		if _, _, err := s.eng.Compliance.BuildVectors(c.Request.Context(), []uint{x.ID}); err != nil {
+		if _, failed, err := s.eng.Compliance.BuildVectors(c.Request.Context(), []uint{x.ID}); err != nil {
+			if buildReloadFailed(c, "compliance", err, nil) {
+				return
+			}
 			buildErr = err.Error()
+		} else if failed > 0 {
+			buildErr = "向量构建失败，请检查向量服务"
 		}
 	} else if !s.reloadRuntimes(c, "compliance") {
 		return
@@ -487,13 +492,27 @@ func (s *Server) updateAuditSample(c *gin.Context) {
 		serverError(c, err)
 		return
 	}
+	// Same contract as create: an index reload failure is a 503, any other build
+	// failure is reported as build_error next to the (successfully saved) sample.
+	var buildErr string
 	if s.eng.Compliance != nil && changed && in.BuildVector {
-		_, _, _ = s.eng.Compliance.BuildVectors(c.Request.Context(), []uint{x.ID})
+		if _, failed, err := s.eng.Compliance.BuildVectors(c.Request.Context(), []uint{x.ID}); err != nil {
+			if buildReloadFailed(c, "compliance", err, nil) {
+				return
+			}
+			buildErr = err.Error()
+		} else if failed > 0 {
+			buildErr = "向量构建失败，请检查向量服务"
+		}
 	} else if !s.reloadRuntimes(c, "compliance") {
 		return
 	}
 	s.db.Preload("PolicyGroup").First(&x, id)
-	c.JSON(200, auditSampleView(&x))
+	out := auditSampleView(&x)
+	if buildErr != "" {
+		out["build_error"] = buildErr
+	}
+	c.JSON(200, out)
 }
 
 func (s *Server) deleteAuditSample(c *gin.Context) {
@@ -533,6 +552,9 @@ func (s *Server) buildAuditVectors(c *gin.Context) {
 	}
 	built, failed, err := s.eng.Compliance.BuildVectors(c.Request.Context(), ids)
 	resp := gin.H{"built": built, "failed": failed}
+	if buildReloadFailed(c, "compliance", err, resp) {
+		return
+	}
 	if err != nil {
 		resp["error"] = err.Error()
 	}

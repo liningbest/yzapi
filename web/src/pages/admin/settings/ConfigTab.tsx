@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { configSnapshotsApi } from '@/api';
 import { SectionTitle, TimeCell } from '@/components';
-import type { ConfigSnapshotRow } from '@/types';
+import type { ConfigSnapshotRow, ConfigRestoreResult } from '@/types';
 import { SETTINGS_KEY } from './shared';
 
 const KEY = ['config-snapshots'] as const;
@@ -42,6 +42,17 @@ export default function ConfigTab() {
         const rows = res.price_rows_skipped;
         message.warning(t('settings:config.priceRowsSkipped', { count: rows.length, rows: rows.slice(0, 5).join('；'), more: rows.length > 5 ? t('settings:config.priceRowsMore', { count: rows.length - 5 }) : '' }), 12);
       }
+    },
+    onError: (err: unknown) => {
+      // A 503 (database restored, a runtime not refreshed) still carries the restore report.
+      const data = (err as { response?: { data?: Partial<ConfigRestoreResult> } })?.response?.data;
+      if (!data) return;
+      if (data.price_rows_merged) message.warning(t('settings:config.priceRowsMerged', { count: data.price_rows_merged }), 8);
+      if (data.price_rows_skipped?.length) {
+        const rows = data.price_rows_skipped;
+        message.warning(t('settings:config.priceRowsSkipped', { count: rows.length, rows: rows.slice(0, 5).join('；'), more: rows.length > 5 ? t('settings:config.priceRowsMore', { count: rows.length - 5 }) : '' }), 12);
+      }
+      if (data.restored) invalidateAll();
       setViewing(null);
       invalidateAll();
     },

@@ -1,10 +1,14 @@
 package api
 
 import (
+	"errors"
 	"log/slog"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
+	"yzapi/internal/compliance"
+	"yzapi/internal/routing"
 )
 
 // Runtime copies of the configuration. Every mutating handler writes the database
@@ -69,6 +73,18 @@ func reloadFailed(c *gin.Context, failed []runtimeFailure, extra gin.H) {
 		body[k] = v
 	}
 	c.JSON(503, body)
+}
+
+// buildReloadFailed answers 503 when a vector build error is an index reload failure
+// (vectors are stored, the runtime still serves the previous index) and reports true;
+// any other build error is the caller's to render as build_error.
+func buildReloadFailed(c *gin.Context, subsystem string, err error, extra gin.H) bool {
+	if err == nil || !(errors.Is(err, routing.ErrIndexReload) || errors.Is(err, compliance.ErrIndexReload)) {
+		return false
+	}
+	slog.Error("vectors stored but index reload failed; the previous index stays live", "subsystem", subsystem, "err", err)
+	reloadFailed(c, []runtimeFailure{{Subsystem: subsystem, Code: subsystem + "_reload_failed", Error: err.Error()}}, extra)
+	return true
 }
 
 // reloadRuntimes refreshes the named runtimes and, on any failure, responds 503 and

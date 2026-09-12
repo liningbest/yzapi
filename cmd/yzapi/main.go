@@ -104,15 +104,33 @@ func main() {
 	embed := mgmt.VectorEmbedFunc()
 	routeEng := routing.New(database, st, embed)
 	compEng := compliance.New(database, st, embed)
-	routeEng.SetVectorIdentity(mgmt.VectorIdentity)
-	compEng.SetVectorIdentity(mgmt.VectorIdentity)
+	// Checked initial loads: the data plane must not start on an unloaded rule set.
+	// Compliance enabled + rules unreadable refuses to start (the engine would block
+	// everything until a reload succeeds); a failed route load only loses smart
+	// routing until the next reload and is logged.
+	if err := routeEng.SetVectorIdentity(mgmt.VectorIdentity); err != nil {
+		slog.Error("smart route index failed to load; requests route by the default group until a reload succeeds", "err", err)
+	}
+	if err := compEng.SetVectorIdentity(mgmt.VectorIdentity); err != nil {
+		if st.Get().Compliance.Enabled {
+			slog.Error("compliance is enabled but its rules could not be loaded; refusing to start", "err", err)
+			os.Exit(1)
+		}
+		slog.Warn("compliance rules failed to load (compliance is disabled); enabling it will block requests until a reload succeeds", "err", err)
+	}
 	mgmt.SetEngines(api.Engines{Route: routeAdapter{routeEng}, Compliance: complianceAdapter{compEng}, ES: es, Logs: logs})
 	gw.SetRouter(routeAdapter{routeEng})
 	gw.SetChecker(complianceAdapter{compEng})
 	gw.BodySink = es
 	st.OnApply(func(settings.All) {
-		_ = routeEng.Reload()
-		_ = compEng.Reload()
+		// API-driven changes report reload failures themselves (503); this background
+		// refresh after a settings change is logged so it is never lost.
+		if err := routeEng.Reload(); err != nil {
+			slog.Error("smart route index reload after settings change failed; previous index stays live", "err", err)
+		}
+		if err := compEng.Reload(); err != nil {
+			slog.Error("compliance index reload after settings change failed; previous index stays live", "err", err)
+		}
 	})
 
 	srv := server.New(cfg, database, gw, mgmt, func(w *metrics.Writer) {

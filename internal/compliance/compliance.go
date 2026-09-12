@@ -108,6 +108,10 @@ type index struct {
 	stale   int // enabled samples skipped because their vectors were built with another model
 }
 
+// ErrIndexReload marks a BuildVectors error that happened after the vectors were
+// stored: the database is updated but the in-memory index still is the previous one.
+var ErrIndexReload = errors.New("compliance index reload failed")
+
 // Engine is the content-compliance engine.
 type Engine struct {
 	db       *gorm.DB
@@ -115,10 +119,16 @@ type Engine struct {
 	embed    EmbedFunc
 	idx      atomic.Pointer[index]
 	identity func() string
+	// loaded is set by the first successful Reload. Until then the engine has no
+	// rules and, while compliance is enabled, fails closed: a configured blocking rule
+	// must never turn into a pass because the rules could not be read.
+	loaded  atomic.Bool
+	loadErr atomic.Pointer[string]
 }
 
-// New creates an engine and loads its index. New never fails so the gateway
-// can start; call Reload to surface load errors.
+// New creates an engine and attempts its first load. New never fails so the caller
+// can decide what a failed first load means (main refuses to start with compliance
+// enabled); until a Reload succeeds, Check blocks rather than passing.
 func New(db *gorm.DB, st *settings.Store, embed EmbedFunc) *Engine {
 	e := &Engine{db: db, st: st, embed: embed}
 	e.idx.Store(&index{})
@@ -126,9 +136,31 @@ func New(db *gorm.DB, st *settings.Store, embed EmbedFunc) *Engine {
 	return e
 }
 
+// Loaded reports whether the engine holds a successfully loaded rule set, and the
+// last load error otherwise.
+func (e *Engine) Loaded() (bool, string) {
+	if p := e.loadErr.Load(); p != nil && !e.loaded.Load() {
+		return false, *p
+	}
+	return e.loaded.Load(), ""
+}
+
 // Reload loads enabled policy groups, their enabled sensitive words and
 // enabled vectorized audit samples, rebuilds the matcher and swaps atomically.
+// A failed reload keeps the previous index (or, before the first success, none).
 func (e *Engine) Reload() error {
+	err := e.reload()
+	if err != nil {
+		msg := err.Error()
+		e.loadErr.Store(&msg)
+		return err
+	}
+	e.loaded.Store(true)
+	e.loadErr.Store(nil)
+	return nil
+}
+
+func (e *Engine) reload() error {
 	var groups []model.PolicyGroup
 	if err := e.db.Where("enabled = ?", true).Find(&groups).Error; err != nil {
 		return err
@@ -200,6 +232,12 @@ func (e *Engine) Test(ctx context.Context, text string) Verdict {
 }
 
 func (e *Engine) check(ctx context.Context, text string, threshold float64) Verdict {
+	if ok, loadErr := e.Loaded(); !ok {
+		// No rule set has ever been loaded: the configured rules are unknown, so the
+		// request is blocked and the reason says why (fail closed, never fail open).
+		return Verdict{Hit: true, Block: true, Action: ActionBlock, RiskLevel: RiskHigh, DetectMethod: "unavailable",
+			Evidence: "compliance rules not loaded", Degraded: true, DegradedReason: "compliance rules not loaded: " + loadErr}
+	}
 	idx := e.idx.Load()
 	if idx == nil || strings.TrimSpace(text) == "" {
 		return Verdict{}
@@ -268,9 +306,9 @@ func (e *Engine) check(ctx context.Context, text string, threshold float64) Verd
 
 // SetVectorIdentity overrides how the embedding identity is computed (the API layer
 // resolves account, base URL and mapped upstream model).
-func (e *Engine) SetVectorIdentity(fn func() string) {
+func (e *Engine) SetVectorIdentity(fn func() string) error {
 	e.identity = fn
-	_ = e.Reload()
+	return e.Reload()
 }
 
 func (e *Engine) vectorID() string {
@@ -355,7 +393,13 @@ func (e *Engine) BuildVectors(ctx context.Context, ids []uint) (built int, faile
 	if err = q.Order("id").Find(&rows).Error; err != nil {
 		return 0, 0, err
 	}
-	defer func() { _ = e.Reload() }()
+	// The stored vectors are only served once the index is reloaded; a failed reload
+	// is part of the result (joined with any build error, never replacing it).
+	defer func() {
+		if rerr := e.Reload(); rerr != nil {
+			err = errors.Join(err, fmt.Errorf("%w: %v", ErrIndexReload, rerr))
+		}
+	}()
 	for i := 0; i < len(rows); i += BuildBatchSize {
 		end := min(i+BuildBatchSize, len(rows))
 		batch := rows[i:end]

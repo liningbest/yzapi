@@ -117,9 +117,13 @@ func New(db *gorm.DB, st *settings.Store, embed EmbedFunc) *Engine {
 	e := &Engine{db: db, st: st, embed: embed}
 	empty := []Sample{}
 	e.index.Store(&empty)
-	_ = e.Reload()
+	_ = e.Reload() // main performs a checked Reload after wiring the vector identity
 	return e
 }
+
+// ErrIndexReload marks a BuildVectors error that happened after the vectors were
+// stored: the database is updated but the in-memory index still is the previous one.
+var ErrIndexReload = errors.New("route index reload failed")
 
 // Reload loads all vectorized samples from the database and atomically swaps
 // the in-memory index.
@@ -151,9 +155,9 @@ func (e *Engine) Reload() error {
 // SetVectorIdentity overrides how the embedding identity is computed and reloads the
 // index at once, so samples are never judged against an identity format that differs
 // from the one used at startup.
-func (e *Engine) SetVectorIdentity(fn func() string) {
+func (e *Engine) SetVectorIdentity(fn func() string) error {
 	e.identity = fn
-	_ = e.Reload()
+	return e.Reload()
 }
 
 func (e *Engine) vectorID() string {
@@ -452,7 +456,13 @@ func (e *Engine) BuildVectors(ctx context.Context, ids []uint) (built int, faile
 	if err = q.Order("id").Find(&rows).Error; err != nil {
 		return 0, 0, err
 	}
-	defer func() { _ = e.Reload() }()
+	// The stored vectors are only served once the index is reloaded; a failed reload
+	// is part of the result (joined with any build error, never replacing it).
+	defer func() {
+		if rerr := e.Reload(); rerr != nil {
+			err = errors.Join(err, fmt.Errorf("%w: %v", ErrIndexReload, rerr))
+		}
+	}()
 	for i := 0; i < len(rows); i += BuildBatchSize {
 		end := min(i+BuildBatchSize, len(rows))
 		batch := rows[i:end]
