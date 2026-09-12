@@ -71,7 +71,7 @@ func Identity(db *gorm.DB, accountID uint, requestModel string) (Resolved, error
 	if res.RowsAffected == 0 {
 		return fallback, nil
 	}
-	out := Resolved{Exists: true, Type: row.Type, Enabled: row.Enabled, BaseURL: row.BaseURL, KeyEnc: row.KeyEnc, Identity: fallback.Identity}
+	out := Resolved{Exists: true, Type: row.Type, Enabled: row.Enabled, BaseURL: NormalizeBaseURL(row.BaseURL), KeyEnc: row.KeyEnc, Identity: fallback.Identity}
 	if row.Type != "embedding" || !row.Enabled {
 		return out, nil
 	}
@@ -84,7 +84,7 @@ func Identity(db *gorm.DB, accountID uint, requestModel string) (Resolved, error
 	}
 	out.Upstream = upstream
 	out.Live = true
-	out.Identity = fmt.Sprintf("%d|%s|%s", accountID, row.BaseURL, upstream)
+	out.Identity = fmt.Sprintf("%d|%s|%s", accountID, out.BaseURL, upstream)
 	return out, nil
 }
 

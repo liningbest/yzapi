@@ -26,8 +26,14 @@ func New(baseURL, apiKey, model string, hc *http.Client) *Client {
 	if hc == nil {
 		hc = &http.Client{Timeout: 60 * time.Second}
 	}
-	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), APIKey: apiKey, Model: model, HTTP: hc}
+	return &Client{BaseURL: NormalizeBaseURL(baseURL), APIKey: apiKey, Model: model, HTTP: hc}
 }
+
+// NormalizeBaseURL is the one rule for an embedding endpoint's address: surrounding
+// whitespace and every trailing slash removed. The client, the runtime identity and
+// the upgrade migration all use it, so "http://host/" and "http://host" are the same
+// identity everywhere.
+func NormalizeBaseURL(s string) string { return strings.TrimRight(strings.TrimSpace(s), "/") }
 
 type embedReq struct {
 	Model string   `json:"model"`

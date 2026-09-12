@@ -185,47 +185,19 @@ func vectorUsable(stored, identity string) bool {
 	return vector.Compatible(stored, identity)
 }
 
-// correctUniqueIndex reports whether table has an index of that name that is UNIQUE
-// over exactly these columns in this order, with no predicate and no expression (a
-// partial or expression index does not cover the whole table and is not the key). A
-// same-named index with any other definition is replaced. When the dialect's index
-// metadata cannot be read the check fails closed (an error, never "correct").
-func correctUniqueIndex(db *gorm.DB, table, name string, cols []string) (exists, correct bool, err error) {
-	m := db.Migrator()
-	idxs, err := m.GetIndexes(table)
-	if err != nil {
-		// The driver could not describe the table's indexes (SQLite's reader trips on
-		// expression indexes, for example). A same-named index whose definition cannot
-		// be read is treated as wrong and rebuilt under the lock; nothing is trusted.
-		return m.HasIndex(table, name), false, nil
-	}
-	for _, ix := range idxs {
-		if ix.Name() != name {
-			continue
-		}
-		unique, _ := ix.Unique()
-		got := ix.Columns()
-		if !unique || len(got) != len(cols) {
-			return true, false, nil
-		}
-		for i := range cols {
-			if got[i] != cols[i] {
-				return true, false, nil
-			}
-		}
-		plain, perr := indexIsPlain(db, table, name)
-		if perr != nil {
-			return true, false, perr
-		}
-		return true, plain, nil
-	}
-	return false, false, nil
+// indexDef is what the migration needs to know about one named index.
+type indexDef struct {
+	unique bool
+	plain  bool // no WHERE predicate, no expression column, valid and ready
+	cols   []string
 }
 
-// indexIsPlain reports whether an index has no WHERE predicate and no expression
-// column, per dialect: SQLite from PRAGMA index_list / index_xinfo, PostgreSQL from
-// pg_index. Any other dialect is an error (fail closed).
-func indexIsPlain(db *gorm.DB, table, name string) (bool, error) {
+// describeIndex reads ONE index by name straight from the dialect's catalog, so an
+// unrelated index on the same table (an expression index the driver's enumerator
+// cannot parse, say) never affects the answer. SQLite: PRAGMA index_list /
+// index_xinfo; PostgreSQL: pg_index scoped to the table and current schema. Any other
+// dialect is an error (fail closed).
+func describeIndex(db *gorm.DB, table, name string) (found bool, d indexDef, err error) {
 	switch db.Dialector.Name() {
 	case "sqlite", "sqlite3":
 		var list []struct {
@@ -236,19 +208,18 @@ func indexIsPlain(db *gorm.DB, table, name string) (bool, error) {
 			Partial int
 		}
 		if err := db.Raw("PRAGMA index_list(" + quoteIdent(table) + ")").Scan(&list).Error; err != nil {
-			return false, err
+			return false, d, err
 		}
-		found := false
 		for _, ix := range list {
-			if ix.Name == name {
-				found = true
-				if ix.Partial != 0 {
-					return false, nil
-				}
+			if ix.Name != name {
+				continue
 			}
+			found = true
+			d.unique = ix.Unique != 0
+			d.plain = ix.Partial == 0
 		}
 		if !found {
-			return false, nil
+			return false, d, nil
 		}
 		var xinfo []struct {
 			Seqno int
@@ -259,25 +230,68 @@ func indexIsPlain(db *gorm.DB, table, name string) (bool, error) {
 			Key   int
 		}
 		if err := db.Raw("PRAGMA index_xinfo(" + quoteIdent(name) + ")").Scan(&xinfo).Error; err != nil {
-			return false, err
+			return true, d, err
 		}
 		for _, x := range xinfo {
-			if x.Key == 1 && (x.Cid < 0 || x.Name == nil) { // -2: expression column
-				return false, nil
+			if x.Key != 1 {
+				continue
 			}
+			if x.Cid < 0 || x.Name == nil { // -2: expression column
+				d.plain = false
+				continue
+			}
+			d.cols = append(d.cols, *x.Name)
 		}
-		return true, nil
+		return true, d, nil
 	case "postgres":
-		var plain bool
-		if err := db.Raw("SELECT (i.indpred IS NULL AND i.indexprs IS NULL) FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = ?", name).Scan(&plain).Error; err != nil {
-			return false, err
+		var row struct {
+			Unique bool
+			Plain  bool
+			Cols   string
 		}
-		return plain, nil
+		res := db.Raw(`SELECT i.indisunique AS "unique",
+			(i.indpred IS NULL AND i.indexprs IS NULL AND i.indisvalid AND i.indisready) AS plain,
+			COALESCE((SELECT string_agg(a.attname, ',' ORDER BY k.ord) FROM unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
+				JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum), '') AS cols
+			FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE c.relname = ? AND i.indrelid = ?::regclass AND n.nspname = current_schema()`, name, table).Scan(&row)
+		if res.Error != nil {
+			return false, d, res.Error
+		}
+		if res.RowsAffected == 0 {
+			return false, d, nil
+		}
+		d.unique, d.plain = row.Unique, row.Plain
+		if row.Cols != "" {
+			d.cols = strings.Split(row.Cols, ",")
+		}
+		return true, d, nil
 	}
-	return false, fmt.Errorf("cannot verify index %s on %s: unsupported dialect %s", name, table, db.Dialector.Name())
+	return false, d, fmt.Errorf("cannot verify index %s on %s: unsupported dialect %s", name, table, db.Dialector.Name())
 }
 
 func quoteIdent(s string) string { return "\"" + strings.ReplaceAll(s, "\"", "\"\"") + "\"" }
+
+// correctUniqueIndex reports whether table has an index of that name that is UNIQUE
+// over exactly these columns in this order, with no predicate and no expression (a
+// partial or expression index does not cover the whole table and is not the key). A
+// same-named index with any other definition is replaced. Metadata that cannot be
+// read is an error (fail closed), never "correct".
+func correctUniqueIndex(db *gorm.DB, table, name string, cols []string) (exists, correct bool, err error) {
+	found, d, err := describeIndex(db, table, name)
+	if err != nil || !found {
+		return found, false, err
+	}
+	if !d.unique || !d.plain || len(d.cols) != len(cols) {
+		return true, false, nil
+	}
+	for i := range cols {
+		if d.cols[i] != cols[i] {
+			return true, false, nil
+		}
+	}
+	return true, true, nil
+}
 
 // ensureUniqueIndex drops a same-named index whose definition is wrong and creates
 // the unique index; cleanup must have run before.

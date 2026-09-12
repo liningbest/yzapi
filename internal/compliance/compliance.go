@@ -394,7 +394,7 @@ func (e *Engine) BuildVectors(ctx context.Context, ids []uint) (built int, faile
 	if e.embed == nil && e.embedID == nil {
 		return 0, 0, errors.New("vector service is not configured")
 	}
-	q := e.db.Model(&model.AuditSample{}).Select("id", "text")
+	q := e.db.Model(&model.AuditSample{}).Select("id", "text", "text_hash", "vector_model")
 	if ids != nil {
 		q = q.Where("id IN ?", ids)
 	}
@@ -444,9 +444,15 @@ func (e *Engine) BuildVectors(ctx context.Context, ids []uint) (built int, faile
 				failed++
 				continue
 			}
-			uerr := e.db.Model(&model.AuditSample{}).Where("id = ?", r.ID).
-				Updates(map[string]any{"vector": vector.Encode(v), "vector_dim": len(v), "vector_model": stamp, "updated_at": time.Now()}).Error
-			if uerr != nil {
+			// Compare-and-swap: the vector lands only if the row still holds the text it
+			// was computed from and either the vector generation read at the start or the
+			// one being written (a repeat of the same generation). A sample edited or
+			// deleted meanwhile, or already carrying a newer generation written by a
+			// faster build, is counted as failed and left alone.
+			res := e.db.Model(&model.AuditSample{}).
+				Where("id = ? AND text_hash = ? AND (vector_model = ? OR vector_model = ?)", r.ID, r.TextHash, r.VectorModel, stamp).
+				Updates(map[string]any{"vector": vector.Encode(v), "vector_dim": len(v), "vector_model": stamp, "updated_at": time.Now()})
+			if res.Error != nil || res.RowsAffected != 1 {
 				failed++
 				continue
 			}

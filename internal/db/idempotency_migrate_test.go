@@ -424,3 +424,89 @@ func TestR137MigrationRejectsPartialUniqueIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// R138-01: the migration normalises the account URL like the runtime, so the vector
+// the runtime can load survives.
+func TestR138MigrationUsesNormalizedVectorURL(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{Logger: logger.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE accounts (id integer primary key autoincrement, name text, provider text, type text, base_url text, api_key_enc text, protocols text, test_model text, enabled numeric)`,
+		`INSERT INTO accounts (id,name,provider,type,base_url,api_key_enc,protocols,test_model,enabled) VALUES (7,'vec','custom','embedding',' http://current// ','k','[]','embed',1)`,
+		`CREATE TABLE model_mappings (id integer primary key autoincrement, account_id integer, request_model text, upstream_model text)`,
+		`INSERT INTO model_mappings (account_id,request_model,upstream_model) VALUES (7,'embed','provider-embed')`,
+		`CREATE TABLE settings (key text primary key, value text)`,
+		`INSERT INTO settings (key,value) VALUES ('vector','{"account_id":7,"model":"embed"}')`,
+		`CREATE TABLE route_samples (id integer primary key autoincrement, label text, text text, threshold real, note text, vector blob, vector_dim integer, vector_model text)`,
+		`INSERT INTO route_samples (id,label,text,threshold,note,vector,vector_dim,vector_model) VALUES (1,'simple','same',0,'runtime',x'0100',2,'7|http://current|provider-embed'),(2,'simple','same',0,'raw-url',x'0001',2,'7|http://current/|provider-embed')`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatal(stmt, err)
+		}
+	}
+	r, err := vector.Identity(db, 7, "embed")
+	if err != nil || r.Identity != "7|http://current|provider-embed" || r.BaseURL != "http://current" {
+		t.Fatalf("resolver must normalise the URL: %+v %v", r, err)
+	}
+	if err := migrateIdempotencyKeys(db); err != nil {
+		t.Fatal(err)
+	}
+	var got model.RouteSample
+	db.First(&got)
+	if got.VectorModel != "7|http://current|provider-embed" {
+		t.Fatalf("migration kept %q, which the runtime cannot load", got.VectorModel)
+	}
+}
+
+// R138-03: unrelated indexes on a key table (expression, partial, plain) never affect
+// the managed key: the first migration and a second start both succeed, the key holds,
+// and the unrelated indexes stay.
+func TestR138MigrationAllowsUnrelatedIndexes(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{Logger: logger.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE accounts (id integer primary key autoincrement, name text, provider text, type text, base_url text, api_key_enc text, protocols text, enabled numeric)`,
+		`CREATE UNIQUE INDEX uq_accounts_name ON accounts(name)`,
+		`CREATE INDEX idx_accounts_lower_name ON accounts(lower(name))`,
+		`CREATE INDEX idx_accounts_enabled ON accounts(provider) WHERE enabled = 1`,
+		`INSERT INTO accounts (name,provider,type,base_url,api_key_enc,protocols,enabled) VALUES ('one','openai','text','http://a','k','[]',1)`,
+		`CREATE TABLE sensitive_words (id integer primary key autoincrement, policy_group_id integer, word text, note text, enabled numeric)`,
+		`CREATE INDEX idx_words_lower ON sensitive_words(lower(word))`,
+		`INSERT INTO sensitive_words (policy_group_id, word, note, enabled) VALUES (1,'w','',1),(1,'w','',1)`,
+		`CREATE TABLE audit_samples (id integer primary key autoincrement, policy_group_id integer, text text, note text, enabled numeric, vector blob, vector_dim integer, vector_model text)`,
+		`CREATE INDEX idx_audit_expr ON audit_samples(length(text))`,
+		`INSERT INTO audit_samples (policy_group_id, text, note, enabled) VALUES (1,'same','',1),(1,'same','',1)`,
+		`CREATE TABLE route_samples (id integer primary key autoincrement, label text, text text, threshold real, note text, vector blob, vector_dim integer, vector_model text)`,
+		`CREATE INDEX idx_route_expr ON route_samples(lower(label))`,
+		`INSERT INTO route_samples (label, text, note) VALUES ('simple','same',''),('simple','same','')`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatal(stmt, err)
+		}
+	}
+	for run := 0; run < 2; run++ {
+		if err := migrateIdempotencyKeys(db); err != nil {
+			t.Fatalf("run %d: unrelated indexes must not break the managed key: %v", run, err)
+		}
+	}
+	if err := db.Exec(`INSERT INTO accounts (name,provider,type,base_url,api_key_enc,protocols,enabled) VALUES ('one','openai','text','http://b','k','[]',1)`).Error; err == nil {
+		t.Fatal("managed unique key was lost")
+	}
+	for _, k := range idempotencyKeys {
+		if _, ok, err := correctUniqueIndex(db, k.table, k.index, k.cols); err != nil || !ok {
+			t.Fatalf("%s: ok=%v err=%v", k.index, ok, err)
+		}
+	}
+	var n int64
+	db.Raw("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name IN ('idx_accounts_lower_name','idx_accounts_enabled','idx_words_lower','idx_audit_expr','idx_route_expr')").Scan(&n)
+	if n != 5 {
+		t.Fatalf("unrelated indexes must be left alone: %d of 5 remain", n)
+	}
+	if err := db.AutoMigrate(model.All()...); err != nil {
+		t.Fatal(err)
+	}
+}
