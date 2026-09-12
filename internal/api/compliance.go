@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"yzapi/internal/model"
 )
@@ -330,6 +331,12 @@ func (s *Server) updateWord(c *gin.Context) {
 		upd["enabled"] = *in.Enabled
 	}
 	if err := s.db.Model(&w).Updates(upd).Error; err != nil {
+		if uniqueViolation(err) {
+			var other model.SensitiveWord
+			s.db.Where("policy_group_id = ? AND word = ? AND id <> ?", in.PolicyGroupID, in.Word, w.ID).First(&other)
+			c.JSON(409, gin.H{"code": "word_exists", "error": "该策略组已有同一敏感词", "id": other.ID, "resource": other})
+			return
+		}
 		serverError(c, err)
 		return
 	}
@@ -382,14 +389,19 @@ func (s *Server) batchWords(c *gin.Context) {
 		badRequest(c, "没有有效的敏感词")
 		return
 	}
-	if err := s.db.CreateInBatches(&rows, 500).Error; err != nil {
-		serverError(c, err)
+	// Idempotent: words already present in the group (or inserted concurrently) are
+	// skipped by the database itself (ON CONFLICT DO NOTHING on the unique key), so a
+	// batch never fails on an existing word and reports what it actually added.
+	res := s.db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "policy_group_id"}, {Name: "word"}}, DoNothing: true}).CreateInBatches(&rows, 500)
+	if res.Error != nil {
+		serverError(c, res.Error)
 		return
 	}
+	created := int(res.RowsAffected)
 	if !s.reloadRuntimes(c, "compliance") {
 		return
 	}
-	c.JSON(200, gin.H{"created": len(rows)})
+	c.JSON(200, gin.H{"created": created, "skipped": len(rows) - created})
 }
 
 // ---- audit samples ----

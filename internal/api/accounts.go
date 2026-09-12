@@ -412,6 +412,12 @@ func (s *Server) updateAccount(c *gin.Context) {
 		return tx.Create(&maps).Error
 	})
 	if err != nil {
+		if uniqueViolation(err) {
+			var other model.Account
+			s.db.Preload("Mappings").Where("name = ? AND id <> ?", in.Name, a.ID).First(&other)
+			c.JSON(409, gin.H{"code": "account_exists", "error": "同名账号已存在，请换一个名称", "id": other.ID, "resource": s.accountView(&other)})
+			return
+		}
 		serverError(c, err)
 		return
 	}

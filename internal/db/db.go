@@ -23,6 +23,7 @@ func Open(cfg *config.Config) (*gorm.DB, error) {
 		Logger:                                   logger.Default.LogMode(logger.Silent),
 		DisableForeignKeyConstraintWhenMigrating: true,
 		PrepareStmt:                              true,
+		TranslateError:                           true, // driver error codes -> gorm.ErrDuplicatedKey (SQLite 2067, PostgreSQL 23505)
 	}
 	if cfg.Dev {
 		gcfg.Logger = logger.Default.LogMode(logger.Warn)
@@ -86,73 +87,268 @@ func Open(cfg *config.Config) (*gorm.DB, error) {
 }
 
 // migrateIdempotencyKeys prepares databases created before the create idempotency
-// keys were enforced (1.0.34): account names become unique (duplicates are renamed
-// "<name> #<id>", never deleted, so no credential is lost), duplicate sensitive words
-// are removed keeping the oldest, and samples get their text hash column filled and
-// de-duplicated. AutoMigrate then adds the unique indexes without failing on old rows.
+// keys were enforced (1.0.34+). It runs once, in one transaction, under a database
+// level lock on PostgreSQL (several instances may start at once) with the checks
+// repeated inside the lock:
+//   - duplicate account names are renamed "<name> #<id>" (never deleted, so no
+//     credential is lost); every candidate is checked against every name in use and
+//     stays valid UTF-8 within the column;
+//   - duplicate sensitive words collapse to one row that is enabled if any copy was;
+//   - samples get their text hash filled, then duplicates collapse to the copy that
+//     carries the live state (enabled, vectorised), merging what the others had
+//     (vector, non-empty note, threshold) so no effective rule or vector is lost.
+//
+// Every dropped row is logged with its content. AutoMigrate then adds the indexes.
 func migrateIdempotencyKeys(db *gorm.DB) error {
 	m := db.Migrator()
-	if m.HasTable(&model.Account{}) && !m.HasIndex(&model.Account{}, "uq_accounts_name") {
-		var dups []struct {
-			ID   uint
-			Name string
-		}
-		if err := db.Raw("SELECT id, name FROM accounts WHERE id NOT IN (SELECT MIN(id) FROM accounts GROUP BY name)").Scan(&dups).Error; err != nil {
-			return err
-		}
-		for _, d := range dups {
-			name := fmt.Sprintf("%s #%d", d.Name, d.ID)
-			if len(name) > 64 {
-				name = name[len(name)-64:]
-			}
-			if err := db.Exec("UPDATE accounts SET name = ? WHERE id = ?", name, d.ID).Error; err != nil {
+	need := (m.HasTable(&model.Account{}) && !m.HasIndex(&model.Account{}, "uq_accounts_name")) ||
+		(m.HasTable(&model.SensitiveWord{}) && !m.HasIndex(&model.SensitiveWord{}, "uq_sensitive_words_key")) ||
+		(m.HasTable(&model.AuditSample{}) && !m.HasIndex(&model.AuditSample{}, "uq_audit_samples_key")) ||
+		(m.HasTable(&model.RouteSample{}) && !m.HasIndex(&model.RouteSample{}, "uq_route_samples_key"))
+	if !need {
+		return nil
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		if tx.Dialector.Name() == "postgres" {
+			if err := tx.Exec("SELECT pg_advisory_xact_lock(7461227)").Error; err != nil { // arbitrary constant: idempotency key migration
 				return err
 			}
-			slog.Warn("renamed a duplicate account name so names can be unique", "id", d.ID, "old", d.Name, "new", name)
+		}
+		tm := tx.Migrator()
+		if tm.HasTable(&model.Account{}) && !tm.HasIndex(&model.Account{}, "uq_accounts_name") {
+			if err := migrateAccountNames(tx); err != nil {
+				return err
+			}
+		}
+		if tm.HasTable(&model.SensitiveWord{}) && !tm.HasIndex(&model.SensitiveWord{}, "uq_sensitive_words_key") {
+			if err := migrateDuplicateWords(tx); err != nil {
+				return err
+			}
+		}
+		if tm.HasTable(&model.AuditSample{}) && !tm.HasIndex(&model.AuditSample{}, "uq_audit_samples_key") {
+			if err := migrateDuplicateSamples(tx, "audit_samples", "policy_group_id"); err != nil {
+				return err
+			}
+		}
+		if tm.HasTable(&model.RouteSample{}) && !tm.HasIndex(&model.RouteSample{}, "uq_route_samples_key") {
+			if err := migrateDuplicateSamples(tx, "route_samples", "label"); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// migrateAccountNames renames the later copies of a duplicated account name to a
+// name nobody uses.
+func migrateAccountNames(tx *gorm.DB) error {
+	var all []struct {
+		ID   uint
+		Name string
+	}
+	if err := tx.Raw("SELECT id, name FROM accounts ORDER BY id").Scan(&all).Error; err != nil {
+		return err
+	}
+	used := map[string]bool{}
+	firstOf := map[string]uint{}
+	for _, a := range all {
+		used[a.Name] = true
+		if _, ok := firstOf[a.Name]; !ok {
+			firstOf[a.Name] = a.ID
 		}
 	}
-	if m.HasTable(&model.SensitiveWord{}) && !m.HasIndex(&model.SensitiveWord{}, "uq_sensitive_words_key") {
-		res := db.Exec("DELETE FROM sensitive_words WHERE id NOT IN (SELECT MIN(id) FROM sensitive_words GROUP BY policy_group_id, word)")
-		if res.Error != nil {
-			return res.Error
+	for _, a := range all {
+		if firstOf[a.Name] == a.ID {
+			continue // the oldest keeps the name
 		}
-		if res.RowsAffected > 0 {
-			slog.Warn("removed duplicate sensitive words before adding the unique key", "rows", res.RowsAffected)
+		candidate := ""
+		for n := 0; ; n++ {
+			suffix := fmt.Sprintf(" #%d", a.ID)
+			if n > 0 {
+				suffix = fmt.Sprintf(" #%d-%d", a.ID, n)
+			}
+			candidate = pricing.TruncateUTF8(a.Name, 64-len(suffix)) + suffix
+			if !used[candidate] {
+				break
+			}
 		}
+		used[candidate] = true
+		if err := tx.Exec("UPDATE accounts SET name = ? WHERE id = ?", candidate, a.ID).Error; err != nil {
+			return err
+		}
+		slog.Warn("renamed a duplicate account name so names can be unique", "id", a.ID, "old", a.Name, "new", candidate)
 	}
-	for _, t := range []struct {
-		table, model, index, group string
-		has                        bool
-	}{
-		{"audit_samples", "audit_samples", "uq_audit_samples_key", "policy_group_id", m.HasTable(&model.AuditSample{})},
-		{"route_samples", "route_samples", "uq_route_samples_key", "label", m.HasTable(&model.RouteSample{})},
-	} {
-		if !t.has || m.HasIndex(t.model, t.index) {
+	return nil
+}
+
+// migrateDuplicateWords collapses (policy_group_id, word) duplicates: the survivor is
+// an enabled copy when there is one (else the oldest), and it is enabled if any copy
+// was; the first non-empty note is kept.
+func migrateDuplicateWords(tx *gorm.DB) error {
+	var rows []struct {
+		ID            uint
+		PolicyGroupID uint
+		Word          string
+		Note          string
+		Enabled       bool
+	}
+	if err := tx.Raw("SELECT id, policy_group_id, word, note, enabled FROM sensitive_words ORDER BY id").Scan(&rows).Error; err != nil {
+		return err
+	}
+	groups := map[string][]int{}
+	var order []string
+	for i, r := range rows {
+		k := fmt.Sprintf("%d|%s", r.PolicyGroupID, r.Word)
+		if _, ok := groups[k]; !ok {
+			order = append(order, k)
+		}
+		groups[k] = append(groups[k], i)
+	}
+	for _, k := range order {
+		idx := groups[k]
+		if len(idx) < 2 {
 			continue
 		}
-		if !m.HasColumn(t.model, "text_hash") {
-			if err := db.Exec("ALTER TABLE " + t.table + " ADD COLUMN text_hash varchar(64) NOT NULL DEFAULT ''").Error; err != nil {
-				return err
+		win := idx[0]
+		for _, i := range idx {
+			if rows[i].Enabled && !rows[win].Enabled {
+				win = i
 			}
 		}
-		var rows []struct {
-			ID   uint
-			Text string
+		enabled, note := rows[win].Enabled, rows[win].Note
+		for _, i := range idx {
+			if i == win {
+				continue
+			}
+			enabled = enabled || rows[i].Enabled
+			if note == "" {
+				note = rows[i].Note
+			}
+			if err := tx.Exec("DELETE FROM sensitive_words WHERE id = ?", rows[i].ID).Error; err != nil {
+				return err
+			}
+			slog.Warn("removed a duplicate sensitive word (merged into the surviving row)", "id", rows[i].ID, "kept", rows[win].ID,
+				"policy_group_id", rows[i].PolicyGroupID, "word", rows[i].Word, "enabled", rows[i].Enabled, "note", rows[i].Note)
 		}
-		if err := db.Raw("SELECT id, text FROM " + t.table + " WHERE text_hash = ''").Scan(&rows).Error; err != nil {
+		if err := tx.Exec("UPDATE sensitive_words SET enabled = ?, note = ? WHERE id = ?", enabled, note, rows[win].ID).Error; err != nil {
 			return err
 		}
-		for _, r := range rows {
-			if err := db.Exec("UPDATE "+t.table+" SET text_hash = ? WHERE id = ?", model.TextKey(r.Text), r.ID).Error; err != nil {
-				return err
+	}
+	return nil
+}
+
+// migrateDuplicateSamples fills text_hash and collapses (group, text_hash) duplicates
+// in audit_samples / route_samples. The survivor is the copy with the most live state
+// (enabled and vectorised, then vectorised, then enabled, then the oldest); the merged
+// row is enabled if any copy was, takes a vector from a dropped copy when it has none,
+// and keeps the first non-empty note and non-zero threshold.
+func migrateDuplicateSamples(tx *gorm.DB, table, group string) error {
+	if !tx.Migrator().HasColumn(table, "text_hash") {
+		if err := tx.Exec("ALTER TABLE " + table + " ADD COLUMN text_hash varchar(64) NOT NULL DEFAULT ''").Error; err != nil {
+			return err
+		}
+	}
+	hasEnabled := tx.Migrator().HasColumn(table, "enabled")
+	hasThreshold := tx.Migrator().HasColumn(table, "threshold")
+	var unhashed []struct {
+		ID   uint
+		Text string
+	}
+	if err := tx.Raw("SELECT id, text FROM " + table + " WHERE text_hash = ''").Scan(&unhashed).Error; err != nil {
+		return err
+	}
+	for _, r := range unhashed {
+		if err := tx.Exec("UPDATE "+table+" SET text_hash = ? WHERE id = ?", model.TextKey(r.Text), r.ID).Error; err != nil {
+			return err
+		}
+	}
+	type row struct {
+		ID          uint
+		Group       string
+		TextHash    string
+		Note        string
+		Enabled     bool
+		Threshold   float64
+		Vector      []byte
+		VectorDim   int
+		VectorModel string
+	}
+	cols := "id, " + group + " AS \"group\", text_hash, note, vector, vector_dim, vector_model"
+	if hasEnabled {
+		cols += ", enabled"
+	}
+	if hasThreshold {
+		cols += ", threshold"
+	}
+	var rows []row
+	if err := tx.Raw("SELECT " + cols + " FROM " + table + " ORDER BY id").Scan(&rows).Error; err != nil {
+		return err
+	}
+	groups := map[string][]int{}
+	var order []string
+	for i, r := range rows {
+		k := r.Group + "|" + r.TextHash
+		if _, ok := groups[k]; !ok {
+			order = append(order, k)
+		}
+		groups[k] = append(groups[k], i)
+	}
+	score := func(r row) int {
+		s := 0
+		if r.VectorDim > 0 && len(r.Vector) > 0 {
+			s += 2
+		}
+		if !hasEnabled || r.Enabled {
+			s++
+		}
+		return s
+	}
+	for _, k := range order {
+		idx := groups[k]
+		if len(idx) < 2 {
+			continue
+		}
+		win := idx[0]
+		for _, i := range idx {
+			if score(rows[i]) > score(rows[win]) {
+				win = i
 			}
 		}
-		res := db.Exec("DELETE FROM " + t.table + " WHERE id NOT IN (SELECT MIN(id) FROM " + t.table + " GROUP BY " + t.group + ", text_hash)")
-		if res.Error != nil {
-			return res.Error
+		merged := rows[win]
+		for _, i := range idx {
+			if i == win {
+				continue
+			}
+			d := rows[i]
+			merged.Enabled = merged.Enabled || d.Enabled
+			if merged.Note == "" {
+				merged.Note = d.Note
+			}
+			if merged.Threshold == 0 {
+				merged.Threshold = d.Threshold
+			}
+			if (merged.VectorDim == 0 || len(merged.Vector) == 0) && d.VectorDim > 0 && len(d.Vector) > 0 {
+				merged.Vector, merged.VectorDim, merged.VectorModel = d.Vector, d.VectorDim, d.VectorModel
+			}
+			if err := tx.Exec("DELETE FROM "+table+" WHERE id = ?", d.ID).Error; err != nil {
+				return err
+			}
+			slog.Warn("removed a duplicate sample (merged into the surviving row)", "table", table, "id", d.ID, "kept", merged.ID,
+				group, d.Group, "enabled", d.Enabled, "vector_dim", d.VectorDim, "vector_model", d.VectorModel, "threshold", d.Threshold, "note", d.Note)
 		}
-		if res.RowsAffected > 0 {
-			slog.Warn("removed duplicate samples before adding the unique key", "table", t.table, "rows", res.RowsAffected)
+		set := "note = ?, vector = ?, vector_dim = ?, vector_model = ?"
+		args := []any{merged.Note, merged.Vector, merged.VectorDim, merged.VectorModel}
+		if hasEnabled {
+			set += ", enabled = ?"
+			args = append(args, merged.Enabled)
+		}
+		if hasThreshold {
+			set += ", threshold = ?"
+			args = append(args, merged.Threshold)
+		}
+		args = append(args, merged.ID)
+		if err := tx.Exec("UPDATE "+table+" SET "+set+" WHERE id = ?", args...).Error; err != nil {
+			return err
 		}
 	}
 	return nil

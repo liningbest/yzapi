@@ -203,7 +203,7 @@ func (s *Server) updateUserGroup(c *gin.Context) {
 		return tx.Model(&g).Association("ModelGroups").Replace(mgs)
 	})
 	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "unique") {
+		if uniqueViolation(err) {
 			fail(c, 409, "duplicate", "用户组名称已存在")
 			return
 		}

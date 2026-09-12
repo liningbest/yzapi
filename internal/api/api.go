@@ -322,7 +322,7 @@ func isNotFound(err error) bool { return errors.Is(err, gorm.ErrRecordNotFound) 
 // friendly 409 with msg, anything else (locked database, disk full, ...) stays a 500 so
 // the operator sees the real cause instead of a misleading "already exists".
 func conflictOrServerError(c *gin.Context, err error, msg string) {
-	if strings.Contains(strings.ToLower(err.Error()), "unique") {
+	if uniqueViolation(err) { // driver error code via gorm.ErrDuplicatedKey, see uniqueViolation
 		fail(c, 409, "duplicate", msg)
 		return
 	}

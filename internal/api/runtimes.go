@@ -30,7 +30,7 @@ func (s *Server) refreshRuntimes(names ...string) []runtimeFailure {
 	var failed []runtimeFailure
 	add := func(sub, code string, err error) {
 		if err != nil {
-			slog.Error("runtime reload failed after a committed write; the previous state stays live", "subsystem", sub, "err", err)
+			slog.Error("runtime reload failed; the previous in-memory state stays live", "subsystem", sub, "err", err)
 			failed = append(failed, runtimeFailure{Subsystem: sub, Code: code, Error: err.Error()})
 		}
 	}

@@ -31,7 +31,7 @@ func auditServer(t *testing.T) *Server {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	dir := t.TempDir()
-	db, e := gorm.Open(sqlite.Open(filepath.Join(dir, "test.db")), &gorm.Config{Logger: logger.Discard})
+	db, e := gorm.Open(sqlite.Open(filepath.Join(dir, "test.db")), &gorm.Config{Logger: logger.Discard, TranslateError: true})
 	if e != nil {
 		t.Fatal(e)
 	}

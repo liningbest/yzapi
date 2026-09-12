@@ -2,6 +2,8 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
+	"gorm.io/gorm/clause"
 	"strings"
 	"time"
 
@@ -225,11 +227,15 @@ func (s *Server) batchRouteSamples(c *gin.Context) {
 		badRequest(c, "invalid body")
 		return
 	}
-	// Duplicates inside the batch and rows already present are skipped, never
-	// inserted twice: (label, text hash) is unique.
+	// (label, text hash) is unique. Duplicates inside the batch are dropped; a sample
+	// already present with a compatible note counts as "existing" and, when a build
+	// is requested, is built together with the new rows (the batch is the retry path
+	// for an earlier import whose build or refresh failed); one whose note differs is
+	// reported as a conflict and left alone.
 	var rows []model.RouteSample
 	seen := map[string]bool{}
-	skipped := 0
+	var existing []uint
+	skipped, conflicts := 0, 0
 	for _, it := range in.Items {
 		t := strings.TrimSpace(it.Text)
 		if !validLabel(it.Label) || t == "" {
@@ -241,35 +247,48 @@ func (s *Server) batchRouteSamples(c *gin.Context) {
 			continue
 		}
 		seen[k] = true
-		var n int64
-		if err := s.db.Model(&model.RouteSample{}).Where("label = ? AND text_hash = ?", it.Label, model.TextKey(t)).Count(&n).Error; err != nil {
+		var cur model.RouteSample
+		err := s.db.Select("id", "note").Where("label = ? AND text_hash = ?", it.Label, model.TextKey(t)).First(&cur).Error
+		switch {
+		case err == nil:
+			if cur.Note != "" && it.Note != "" && cur.Note != it.Note {
+				conflicts++
+				continue
+			}
+			existing = append(existing, cur.ID)
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			rows = append(rows, model.RouteSample{Label: it.Label, Text: t, Note: it.Note})
+		default:
 			serverError(c, err)
 			return
 		}
-		if n > 0 {
-			skipped++
-			continue
-		}
-		rows = append(rows, model.RouteSample{Label: it.Label, Text: t, Note: it.Note})
 	}
-	if len(rows) == 0 {
-		if skipped > 0 {
-			c.JSON(200, gin.H{"created": 0, "skipped": skipped})
+	if len(rows) == 0 && len(existing) == 0 {
+		if skipped+conflicts > 0 {
+			c.JSON(200, gin.H{"created": 0, "existing": 0, "skipped": skipped, "conflicts": conflicts})
 			return
 		}
 		badRequest(c, "没有有效的样本")
 		return
 	}
-	if err := s.db.CreateInBatches(&rows, 200).Error; err != nil {
-		serverError(c, err)
-		return
-	}
-	resp := gin.H{"created": len(rows), "skipped": skipped}
-	if in.BuildVector && s.eng.Route != nil {
-		ids := make([]uint, 0, len(rows))
-		for _, r := range rows {
-			ids = append(ids, r.ID)
+	if len(rows) > 0 {
+		// A concurrent import may have inserted the same sample meanwhile: the unique
+		// key skips it instead of failing the batch.
+		res := s.db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "label"}, {Name: "text_hash"}}, DoNothing: true}).CreateInBatches(&rows, 200)
+		if res.Error != nil {
+			serverError(c, res.Error)
+			return
 		}
+	}
+	resp := gin.H{"created": len(rows), "existing": len(existing), "skipped": skipped, "conflicts": conflicts}
+	if in.BuildVector && s.eng.Route != nil {
+		ids := make([]uint, 0, len(rows)+len(existing))
+		for _, r := range rows {
+			if r.ID != 0 {
+				ids = append(ids, r.ID)
+			}
+		}
+		ids = append(ids, existing...)
 		built, failed, err := s.eng.Route.BuildVectors(c.Request.Context(), ids)
 		resp["built"], resp["failed"] = built, failed
 		if buildReloadFailed(c, "route", err, resp) {
