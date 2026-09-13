@@ -236,7 +236,7 @@ internal/essink     Elasticsearch 正文审计
 web/                React + Ant Design 前端
 tools/mockupstream  本地模拟上游
 tools/loadgen       压测工具
-docs/               部署、API 契约、设计与验收记录
+docs/               部署指南、API 契约、性能建议、价目来源、版本说明
 ```
 
 ## 文档

@@ -1,5 +1,7 @@
 # 1.0.3 / 1.0.4 变更说明与验收要点
 
+> 文中提到的验收报告、变更说明与复现材料（`docs/acceptance-review-*`、`docs/changes-*`、`docs/review-repros/*` 等）是开发期间的内部过程记录，不随仓库公开。
+
 基线：1.0.2 = `9f80afa`。发布包为桌面 `yzapi-release.tar.gz`（`VERSION` 文件标明版本），镜像标签 `yzapi/gateway:<版本>`。
 
 ## 1.0.3（`238f713`、`e4495ba`）：后台管理复核 A01–A08 修复

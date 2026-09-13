@@ -226,7 +226,7 @@ internal/essink     Elasticsearch body auditing
 web/                React + Ant Design frontend
 tools/mockupstream  local mock upstream
 tools/loadgen       load generator
-docs/               deployment, API contract, design and acceptance records (Chinese)
+docs/               deployment guide, API contract, performance notes, release notes (Chinese)
 ```
 
 ## Design decisions

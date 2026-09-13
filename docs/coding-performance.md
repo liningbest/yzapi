@@ -1,6 +1,6 @@
 # Coding 场景性能建议
 
-日期：2026-09-11（依 `docs/coding-performance-review.md` 的评审修订；原稿的诊断表与部分技术解释已按评审更正）。面向 Claude Code / Codex / Cline / Gemini CLI：关心的是首字延迟与流式顺滑，不是压测吞吐。
+日期：2026-09-11（按独立评审意见修订）。面向 Claude Code / Codex / Cline / Gemini CLI：关心的是首字延迟与流式顺滑，不是压测吞吐。
 
 ## 结论
 
