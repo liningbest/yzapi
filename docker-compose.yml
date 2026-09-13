@@ -8,7 +8,7 @@
 
 services:
   yzapi:
-    image: yzapi/gateway:latest
+    image: ghcr.io/liningbest/yzapi:latest
     build:
       context: .
       args:
