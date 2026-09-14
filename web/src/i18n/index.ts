@@ -25,7 +25,7 @@ const initialLocale = useLocaleStore.getState().locale;
 void i18n.use(initReactI18next).init({
   resources,
   lng: initialLocale,
-  fallbackLng: 'zh-CN',
+  fallbackLng: 'en',
   ns: Array.from(namespaces),
   defaultNS: 'common',
   interpolation: { escapeValue: false },
@@ -33,6 +33,7 @@ void i18n.use(initReactI18next).init({
 });
 
 setDayjsLocale(initialLocale);
+document.documentElement.lang = initialLocale;
 
 useLocaleStore.subscribe((state) => {
   void i18n.changeLanguage(state.locale);
