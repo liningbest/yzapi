@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"yzapi/internal/gateway"
 	"yzapi/internal/model"
 	"yzapi/internal/pricing"
 	"yzapi/internal/provider"
@@ -1041,13 +1042,12 @@ func geminiEndpoint(providerKey, accountType string, protocols []string) bool {
 	return false
 }
 
-// reservedEndpointPrefixes are the built-in /v1 routes a custom endpoint may not shadow.
-var reservedEndpointPrefixes = []string{"/chat", "/responses", "/messages", "/embeddings", "/images", "/models"}
-
 // normalizeEndpoints validates and normalises the endpoint paths of a custom account:
 // each becomes "/segment[/segment...]" with no trailing slash, query, fragment, ".." or
 // whitespace, at most 128 bytes, at most 20 distinct paths, and none may sit under a
-// built-in route. The second value is a user-facing error, empty when valid.
+// built-in route. The gateway prefix is removed as a path segment, never as a byte
+// prefix: "/v1/x", "v1/x" and "/x" all mean "/x", while "/v1beta/x" and "/v10/x" are
+// kept whole. The second value is a user-facing error, empty when valid.
 func normalizeEndpoints(in []string) ([]string, string) {
 	seen := map[string]bool{}
 	var out []string
@@ -1056,9 +1056,11 @@ func normalizeEndpoints(in []string) ([]string, string) {
 		if p == "" {
 			continue
 		}
-		p = strings.TrimPrefix(p, "/v1")
 		if !strings.HasPrefix(p, "/") {
 			p = "/" + p
+		}
+		if p == "/v1" || strings.HasPrefix(p, "/v1/") {
+			p = p[len("/v1"):]
 		}
 		p = strings.TrimRight(p, "/")
 		switch {
@@ -1071,10 +1073,8 @@ func normalizeEndpoints(in []string) ([]string, string) {
 		case strings.Contains(p, "//") || strings.Contains(p, "/../") || strings.HasSuffix(p, "/..") || strings.Contains(p, "/./"):
 			return nil, "接口路径不合法: " + p
 		}
-		for _, r := range reservedEndpointPrefixes {
-			if p == r || strings.HasPrefix(p, r+"/") {
-				return nil, "接口路径与内置接口冲突: " + p
-			}
+		if gateway.IsReservedEndpoint(p) {
+			return nil, "接口路径与内置接口冲突: " + p
 		}
 		if seen[p] {
 			continue

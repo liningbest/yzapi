@@ -257,27 +257,39 @@ func usageFromJSON(proto string, raw []byte) (u convert.Usage, ok bool) {
 		}
 		return u, true
 	case model.ProtoCustomJSON:
-		// Non-chat APIs report either the OpenAI names or the Responses/Anthropic names;
-		// accept both, and treat a usage block with no counts as "nothing reported".
+		// Non-chat APIs report either the OpenAI names (prompt_/completion_tokens) or the
+		// Responses / Anthropic names (input_/output_tokens). The two are aliases, never
+		// added together: the OpenAI pair wins when any of its fields is present, else the
+		// other pair is used. Presence is decided per field (pointers), so an explicit zero
+		// is a reported count ("known"), while a usage block with none of the four fields
+		// reports nothing. total_tokens is informational only; the counts come from the parts.
 		var r struct {
 			Usage *struct {
-				PromptTokens     int `json:"prompt_tokens"`
-				CompletionTokens int `json:"completion_tokens"`
-				InputTokens      int `json:"input_tokens"`
-				OutputTokens     int `json:"output_tokens"`
-				TotalTokens      int `json:"total_tokens"`
+				PromptTokens     *int `json:"prompt_tokens"`
+				CompletionTokens *int `json:"completion_tokens"`
+				InputTokens      *int `json:"input_tokens"`
+				OutputTokens     *int `json:"output_tokens"`
 			} `json:"usage"`
 		}
 		if json.Unmarshal(raw, &r) != nil || r.Usage == nil {
 			return u, false
 		}
-		u.PromptTokens = r.Usage.PromptTokens + r.Usage.InputTokens
-		u.CompletionTokens = r.Usage.CompletionTokens + r.Usage.OutputTokens
-		u.TotalTokens = r.Usage.TotalTokens
-		if u.TotalTokens == 0 {
-			u.TotalTokens = u.PromptTokens + u.CompletionTokens
+		deref := func(p *int) int {
+			if p == nil {
+				return 0
+			}
+			return *p
 		}
-		return u, u.TotalTokens > 0
+		switch {
+		case r.Usage.PromptTokens != nil || r.Usage.CompletionTokens != nil:
+			u.PromptTokens, u.CompletionTokens = deref(r.Usage.PromptTokens), deref(r.Usage.CompletionTokens)
+		case r.Usage.InputTokens != nil || r.Usage.OutputTokens != nil:
+			u.PromptTokens, u.CompletionTokens = deref(r.Usage.InputTokens), deref(r.Usage.OutputTokens)
+		default:
+			return u, false
+		}
+		u.TotalTokens = u.PromptTokens + u.CompletionTokens
+		return u, true
 	default:
 		var r struct {
 			Usage *convert.Usage `json:"usage"`

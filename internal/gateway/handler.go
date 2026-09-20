@@ -480,7 +480,9 @@ func (g *Gateway) HandleImages(w http.ResponseWriter, r *http.Request) {
 func (g *Gateway) HandleCustom(w http.ResponseWriter, r *http.Request) {
 	req := g.newRequest(w, r, model.ProtoCustomJSON)
 	req.endpointPath = CustomEndpointPath(r.URL.Path)
-	if req.endpointPath == "" {
+	if req.endpointPath == "" || IsReservedEndpoint(req.endpointPath) {
+		// The admin API refuses reserved paths on save; the data plane refuses them
+		// again so a row edited behind the API cannot shadow a built-in route.
 		g.fail(req, ErrEndpointNotFound)
 		return
 	}
@@ -489,6 +491,21 @@ func (g *Gateway) HandleCustom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	g.runSimple(req)
+}
+
+// ReservedEndpointPrefixes are the built-in /v1 routes a custom endpoint may never
+// shadow: neither on save (admin API) nor on dispatch (HandleCustom).
+var ReservedEndpointPrefixes = []string{"/chat", "/responses", "/messages", "/embeddings", "/images", "/models"}
+
+// IsReservedEndpoint reports whether a normalised endpoint path is, or sits under, a
+// built-in route.
+func IsReservedEndpoint(p string) bool {
+	for _, r := range ReservedEndpointPrefixes {
+		if p == r || strings.HasPrefix(p, r+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // CustomEndpointPath normalises a request path to the endpoint key stored on accounts:
@@ -1266,6 +1283,11 @@ func (g *Gateway) relay(req *request, resp *http.Response, upProto string, dropU
 	// Book the reported usage first so a conversion failure cannot lose it.
 	u, ok := usageFromJSON(upProto, raw)
 	setUsage(req, u, ok, true)
+	if upProto == model.ProtoCustomJSON && ok && u.TotalTokens == 0 && len(req.attempts) > 0 {
+		// Custom JSON contract: a usage block that explicitly reports zero counts is a
+		// known, zero-consumption answer, unlike a reply that reports no usage at all.
+		req.attempts[len(req.attempts)-1].UsageStatus = model.UsageConfirmed
+	}
 	out := raw
 	if upProto != req.proto {
 		out, err = convertResponse(raw, upProto, req.proto, req.model)
@@ -1274,13 +1296,19 @@ func (g *Gateway) relay(req *request, resp *http.Response, upProto string, dropU
 			return
 		}
 	}
+	status := http.StatusOK
+	if upProto == model.ProtoCustomJSON {
+		// "Returned as-is" includes the upstream's success status (200 / 201 / 202 ...);
+		// the converting protocols keep normalising to 200 as their clients expect.
+		status = resp.StatusCode
+	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(status)
 	if n, werr := dst.Write(out); werr == nil && n > 0 {
 		req.log.FirstContentMs = time.Since(req.start).Milliseconds() // body accepted by the connection
 	}
 	req.wrote = true
-	req.log.Result, req.log.StatusCode = "success", 200
+	req.log.Result, req.log.StatusCode = "success", status
 	g.finish(req)
 }
 
