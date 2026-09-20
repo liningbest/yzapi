@@ -26,6 +26,16 @@ type Provider struct {
 	Icon         string        `json:"icon"`
 	// Endpoints pre-fills the endpoint paths of a custom (non-chat JSON) account.
 	Endpoints []string `json:"endpoints,omitempty"`
+	// DefaultMappings pre-fills the model mappings of a new account for providers with
+	// no model-listing API (the admin form and the create API use them when the
+	// request carries no mappings and passthrough is off).
+	DefaultMappings []DefaultMapping `json:"default_mappings,omitempty"`
+}
+
+// DefaultMapping is one preset request-model -> upstream-model pair.
+type DefaultMapping struct {
+	RequestModel  string `json:"request_model"`
+	UpstreamModel string `json:"upstream_model"`
 }
 
 var registry = []Provider{
@@ -170,7 +180,10 @@ var registry = []Provider{
 	{Key: "typesafe", Name: "TypeSafe (Jev)", BaseURL: "https://api.typesafe.ai/v1",
 		Types:      []string{model.TypeCustom},
 		Protocols:  []string{model.ProtoCustomJSON},
-		AuthHeader: "bearer", Discover: false, Icon: "custom", Endpoints: []string{"/systemone"}},
+		AuthHeader: "bearer", Discover: false, Icon: "custom", Endpoints: []string{"/systemone"},
+		// TypeSafe has no model-listing API; the documented ids are jev-latest (the SDK
+		// default), jev-preview and the pinned jev-1.13.0.
+		DefaultMappings: []DefaultMapping{{RequestModel: "jev", UpstreamModel: "jev-latest"}}},
 	{Key: "custom-json", Name: "自定义 (JSON 接口)", BaseURL: "",
 		Types:      []string{model.TypeCustom},
 		Protocols:  []string{model.ProtoCustomJSON},

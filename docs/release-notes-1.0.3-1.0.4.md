@@ -369,3 +369,7 @@
 - 用户中心接入指引新增标签页：列出当前用户有权使用的自定义接口模型及其 `POST /v1/<路径>`，附 curl、TypeSafe Python SDK（`TypeSafeClient(base_url, api_key)` / `TYPESAFE_BASE_URL`）与 requests 示例，地址取自站点设置。
 - `GET /api/user/models` 对 `custom` 类型模型返回 `endpoints`。
 
+## 1.0.47：TypeSafe 预设自带默认映射
+
+- 供应商预设新增 `default_mappings`；TypeSafe (Jev) 预设为 `jev → jev-latest`（官方 SDK 默认模型 ID，另有 `jev-preview`、固定版本 `jev-1.13.0`）。管理界面选中供应商且映射为空时自动填入；创建接口未给映射且未开透传时服务端按预设填入。
+

@@ -188,6 +188,10 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
       if (p?.endpoints?.length && !(form.getFieldValue('endpoints') as string[] | undefined)?.length) {
         form.setFieldValue('endpoints', p.endpoints);
       }
+      const curMaps = (form.getFieldValue('mappings') as ModelMapping[] | undefined) ?? [];
+      if (p?.default_mappings?.length && !curMaps.some((m) => m?.request_model?.trim())) {
+        form.setFieldValue('mappings', p.default_mappings.map((m) => ({ request_model: m.request_model, upstream_model: m.upstream_model })));
+      }
     } else if ('account_type' in changed) {
       applyBaseUrl(provider, changed.account_type);
       form.setFieldValue('protocols', protocolOptions(provider, form.getFieldValue('type') as ModelType | undefined, changed.account_type));

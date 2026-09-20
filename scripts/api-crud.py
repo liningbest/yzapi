@@ -70,6 +70,10 @@ try:
                                                   "mappings": [{"request_model": "jev-p", "upstream_model": "jev-1.13"}]}, expect=200)
         eq(pre["endpoints"], ["/systemone"]); eq(pre["base_url"], "https://api.typesafe.ai/v1")  # preset fills path and base URL
         req("DELETE", f"/api/admin/accounts/{pre['id']}", expect=200)
+        pre2 = req("POST", "/api/admin/accounts", {"name": "jev-preset2", "provider": "typesafe", "type": "custom", "api_key": "sk-x"}, expect=200)
+        eq([(m["request_model"], m["upstream_model"]) for m in pre2["mappings"]], [("jev", "jev-latest")])  # preset fills the mapping too
+        req("DELETE", f"/api/admin/accounts/{pre2['id']}", expect=200)
+        req("POST", "/api/admin/accounts", {"name": "cj-nomap", "provider": "custom-json", "type": "custom", "base_url": f"http://{MOCK}/v1", "api_key": "sk-x", "endpoints": ["/x"]}, expect=400)  # no preset: mapping still required
         mg = req("POST", "/api/admin/model-groups", {"name": "jev-group", "type": "custom", "models": ["jev"]}, expect=200)
         req("DELETE", f"/api/admin/model-groups/{mg['id']}", expect=200)
         req("DELETE", f"/api/admin/accounts/{a['id']}", expect=200)

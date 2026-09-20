@@ -225,6 +225,14 @@ func (s *Server) validateAccountIn(in *accountIn, existing *model.Account) strin
 		seen[m.RequestModel] = true
 		maps = append(maps, m)
 	}
+	if len(maps) == 0 && !in.PassthroughModels && existing == nil {
+		for _, dm := range p.DefaultMappings {
+			maps = append(maps, struct {
+				RequestModel  string `json:"request_model"`
+				UpstreamModel string `json:"upstream_model"`
+			}{dm.RequestModel, dm.UpstreamModel})
+		}
+	}
 	if len(maps) == 0 && !in.PassthroughModels {
 		return "至少配置一条模型映射，或开启\"透传未映射模型\""
 	}

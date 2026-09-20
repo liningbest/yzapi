@@ -138,6 +138,8 @@ export interface Provider {
   icon: string;
   /** Pre-filled endpoint paths for custom (non-chat JSON) accounts. */
   endpoints?: string[];
+  /** Preset mappings for providers without a model-listing API. */
+  default_mappings?: { request_model: string; upstream_model: string }[];
 }
 
 export interface RoutableModel {

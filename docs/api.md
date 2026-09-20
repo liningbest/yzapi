@@ -63,7 +63,7 @@
 - `GET /api/admin/overview/usage?range=24h` → `{tokens:{total,prompt,completion,cached,cache_rate}, requests:{total,success,failed,fail_rate}, active_users, active_keys, trend:[{time, total_tokens, prompt_tokens, completion_tokens, cached_tokens, requests}]}`
 
 ### 供应商与模型
-- `GET /api/admin/providers` → `[{key,name,base_url,types[],protocols[],account_types:[{key,name,base_url,protocols[]}],auth_header,discover,custom,icon}]`。`account_types[].protocols` 存在时表示该入口只讲这些协议（例如 DeepSeek / Kimi / 智谱 / MiniMax / 百炼 的 Anthropic 兼容入口只讲 `anthropic-messages`；Gemini 预设的"原生 Gemini API"入口只讲 `gemini-generate`，"OpenAI 兼容"入口讲 `openai-completions` / `openai-embeddings`），创建账号时协议默认与校验都以它为准，避免把不同协议混在同一个 Base URL 下。`POST /accounts/discover` 可带 `account_type` / `protocols`，原生 Gemini 入口按 `x-goog-api-key` 拉取 `models[].name` 并去掉 `models/` 前缀
+- `GET /api/admin/providers` → `[{key,name,base_url,types[],protocols[],account_types:[{key,name,base_url,protocols[]}],auth_header,discover,custom,icon,endpoints[]?,default_mappings:[{request_model,upstream_model}]?}]`。`endpoints` 与 `default_mappings` 只出现在没有模型列表接口的预设上（如 `typesafe`：`/systemone`、`jev → jev-latest`）：管理界面选中供应商时自动填入，创建账号时未给映射且未开透传则服务端按 `default_mappings` 填入，未给 `endpoints` 则按预设填入。`account_types[].protocols` 存在时表示该入口只讲这些协议（例如 DeepSeek / Kimi / 智谱 / MiniMax / 百炼 的 Anthropic 兼容入口只讲 `anthropic-messages`；Gemini 预设的"原生 Gemini API"入口只讲 `gemini-generate`，"OpenAI 兼容"入口讲 `openai-completions` / `openai-embeddings`），创建账号时协议默认与校验都以它为准，避免把不同协议混在同一个 Base URL 下。`POST /accounts/discover` 可带 `account_type` / `protocols`，原生 Gemini 入口按 `x-goog-api-key` 拉取 `models[].name` 并去掉 `models/` 前缀
 - `GET /api/admin/models` → `[{name,type,kind:"model"|"virtual"|"group",provider,accounts,models[]}]`（当前可路由的全部请求模型）
 
 ### 账号池 `/api/admin/accounts`
