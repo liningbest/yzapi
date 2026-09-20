@@ -875,6 +875,8 @@ export interface UserModel {
   kind: ModelKind;
   provider: string;
   models?: string[];
+  /** Custom (non-chat JSON) models: client paths under /v1 on which the model is called. */
+  endpoints?: string[];
 }
 
 export interface UserModelsResponse {

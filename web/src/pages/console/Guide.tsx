@@ -7,7 +7,7 @@ import { userApi } from '@/api';
 import { PageHeader, SectionTitle } from '@/components';
 import { apiRoot } from './models/ApiDocModal';
 
-type ClientKey = 'claude-code' | 'codex' | 'opencode' | 'gemini-cli' | 'cline' | 'sdk';
+type ClientKey = 'claude-code' | 'codex' | 'opencode' | 'gemini-cli' | 'cline' | 'sdk' | 'custom';
 
 const KEY = '<YOUR_API_KEY>';
 
@@ -19,6 +19,7 @@ export default function Guide() {
   const models = useQuery({ queryKey: ['user', 'models'], queryFn: userApi.models });
   const root = apiRoot(models.data?.base_url ?? '');
   const textModels = useMemo(() => (models.data?.models ?? []).filter((m) => m.type === 'text').map((m) => m.name), [models.data]);
+  const customModels = useMemo(() => (models.data?.models ?? []).filter((m) => m.type === 'custom' && m.kind === 'model' && (m.endpoints?.length ?? 0) > 0), [models.data]);
   const [model, setModel] = useState<string>('');
   const chosen = model || textModels[0] || 'gpt-5.5';
   const [tab, setTab] = useState<ClientKey>('claude-code');
@@ -131,12 +132,55 @@ export default function Guide() {
           },
         ],
       },
+      custom: (() => {
+        // Non-chat JSON models (TypeSafe Jev, rerankers, classifiers): each is called on the
+        // path(s) its account declares, with the same key as everything else.
+        const first = customModels[0];
+        const cm = first?.name ?? 'jev';
+        const cp = first?.endpoints?.[0] ?? '/systemone';
+        const list = customModels.length
+          ? customModels.map((m) => `${m.name}  ->  ${(m.endpoints ?? []).map((p) => `POST ${root}/v1${p}`).join('  |  ')}`).join('\n')
+          : t('console:guide.custom.none');
+        return {
+          steps: [t('console:guide.custom.s1'), t('console:guide.custom.s2'), t('console:guide.custom.s3')],
+          blocks: [
+            { title: t('console:guide.custom.available'), code: list },
+            {
+              title: 'curl',
+              code: [
+                `curl ${root}/v1${cp} \\`,
+                `  -H "Authorization: Bearer ${KEY}" -H "Content-Type: application/json" \\`,
+                `  -d '{"model":"${cm}","state":"I was charged twice.","questions":{"billing":{"type":"noul","instructions":"Is this about billing?"}}}'`,
+              ].join('\n'),
+            },
+            {
+              title: 'Python (typesafe_sdk, TypeSafe Jev)',
+              code: [
+                `# pip install typesafe-sdk   (or: export TYPESAFE_BASE_URL="${root}" TYPESAFE_API_KEY="${KEY}")`,
+                `from typesafe_sdk import TypeSafeClient, Noul`,
+                `with TypeSafeClient(base_url="${root}", api_key="${KEY}") as client:`,
+                `    r = client.system_one(state="I was charged twice.", questions={"billing": Noul(instructions="Is this about billing?")})`,
+                `    print(r.answers["billing"])`,
+              ].join('\n'),
+            },
+            {
+              title: 'Python (requests)',
+              code: [
+                `import requests`,
+                `r = requests.post("${root}/v1${cp}", headers={"Authorization": "Bearer ${KEY}"},`,
+                `                  json={"model": "${cm}", "state": "I was charged twice.", "questions": {"billing": {"type": "noul", "instructions": "Is this about billing?"}}})`,
+                `print(r.status_code, r.json())`,
+              ].join('\n'),
+            },
+          ],
+        };
+      })(),
     }),
-    [root, chosen, t],
+    [root, chosen, customModels, t],
   );
 
   const current = snippets[tab];
-  const items = (['claude-code', 'codex', 'opencode', 'gemini-cli', 'cline', 'sdk'] as ClientKey[]).map((k) => ({ key: k, label: t(`console:guide.tabs.${k}`) }));
+  const items = (['claude-code', 'codex', 'opencode', 'gemini-cli', 'cline', 'sdk', 'custom'] as ClientKey[]).map((k) => ({ key: k, label: t(`console:guide.tabs.${k}`) }));
 
   return (
     <div>

@@ -198,7 +198,8 @@
       "opencode": "OpenCode",
       "gemini-cli": "Gemini CLI",
       "cline": "Cline / Roo Code",
-      "sdk": "curl / SDK"
+      "sdk": "curl / SDK",
+      "custom": "自訂介面 / TypeSafe"
     },
     "claudeCode": {
       "s1": "把下面的 env 寫進 ~/.claude/settings.json（沒有就新建）",
@@ -232,6 +233,13 @@
     "sdk": {
       "s1": "任何 OpenAI / Anthropic 相容的 SDK 都可以直接指向閘道",
       "s2": "把 <YOUR_API_KEY> 換成你的 Key"
+    },
+    "custom": {
+      "s1": "非對話模型（TypeSafe Jev、重排、分類等）不走 /v1/chat/completions，而是各自的路徑：POST /v1/<路徑>，請求體是該介面自己的 JSON，只要帶上 model 欄位",
+      "s2": "位址是閘道根位址加路徑，Key 與其他客戶端相同；閘道只改寫 model、注入上游 Key，其餘原樣轉發，回應原樣返回",
+      "s3": "下面列出了你有權使用的自訂介面模型和路徑；把 <YOUR_API_KEY> 換成你的 Key",
+      "available": "可用的自訂介面",
+      "none": "管理員尚未設定自訂介面模型，或你所在的使用者群組沒有授權；下面的範例以 TypeSafe Jev 為例。"
     }
   }
 }

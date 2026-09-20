@@ -97,6 +97,24 @@ func (s *Snapshot) PassthroughFor(typ string) []*Upstream { return s.passthrough
 // HasEndpoint reports whether any enabled custom account serves the client path.
 func (s *Snapshot) HasEndpoint(path string) bool { return s.endpoints[path] }
 
+// EndpointsFor lists, sorted, the client paths under /v1 on which a custom model can be
+// called: the union of the endpoint paths of the enabled accounts that map it. Empty for
+// models of any other type.
+func (s *Snapshot) EndpointsFor(reqModel string) []string {
+	set := map[string]bool{}
+	for _, u := range s.byModel[reqModel] {
+		for ep := range u.Endpoints {
+			set[ep] = true
+		}
+	}
+	out := make([]string, 0, len(set))
+	for ep := range set {
+		out = append(out, ep)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // vendorPrefixes are stripped when a client sends OpenRouter / AI-SDK style ids
 // ("anthropic/claude-sonnet-4-5", "models/gemini-2.5-pro").
 var vendorPrefixes = []string{"anthropic/", "openai/", "deepseek/", "google/", "models/", "x-ai/", "xai/", "moonshotai/", "moonshot/", "zhipu/", "z-ai/", "minimax/", "qwen/", "alibaba/", "meta-llama/", "mistralai/"}

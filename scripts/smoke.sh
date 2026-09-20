@@ -197,11 +197,13 @@ if curl -fsS "$BASE/api/admin/compliance/audit-logs?range=24h" -H "$A" | j "['to
 if curl -fsS "$BASE/api/admin/route/stats?range=24h" -H "$A" | grep -q '"by_label"'; then pass "route stats"; else failx "route stats"; fi
 if curl -fsS "$BASE/api/user/usage?range=24h" -H "Authorization: Bearer $UT" | grep -q '"by_api_key"'; then pass "user usage"; else failx "user usage"; fi
 if curl -fsS "$BASE/api/user/logs?range=24h" -H "Authorization: Bearer $UT" | j "['total']" | grep -qv '^0$'; then pass "user logs"; else failx "user logs"; fi
-if curl -fsS "$BASE/api/user/models" -H "Authorization: Bearer $UT" | grep -q '"base_url"'; then pass "user models"; else failx "user models"; fi
+UM=$(curl -fsS "$BASE/api/user/models" -H "Authorization: Bearer $UT")
+if echo "$UM" | grep -q '"base_url"'; then pass "user models"; else failx "user models"; fi
+if echo "$UM" | python3 -c 'import sys,json; ms={m["name"]:m for m in json.load(sys.stdin)["models"]}; sys.exit(0 if ms.get("jev",{}).get("endpoints")==["/systemone"] and "endpoints" not in ms.get("mini",{}) else 1)'; then pass "user models list custom endpoint paths for the guide"; else echo "$UM"; failx "user models custom endpoints"; fi
 if curl -fsS "$BASE/api/admin/settings" -H "$A" | grep -q '"performance"'; then pass "settings"; else failx "settings"; fi
 if curl -fsS "$BASE/api/admin/system/info" -H "$A" | grep -q '"go_version"'; then pass "system info"; else failx "system info"; fi
 
 echo
-EXPECTED=61
+EXPECTED=62
 if [ "$PASSED" -ne "$EXPECTED" ]; then echo "only $PASSED/$EXPECTED checks ran"; exit 1; fi
 echo "ALL $PASSED SMOKE TESTS PASSED"

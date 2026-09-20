@@ -204,7 +204,7 @@ Real models take hundreds of milliseconds to seconds before the first token, so 
 
 ```bash
 go test -race ./...   # unit and integration
-make smoke            # end to end against a mock upstream, 61 checks
+make smoke            # end to end against a mock upstream, 62 checks
 make crud             # full admin and user API round trip, 92 checks
 ```
 

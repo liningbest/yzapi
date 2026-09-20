@@ -192,7 +192,7 @@
 - `GET /api/admin/system/info` → `{version, go_version, db_driver, uptime_sec, started_at, data_dir}`
 
 ## 用户中心 `/api/user/*`（任意登录用户）
-- `GET /api/user/models` → `{base_url, models:[{name,type,kind,provider}]}`（仅本人用户组可用的模型）
+- `GET /api/user/models` → `{base_url, models:[{name,type,kind,provider}]}`（仅本人用户组可用的模型）；`custom` 类型的模型另带 `endpoints:[]`（可调用它的 `/v1/<路径>` 列表，取自映射了该模型的启用账号的并集，用户中心接入指引据此生成示例）。
 - `GET /api/user/keys` → `[{id,name,prefix,suffix,masked:"sk-abcd…wxyz",enabled,last_used_at,created_at}]`
 - `POST /api/user/keys {name, expires_at?, allowed_models?[], tokens_per_minute?, requests_per_minute?}` → `{key:"sk-完整明文（仅此一次）", item:{...}}`。`expires_at` 为 null 表示永不过期；`allowed_models` 只能是本人可见的模型或模型组名，空表示继承用户组；每分钟上限 0 表示不限制，按最近 60 秒统计。Key 对象另含 `expires_at, expired, allowed_models, tokens_per_minute, requests_per_minute`
 - `PUT /api/user/keys/:id` 同 POST 字段；`PATCH /api/user/keys/:id/enabled {enabled}`；`DELETE /api/user/keys/:id`

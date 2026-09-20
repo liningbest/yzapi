@@ -364,3 +364,8 @@
 - 接口路径规范化幂等：开头的全部 `/v1` 段一次去完（`/v1/v1/x` → `/x`），读出再保存不再改变路径；去前缀后落在内置路由上的输入首次保存即拒绝。
 - 自定义接口的显式零用量在错误响应上同样记为已确认，重试链路里"零用量 5xx → 成功"的请求用量与成本均为已知。
 
+## 1.0.46：接入指引新增「自定义接口 / TypeSafe」
+
+- 用户中心接入指引新增标签页：列出当前用户有权使用的自定义接口模型及其 `POST /v1/<路径>`，附 curl、TypeSafe Python SDK（`TypeSafeClient(base_url, api_key)` / `TYPESAFE_BASE_URL`）与 requests 示例，地址取自站点设置。
+- `GET /api/user/models` 对 `custom` 类型模型返回 `endpoints`。
+

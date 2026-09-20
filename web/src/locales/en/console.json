@@ -198,7 +198,8 @@
       "opencode": "OpenCode",
       "gemini-cli": "Gemini CLI",
       "cline": "Cline / Roo Code",
-      "sdk": "curl / SDK"
+      "sdk": "curl / SDK",
+      "custom": "Custom endpoints / TypeSafe"
     },
     "claudeCode": {
       "s1": "Put the env block below into ~/.claude/settings.json (create it if missing)",
@@ -232,6 +233,13 @@
     "sdk": {
       "s1": "Any OpenAI / Anthropic compatible SDK can point straight at the gateway",
       "s2": "Replace <YOUR_API_KEY> with your key"
+    },
+    "custom": {
+      "s1": "Non-chat models (TypeSafe Jev, rerankers, classifiers) are not called on /v1/chat/completions but on their own path: POST /v1/<path> with that API's own JSON body, which must include a model field",
+      "s2": "The URL is the gateway root plus the path and the key is the same as for every other client; the gateway rewrites only model, injects the upstream key, forwards the rest verbatim and returns the reply unchanged",
+      "s3": "The custom models and paths you are allowed to use are listed below; replace <YOUR_API_KEY> with your key",
+      "available": "Available custom endpoints",
+      "none": "No custom endpoint model is configured, or your user group is not authorised for one; the examples below use TypeSafe Jev."
     }
   }
 }

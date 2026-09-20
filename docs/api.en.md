@@ -194,7 +194,7 @@ Metering reliability (stated conditionally, with no unconditional promises):
 - `GET /api/admin/system/info` → `{version, go_version, db_driver, uptime_sec, started_at, data_dir}`
 
 ## User center `/api/user/*` (any logged-in user)
-- `GET /api/user/models` → `{base_url, models:[{name,type,kind,provider}]}` (only the models available to the user's own group)
+- `GET /api/user/models` → `{base_url, models:[{name,type,kind,provider}]}` (only the models available to the user's own group); models of type `custom` also carry `endpoints:[]` (the `/v1/<path>` list on which the model can be called, the union over the enabled accounts mapping it; the user console guide renders its examples from it).
 - `GET /api/user/keys` → `[{id,name,prefix,suffix,masked:"sk-abcd…wxyz",enabled,last_used_at,created_at}]`
 - `POST /api/user/keys {name, expires_at?, allowed_models?[], tokens_per_minute?, requests_per_minute?}` → `{key:"sk-full plaintext (returned only this once)", item:{...}}`. `expires_at` null means never expires; `allowed_models` may only contain models or model-group names visible to the user, and empty means inherit from the user group; a per-minute cap of 0 means unlimited, measured over the last 60 seconds. The key object also contains `expires_at, expired, allowed_models, tokens_per_minute, requests_per_minute`
 - `PUT /api/user/keys/:id` same fields as POST; `PATCH /api/user/keys/:id/enabled {enabled}`; `DELETE /api/user/keys/:id`

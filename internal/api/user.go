@@ -24,7 +24,11 @@ func (s *Server) userModels(c *gin.Context) {
 				continue
 			}
 		}
-		out = append(out, gin.H{"name": m.Name, "type": m.Type, "kind": m.Kind, "provider": m.Provider, "models": m.Models})
+		item := gin.H{"name": m.Name, "type": m.Type, "kind": m.Kind, "provider": m.Provider, "models": m.Models}
+		if m.Type == model.TypeCustom && m.Kind == "model" {
+			item["endpoints"] = snap.EndpointsFor(m.Name) // where POST /v1/<path> reaches this model
+		}
+		out = append(out, item)
 	}
 	c.JSON(200, gin.H{"base_url": s.st.Get().Basic.BaseURL, "models": out})
 }

@@ -214,7 +214,7 @@ yzapi -reset-password admin
 
 ```bash
 go test -race ./...            # 单元与集成测试
-make smoke                     # 端到端：mock 上游 + 网关，61 项
+make smoke                     # 端到端：mock 上游 + 网关，62 项
 make crud                      # 管理 / 用户 API 全量往返，92 项
 ```
 

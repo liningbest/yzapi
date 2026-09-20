@@ -198,7 +198,8 @@
       "opencode": "OpenCode",
       "gemini-cli": "Gemini CLI",
       "cline": "Cline / Roo Code",
-      "sdk": "curl / SDK"
+      "sdk": "curl / SDK",
+      "custom": "自定义接口 / TypeSafe"
     },
     "claudeCode": {
       "s1": "把下面的 env 写进 ~/.claude/settings.json（没有就新建）",
@@ -232,6 +233,13 @@
     "sdk": {
       "s1": "任何 OpenAI / Anthropic 兼容的 SDK 都可以直接指向网关",
       "s2": "把 <YOUR_API_KEY> 换成你的 Key"
+    },
+    "custom": {
+      "s1": "非对话模型（TypeSafe Jev、重排、分类等）不走 /v1/chat/completions，而是各自的路径：POST /v1/<路径>，请求体是该接口自己的 JSON，只要带上 model 字段",
+      "s2": "地址是网关根地址加路径，Key 与其他客户端相同；网关只改写 model、注入上游 Key，其余原样转发，响应原样返回",
+      "s3": "下面列出了你有权使用的自定义接口模型和路径；把 <YOUR_API_KEY> 换成你的 Key",
+      "available": "可用的自定义接口",
+      "none": "管理员尚未配置自定义接口模型，或你所在的用户组没有授权；下面的示例以 TypeSafe Jev 为例。"
     }
   }
 }

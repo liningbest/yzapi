@@ -204,3 +204,23 @@ func TestCustomEndpointUpstreamErrors(t *testing.T) {
 		t.Fatalf("no-usage log %+v %+v", log, atts)
 	}
 }
+
+// EndpointsFor is what the user console's guide shows: the union of the paths of every
+// enabled account mapping the model, sorted; nothing for other model types.
+func TestCustomEndpointsForModel(t *testing.T) {
+	a := newRecorder(respondJSON(200, jevOK))
+	defer a.srv.Close()
+	b := newRecorder(respondJSON(200, jevOK))
+	defer b.srv.Close()
+	e := newE2EAccounts(t, customSpec(a.srv.URL, "/systemone", "/rank"), customSpec(b.srv.URL, "/rerank", "/rank"), chatSpec(b.srv.URL))
+	snap := e.g.Snapshot()
+	if got := snap.EndpointsFor("jev"); strings.Join(got, ",") != "/rank,/rerank,/systemone" {
+		t.Fatalf("EndpointsFor(jev) = %v", got)
+	}
+	if got := snap.EndpointsFor("m"); len(got) != 0 {
+		t.Fatalf("EndpointsFor(m) = %v", got)
+	}
+	if got := snap.EndpointsFor("nope"); len(got) != 0 {
+		t.Fatalf("EndpointsFor(nope) = %v", got)
+	}
+}
