@@ -12,7 +12,7 @@ func TestR143NormalizeEndpoints(t *testing.T) {
 	ok := map[string]string{
 		"/v1/systemone": "/systemone", "systemone/": "/systemone", "v1/systemone": "/systemone", "/v1/systemone/": "/systemone",
 		" /rerank ": "/rerank", "/v1beta": "/v1beta", "/v1beta/rerank": "/v1beta/rerank", "/v10/rank": "/v10/rank", "/v10/rerank": "/v10/rerank",
-		"/v1/v1/x": "/v1/x", "/a/b": "/a/b",
+		"/v1/v1/x": "/x", "/a/b": "/a/b",
 	}
 	for in, want := range ok {
 		got, msg := normalizeEndpoints([]string{in})

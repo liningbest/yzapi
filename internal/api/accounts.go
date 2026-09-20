@@ -1059,7 +1059,11 @@ func normalizeEndpoints(in []string) ([]string, string) {
 		if !strings.HasPrefix(p, "/") {
 			p = "/" + p
 		}
-		if p == "/v1" || strings.HasPrefix(p, "/v1/") {
+		// The gateway prefix is removed as many times as it appears at the front, so the
+		// stored form never starts with a "/v1" segment and normalising a stored list is
+		// a no-op (an endpoint's own first segment therefore cannot be "v1"; "/v1beta"
+		// and "/v10" are different segments and stay).
+		for p == "/v1" || strings.HasPrefix(p, "/v1/") {
 			p = p[len("/v1"):]
 		}
 		p = strings.TrimRight(p, "/")

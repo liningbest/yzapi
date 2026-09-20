@@ -774,8 +774,10 @@ func (g *Gateway) forward(req *request, cands []string) {
 				cancel()
 				ctr.release()
 				rec.Error = msg
-				// Some providers report tokens even on error responses; keep them.
-				if u, ok := usageFromJSON(proto, raw); ok && u.PromptTokens+u.CompletionTokens > 0 {
+				// Some providers report tokens even on error responses; keep them. For custom
+				// JSON endpoints the parser's "known" already means a count field was present,
+				// so an explicit zero on an error reply is a confirmed zero, not a guess.
+				if u, ok := usageFromJSON(proto, raw); ok && (u.PromptTokens+u.CompletionTokens > 0 || proto == model.ProtoCustomJSON) {
 					rec.UsageStatus = model.UsageConfirmed
 					rec.PromptTokens, rec.CompletionTokens = int64(u.PromptTokens), int64(u.CompletionTokens)
 				} else {
