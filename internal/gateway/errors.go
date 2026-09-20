@@ -51,6 +51,7 @@ var (
 	ErrGroupBusy        = newErr(429, "group_rate_limited", "User group concurrency limit reached")
 	ErrKeyBusy          = newErr(429, "key_rate_limited", "API key concurrency limit reached")
 	ErrNoUpstream       = newErr(503, "no_available_upstream", "No healthy upstream account can serve this model")
+	ErrEndpointNotFound = newErr(404, "not_found", "not found")
 	ErrBodyTooLarge     = newErr(413, "request_too_large", "Request body exceeds the configured limit")
 	ErrBadJSON          = newErr(400, "invalid_json", "Request body is not valid JSON")
 	ErrContentBlocked   = newErr(400, "content_blocked", "Request blocked by content compliance policy")

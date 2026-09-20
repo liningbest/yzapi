@@ -58,6 +58,14 @@ ACC3=$(curl -fsS -X POST "$BASE/api/admin/accounts" -H "$A" -H 'Content-Type: ap
   \"mappings\":[{\"request_model\":\"embed\",\"upstream_model\":\"mock-embed\"}]}")
 EMB_ID=$(echo "$ACC3" | j "['id']")
 pass "create embedding account"
+ACC5=$(curl -sS -X POST "$BASE/api/admin/accounts" -H "$A" -H 'Content-Type: application/json' -d "{
+  \"name\":\"mock-jev\",\"provider\":\"custom-json\",\"type\":\"custom\",\"base_url\":\"http://$MOCK/v1\",\"api_key\":\"sk-mock\",
+  \"endpoints\":[\"systemone/\",\"/v1/systemone\"],\"mappings\":[{\"request_model\":\"jev\",\"upstream_model\":\"jev-1.13\"}]}")
+if [ "$(echo "$ACC5" | j "['type']" 2>/dev/null)" = "custom" ] && [ "$(echo "$ACC5" | j "['endpoints']" 2>/dev/null)" = "['/systemone']" ] && [ "$(echo "$ACC5" | j "['protocols'][0]" 2>/dev/null)" = "custom-json" ]; then pass "create custom JSON account (endpoints normalised and deduplicated)"; else echo "$ACC5"; failx "create custom JSON account"; fi
+BAD=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/admin/accounts" -H "$A" -H 'Content-Type: application/json' -d "{
+  \"name\":\"mock-jev-bad\",\"provider\":\"custom-json\",\"type\":\"custom\",\"base_url\":\"http://$MOCK/v1\",\"api_key\":\"sk-mock\",
+  \"endpoints\":[\"/chat/x\"],\"mappings\":[{\"request_model\":\"jev2\",\"upstream_model\":\"jev2\"}]}")
+if [ "$BAD" = "400" ]; then pass "custom endpoint under a built-in route is rejected"; else failx "custom endpoint under a built-in route is rejected ($BAD)"; fi
 ACC1_ID=$(echo "$ACC1" | j "['id']")
 UPD=$(curl -sS -X PUT "$BASE/api/admin/accounts/$ACC1_ID" -H "$A" -H 'Content-Type: application/json' -d "{
   \"name\":\"mock-openai-renamed\",\"provider\":\"custom\",\"type\":\"text\",\"base_url\":\"http://$MOCK/v1\",\"api_key\":\"******\",
@@ -72,7 +80,8 @@ echo "== model groups / user group / user / key"
 MG1=$(curl -fsS -X POST "$BASE/api/admin/model-groups" -H "$A" -H 'Content-Type: application/json' -d '{"name":"cheap","type":"text","models":["mini"]}' | j "['id']")
 MG2=$(curl -fsS -X POST "$BASE/api/admin/model-groups" -H "$A" -H 'Content-Type: application/json' -d '{"name":"strong","type":"text","models":["claude-mock","pro","gemini-mock"]}' | j "['id']")
 MG3=$(curl -fsS -X POST "$BASE/api/admin/model-groups" -H "$A" -H 'Content-Type: application/json' -d '{"name":"vectors","type":"embedding","models":["embed"]}' | j "['id']")
-UG=$(curl -fsS -X POST "$BASE/api/admin/user-groups" -H "$A" -H 'Content-Type: application/json' -d "{\"name\":\"dev\",\"max_concurrency\":10,\"key_max_concurrency\":5,\"token_quota\":1000000,\"model_group_ids\":[$MG1,$MG2,$MG3]}" | j "['id']")
+MG4=$(curl -fsS -X POST "$BASE/api/admin/model-groups" -H "$A" -H 'Content-Type: application/json' -d '{"name":"decisions","type":"custom","models":["jev"]}' | j "['id']")
+UG=$(curl -fsS -X POST "$BASE/api/admin/user-groups" -H "$A" -H 'Content-Type: application/json' -d "{\"name\":\"dev\",\"max_concurrency\":10,\"key_max_concurrency\":5,\"token_quota\":1000000,\"model_group_ids\":[$MG1,$MG2,$MG3,$MG4]}" | j "['id']")
 curl -fsS -X POST "$BASE/api/admin/users" -H "$A" -H 'Content-Type: application/json' -d "{\"username\":\"alice\",\"password\":\"AlicePass12345\",\"group_id\":$UG}" >/dev/null
 UT=$(curl -fsS -X POST "$BASE/api/auth/login" -H 'Content-Type: application/json' -d '{"username":"alice","password":"AlicePass12345"}' | j "['token']")
 curl -fsS -X POST "$BASE/api/auth/change-password" -H "Authorization: Bearer $UT" -H 'Content-Type: application/json' -d '{"old_password":"AlicePass12345","new_password":"AlicePass12345x"}' >/dev/null
@@ -125,6 +134,12 @@ code=$(curl -s -o /tmp/yz_gem_err -w '%{http_code}' "$BASE/v1beta/models/gemini-
 if [ "$code" = "401" ] && grep -q 'UNAUTHENTICATED' /tmp/yz_gem_err; then pass "gemini error shape (401 UNAUTHENTICATED)"; else failx "gemini error shape"; fi
 OUT=$(curl -fsS "$BASE/v1/embeddings" -H "$K" -H 'Content-Type: application/json' -d '{"model":"embed","input":"vec"}')
 if echo "$OUT" | grep -q '"embedding"'; then pass "embeddings"; else failx "embeddings"; fi
+OUT=$(curl -sS -D "$DATA/jev.h" "$BASE/v1/systemone" -H "$K" -H 'Content-Type: application/json' -d '{"model":"jev","state":{"temp":31},"questions":{"hot":{"type":"noul","instructions":"Is it hot?"}}}')
+if echo "$OUT" | grep -q '"answers"' && echo "$OUT" | grep -q '"model":"jev-1.13"' && grep -qi 'X-Upstream-Protocol: custom-json' "$DATA/jev.h"; then pass "custom JSON endpoint forwarded to the declaring account (model rewritten, reply untouched)"; else echo "$OUT"; failx "custom JSON endpoint"; fi
+CODE=$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/v1/systemtwo" -H "$K" -H 'Content-Type: application/json' -d '{"model":"jev"}')
+if [ "$CODE" = "404" ]; then pass "undeclared custom path is 404"; else failx "undeclared custom path is 404 ($CODE)"; fi
+CODE=$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/v1/chat/completions" -H "$K" -H 'Content-Type: application/json' -d '{"model":"jev","messages":[{"role":"user","content":"hi"}]}')
+if [ "$CODE" = "400" ]; then pass "custom model on the chat endpoint is a type mismatch"; else failx "custom model on the chat endpoint ($CODE)"; fi
 OUT=$(curl -fsS "$BASE/v1/chat/completions" -H "$K" -H 'Content-Type: application/json' -d '{"model":"strong","messages":[{"role":"user","content":"group call"}]}')
 if echo "$OUT" | grep -q 'echo: group call'; then pass "model group as model name (ordered failover)"; else failx "model group as model name (ordered failover)"; fi
 
@@ -187,6 +202,6 @@ if curl -fsS "$BASE/api/admin/settings" -H "$A" | grep -q '"performance"'; then 
 if curl -fsS "$BASE/api/admin/system/info" -H "$A" | grep -q '"go_version"'; then pass "system info"; else failx "system info"; fi
 
 echo
-EXPECTED=56
+EXPECTED=61
 if [ "$PASSED" -ne "$EXPECTED" ]; then echo "only $PASSED/$EXPECTED checks ran"; exit 1; fi
 echo "ALL $PASSED SMOKE TESTS PASSED"

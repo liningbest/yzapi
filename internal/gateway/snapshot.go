@@ -28,7 +28,8 @@ type Upstream struct {
 	Priority       int
 	Weight         int
 	MaxConcurrency int
-	Passthrough    bool // accepts unmapped model names as-is
+	Passthrough    bool            // accepts unmapped model names as-is
+	Endpoints      map[string]bool // custom accounts: client paths under /v1 this account serves
 	Extra          map[string]any
 }
 
@@ -74,6 +75,7 @@ type Snapshot struct {
 	lowerName    map[string]string      // lower-cased request model -> canonical name
 	lowerDup     map[string]bool        // lower-cased names configured with more than one spelling
 	passthrough  map[string][]*Upstream // model type -> accounts accepting unmapped names
+	endpoints    map[string]bool        // client paths served by enabled custom accounts
 	Groups       map[uint]*GroupView
 	DefaultGroup *GroupView
 	ModelGroups  map[uint]*ModelGroupView
@@ -91,6 +93,9 @@ func (s *Snapshot) UpstreamsFor(reqModel string) []*Upstream { return s.byModel[
 
 // PassthroughFor lists accounts of the given type that accept unmapped model names.
 func (s *Snapshot) PassthroughFor(typ string) []*Upstream { return s.passthrough[typ] }
+
+// HasEndpoint reports whether any enabled custom account serves the client path.
+func (s *Snapshot) HasEndpoint(path string) bool { return s.endpoints[path] }
 
 // vendorPrefixes are stripped when a client sends OpenRouter / AI-SDK style ids
 // ("anthropic/claude-sonnet-4-5", "models/gemini-2.5-pro").
@@ -213,7 +218,7 @@ func (s *Snapshot) ResolveDetail(name, wantType string) (canonical string, typ s
 	}
 	types := []string{wantType}
 	if wantType == "" {
-		types = []string{model.TypeText, model.TypeEmbedding, model.TypeImage}
+		types = []string{model.TypeText, model.TypeEmbedding, model.TypeImage, model.TypeCustom}
 	}
 	for _, t := range types {
 		if len(s.passthrough[t]) > 0 {
@@ -261,6 +266,7 @@ func (h *snapshotHolder) rebuild(sr settings.SmartRoute) error {
 		lowerName:   map[string]string{},
 		lowerDup:    map[string]bool{},
 		passthrough: map[string][]*Upstream{},
+		endpoints:   map[string]bool{},
 		Groups:      map[uint]*GroupView{},
 		ModelGroups: map[uint]*ModelGroupView{},
 		groupByName: map[string]*ModelGroupView{},
@@ -291,6 +297,13 @@ func (h *snapshotHolder) rebuild(sr settings.SmartRoute) error {
 		}
 		if a.PassthroughModels {
 			snap.passthrough[a.Type] = append(snap.passthrough[a.Type], u)
+		}
+		if a.Type == model.TypeCustom {
+			u.Endpoints = map[string]bool{}
+			for _, ep := range a.Endpoints {
+				u.Endpoints[ep] = true
+				snap.endpoints[ep] = true
+			}
 		}
 		for _, pr := range a.Protocols {
 			u.Protocols[pr] = true

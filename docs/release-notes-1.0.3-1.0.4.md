@@ -345,3 +345,11 @@
 ## 1.0.42：1.0.41 验收修复（`docs/changes-2026-09-12-client-guide-priceimport.md` 第 22 节）
 
 - 向量构建的计数守恒覆盖每条退出路径：早期批次报错时，后续已领取未发送的行也计入 `failed`。
+
+## 1.0.43：自定义 JSON 接口（非对话模型接入）、语言自动选择
+
+- 新账号类型 `custom`（自定义接口）与协议 `custom-json`：账号声明自己提供的客户端路径（`endpoints`，如 `/systemone`），客户端 `POST /v1/<路径>` 的 JSON 请求体原样转发到 `<服务地址>/<路径>`，只改写 `model`、注入 Key，响应原样回传；鉴权、模型映射 / 透传、用户组授权、限流、并发、健康冷却、调用日志、用量（`prompt_tokens` / `completion_tokens` 或 `input_tokens` / `output_tokens`）与计价照常。未声明的路径 404，类型不匹配 400 `model_type_mismatch`。内置预设 `typesafe`（TypeSafe Jev）与 `custom-json`。详见 `docs/api.md` "自定义 JSON 接口"。
+- 管理端账号表单新增「接口路径」（类型为自定义接口时显示，预设自动填充）；模型组可选自定义接口类型；日志 / 用量的类型筛选含自定义接口。
+- 界面语言按浏览器语言偏好列表自动选择（简体、繁体、英文；其它语言回退英文），手动选择仍优先。
+- 数据库：`accounts` 表新增 `endpoints` 列（自动迁移，其他类型账号为空）。升级直接替换二进制或镜像。
+

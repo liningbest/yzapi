@@ -42,6 +42,7 @@ type acctSpec struct {
 	Protocols   []string
 	Mappings    map[string]string // request model -> upstream model
 	Passthrough bool
+	Endpoints   []string // custom accounts: client paths under /v1
 }
 
 func chatSpec(url string) acctSpec {
@@ -93,7 +94,7 @@ func newE2EAccounts(t *testing.T, specs ...acctSpec) *e2e {
 	enc, _ := cipher.Encrypt("upstream-secret")
 	for i, sp := range specs {
 		acc := model.Account{Name: fmt.Sprintf("acc%d", i), Provider: sp.Provider, Type: sp.Type, BaseURL: sp.URL, APIKeyEnc: enc,
-			Protocols: model.StringList(sp.Protocols), Priority: i, Enabled: true, Health: "available", PassthroughModels: sp.Passthrough}
+			Protocols: model.StringList(sp.Protocols), Priority: i, Enabled: true, Health: "available", PassthroughModels: sp.Passthrough, Endpoints: model.StringList(sp.Endpoints)}
 		for rq, up := range sp.Mappings {
 			acc.Mappings = append(acc.Mappings, model.ModelMapping{RequestModel: rq, UpstreamModel: up})
 		}

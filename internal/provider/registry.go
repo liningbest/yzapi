@@ -24,6 +24,8 @@ type Provider struct {
 	Discover     bool          `json:"discover"`    // supports GET /models
 	Custom       bool          `json:"custom"`
 	Icon         string        `json:"icon"`
+	// Endpoints pre-fills the endpoint paths of a custom (non-chat JSON) account.
+	Endpoints []string `json:"endpoints,omitempty"`
 }
 
 var registry = []Provider{
@@ -163,6 +165,16 @@ var registry = []Provider{
 		Types:      []string{model.TypeText},
 		Protocols:  []string{model.ProtoAnthropicMessages},
 		AuthHeader: "x-api-key", Discover: false, Custom: true, Icon: "custom"},
+	// Non-chat JSON APIs: the account declares the paths it serves; requests to
+	// POST /v1/<path> are forwarded to <base_url>/<path> with the key injected.
+	{Key: "typesafe", Name: "TypeSafe (Jev)", BaseURL: "https://api.typesafe.ai/v1",
+		Types:      []string{model.TypeCustom},
+		Protocols:  []string{model.ProtoCustomJSON},
+		AuthHeader: "bearer", Discover: false, Icon: "custom", Endpoints: []string{"/systemone"}},
+	{Key: "custom-json", Name: "自定义 (JSON 接口)", BaseURL: "",
+		Types:      []string{model.TypeCustom},
+		Protocols:  []string{model.ProtoCustomJSON},
+		AuthHeader: "bearer", Discover: false, Custom: true, Icon: "custom"},
 }
 
 // AccountTypeOf returns the provider's account type by key, if any.
@@ -193,6 +205,8 @@ func ProtocolsForType(t string) []string {
 		return []string{model.ProtoOpenAIImages}
 	case model.TypeEmbedding:
 		return []string{model.ProtoOpenAIEmbeddings}
+	case model.TypeCustom:
+		return []string{model.ProtoCustomJSON}
 	default:
 		return []string{model.ProtoOpenAIChat, model.ProtoOpenAIResponses, model.ProtoAnthropicMessages, model.ProtoGemini}
 	}
@@ -205,6 +219,8 @@ func ProtocolType(proto string) string {
 		return model.TypeImage
 	case model.ProtoOpenAIEmbeddings:
 		return model.TypeEmbedding
+	case model.ProtoCustomJSON:
+		return model.TypeCustom
 	default:
 		return model.TypeText
 	}

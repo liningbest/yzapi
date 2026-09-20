@@ -55,7 +55,7 @@ func TestRegistryConsistency(t *testing.T) {
 	if ProtocolType(model.ProtoGemini) != model.TypeText {
 		t.Fatal("gemini protocol must be a text protocol")
 	}
-	if n := len(registry); n != 26 {
+	if n := len(registry); n != 28 {
 		t.Fatalf("registry has %d providers; update the login page and README counts", n)
 	}
 }

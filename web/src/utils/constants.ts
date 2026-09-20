@@ -1,6 +1,6 @@
 import type { ModelType, Protocol } from '@/types';
 
-export const MODEL_TYPES: ModelType[] = ['text', 'image', 'embedding'];
+export const MODEL_TYPES: ModelType[] = ['text', 'image', 'embedding', 'custom'];
 
 export const PROTOCOLS: Protocol[] = [
   'openai-completions',
@@ -8,12 +8,14 @@ export const PROTOCOLS: Protocol[] = [
   'anthropic-messages',
   'openai-embeddings',
   'openai-images',
+  'custom-json',
 ];
 
 export const PROTOCOLS_BY_TYPE: Record<ModelType, Protocol[]> = {
   text: ['openai-completions', 'openai-responses', 'anthropic-messages', 'gemini-generate'],
   image: ['openai-images'],
   embedding: ['openai-embeddings'],
+  custom: ['custom-json'],
 };
 
 export const PROTOCOL_LABELS: Record<Protocol, string> = {
@@ -23,6 +25,7 @@ export const PROTOCOL_LABELS: Record<Protocol, string> = {
   'gemini-generate': 'Gemini generateContent',
   'openai-embeddings': 'OpenAI Embeddings',
   'openai-images': 'OpenAI Images',
+  'custom-json': 'Custom JSON (POST /v1/<path>)',
 };
 
 export const CHART_PALETTE = ['#2563eb', '#0891b2', '#64748b', '#d97706', '#16a34a', '#dc2626', '#7c3aed', '#db2777'];
@@ -45,6 +48,7 @@ export const TYPE_COLORS: Record<ModelType, SemanticKey> = {
   text: 'neutral',
   image: 'neutral',
   embedding: 'neutral',
+  custom: 'neutral',
 };
 
 export const HEALTH_COLORS: Record<string, SemanticKey> = {

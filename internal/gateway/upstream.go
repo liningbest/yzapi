@@ -21,6 +21,8 @@ import (
 // Gemini addresses the model in the URL, so it needs the upstream model and stream flag.
 func protoPath(proto, upstreamModel string, stream bool) string {
 	switch proto {
+	case model.ProtoCustomJSON:
+		return "/" // never used: custom calls carry their own path (see doUpstream)
 	case model.ProtoGemini:
 		if stream {
 			return "/models/" + upstreamModel + ":streamGenerateContent?alt=sse"
@@ -45,6 +47,7 @@ type upstreamCall struct {
 	up      *Upstream
 	proto   string
 	model   string // upstream model name (needed for URL-addressed protocols)
+	path    string // custom JSON endpoint: client path under /v1, appended to the base URL
 	body    []byte
 	stream  bool
 	headers http.Header // selected client headers to forward
@@ -78,7 +81,11 @@ func (g *Gateway) doUpstream(ctx context.Context, c *upstreamCall) (*http.Respon
 		// a response, so record that moment for usage classification.
 		ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{WroteRequest: func(httptrace.WroteRequestInfo) { *c.sent = true }})
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.up.BaseURL+protoPath(c.proto, c.model, c.stream), bytes.NewReader(c.body))
+	target := c.up.BaseURL + protoPath(c.proto, c.model, c.stream)
+	if c.proto == model.ProtoCustomJSON {
+		target = c.up.BaseURL + c.path
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(c.body))
 	if err != nil {
 		return nil, err
 	}
@@ -249,6 +256,28 @@ func usageFromJSON(proto string, raw []byte) (u convert.Usage, ok bool) {
 			}{CachedTokens: r.Usage.InputTokensDetails.CachedTokens}
 		}
 		return u, true
+	case model.ProtoCustomJSON:
+		// Non-chat APIs report either the OpenAI names or the Responses/Anthropic names;
+		// accept both, and treat a usage block with no counts as "nothing reported".
+		var r struct {
+			Usage *struct {
+				PromptTokens     int `json:"prompt_tokens"`
+				CompletionTokens int `json:"completion_tokens"`
+				InputTokens      int `json:"input_tokens"`
+				OutputTokens     int `json:"output_tokens"`
+				TotalTokens      int `json:"total_tokens"`
+			} `json:"usage"`
+		}
+		if json.Unmarshal(raw, &r) != nil || r.Usage == nil {
+			return u, false
+		}
+		u.PromptTokens = r.Usage.PromptTokens + r.Usage.InputTokens
+		u.CompletionTokens = r.Usage.CompletionTokens + r.Usage.OutputTokens
+		u.TotalTokens = r.Usage.TotalTokens
+		if u.TotalTokens == 0 {
+			u.TotalTokens = u.PromptTokens + u.CompletionTokens
+		}
+		return u, u.TotalTokens > 0
 	default:
 		var r struct {
 			Usage *convert.Usage `json:"usage"`

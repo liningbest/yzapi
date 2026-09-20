@@ -37,6 +37,7 @@ type request struct {
 	model        string
 	pathModel    string // model taken from the URL (Gemini); overrides the body
 	pathStream   bool   // streaming decided by the URL (Gemini streamGenerateContent)
+	endpointPath string // custom JSON endpoint: client path under /v1, e.g. "/systemone"
 	stream       bool
 	includeUsage bool
 	text         string
@@ -471,6 +472,51 @@ func (g *Gateway) HandleImages(w http.ResponseWriter, r *http.Request) {
 	g.handleSimple(w, r, model.ProtoOpenAIImages)
 }
 
+// HandleCustom serves POST /v1/<path> for paths declared by custom (non-chat JSON)
+// accounts. The JSON body must carry "model"; it is forwarded verbatim (model rewritten
+// to the account's upstream name) to <base_url>/<path> and the reply is returned as-is.
+// Paths no enabled custom account declares answer 404 after authentication, so an
+// unknown path is indistinguishable from before this feature to unauthenticated callers.
+func (g *Gateway) HandleCustom(w http.ResponseWriter, r *http.Request) {
+	req := g.newRequest(w, r, model.ProtoCustomJSON)
+	req.endpointPath = CustomEndpointPath(r.URL.Path)
+	if req.endpointPath == "" {
+		g.fail(req, ErrEndpointNotFound)
+		return
+	}
+	if e := g.prepareCustom(req); e != nil {
+		g.fail(req, e)
+		return
+	}
+	g.runSimple(req)
+}
+
+// CustomEndpointPath normalises a request path to the endpoint key stored on accounts:
+// "/v1/systemone/" -> "/systemone". Returns "" for paths outside /v1 or with no remainder.
+func CustomEndpointPath(p string) string {
+	if !strings.HasPrefix(p, "/v1/") {
+		return ""
+	}
+	p = strings.TrimRight(p[len("/v1"):], "/")
+	if p == "" || p == "/" {
+		return ""
+	}
+	return p
+}
+
+// prepareCustom is prepare for custom endpoints: the auth step runs first so an unknown
+// path never leaks whether it exists to callers without a valid key, then the endpoint is
+// checked before the body is read.
+func (g *Gateway) prepareCustom(req *request) *GatewayError {
+	if _, e := g.authenticate(req.r); e != nil {
+		return e
+	}
+	if !g.snap.get().HasEndpoint(req.endpointPath) {
+		return ErrEndpointNotFound
+	}
+	return g.prepare(req)
+}
+
 // HandleModels lists models visible to the caller.
 func (g *Gateway) HandleModels(w http.ResponseWriter, r *http.Request) {
 	p, e := g.authenticate(r)
@@ -585,6 +631,11 @@ func (g *Gateway) handleSimple(w http.ResponseWriter, r *http.Request, proto str
 		g.fail(req, e)
 		return
 	}
+	g.runSimple(req)
+}
+
+// runSimple is the non-streaming back half shared by embeddings, images and custom endpoints.
+func (g *Gateway) runSimple(req *request) {
 	req.stream = false
 	cands, e := g.candidates(req)
 	if e != nil {
@@ -632,6 +683,9 @@ func (g *Gateway) forward(req *request, cands []string) {
 			if !g.health.available(up.ID) {
 				continue
 			}
+			if req.endpointPath != "" && !up.Endpoints[req.endpointPath] {
+				continue // custom endpoint: only accounts that declare this path
+			}
 			proto := pickProto(up, req.proto, conversion)
 			if proto == "" {
 				continue
@@ -658,14 +712,14 @@ func (g *Gateway) forward(req *request, cands []string) {
 			}
 			t0 := time.Now()
 			sent := false
-			resp, err := g.doUpstream(ctx, &upstreamCall{up: up, proto: proto, model: upstreamModel, body: body, stream: req.stream, headers: req.r.Header, sent: &sent})
+			resp, err := g.doUpstream(ctx, &upstreamCall{up: up, proto: proto, model: upstreamModel, path: req.endpointPath, body: body, stream: req.stream, headers: req.r.Header, sent: &sent})
 			// Older OpenAI-compatible servers reject stream_options; retry once without the injection.
 			if err == nil && resp.StatusCode == 400 && dropUsage {
 				msg, _ := readErrorBody(resp)
 				if strings.Contains(msg, "stream_options") {
 					if b2, e2 := stripStreamOptions(body); e2 == nil {
 						body, dropUsage = b2, false
-						resp, err = g.doUpstream(ctx, &upstreamCall{up: up, proto: proto, model: upstreamModel, body: body, stream: req.stream, headers: req.r.Header, sent: &sent})
+						resp, err = g.doUpstream(ctx, &upstreamCall{up: up, proto: proto, model: upstreamModel, path: req.endpointPath, body: body, stream: req.stream, headers: req.r.Header, sent: &sent})
 					}
 				} else {
 					resp.Body = io.NopCloser(strings.NewReader(msg))

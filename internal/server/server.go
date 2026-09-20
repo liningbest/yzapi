@@ -76,8 +76,8 @@ func New(cfg *config.Config, db *gorm.DB, gw *gateway.Gateway, mgmt *api.Server,
 	// Management API
 	mgmt.Register(r)
 
-	// SPA
-	mountSPA(r)
+	// SPA; unknown POST /v1/<path> goes to custom (non-chat JSON) endpoints first.
+	mountSPA(r, gw.HandleCustom)
 
 	return &http.Server{
 		Addr:              cfg.ListenAddr,
@@ -88,7 +88,10 @@ func New(cfg *config.Config, db *gorm.DB, gw *gateway.Gateway, mgmt *api.Server,
 	}
 }
 
-func mountSPA(r *gin.Engine) {
+func mountSPA(r *gin.Engine, custom http.HandlerFunc) {
+	isCustom := func(c *gin.Context) bool {
+		return c.Request.Method == http.MethodPost && strings.HasPrefix(c.Request.URL.Path, "/v1/")
+	}
 	dist, err := fs.Sub(web.Dist, "dist")
 	if err != nil {
 		slog.Warn("embedded frontend not found; UI disabled")
@@ -97,6 +100,10 @@ func mountSPA(r *gin.Engine) {
 	if _, err := fs.Stat(dist, "index.html"); err != nil {
 		slog.Warn("embedded frontend missing index.html; build the web app first")
 		r.NoRoute(func(c *gin.Context) {
+			if isCustom(c) {
+				custom(c.Writer, c.Request)
+				return
+			}
 			if strings.HasPrefix(c.Request.URL.Path, "/api/") || strings.HasPrefix(c.Request.URL.Path, "/v1/") {
 				c.JSON(404, gin.H{"error": "not found"})
 				return
@@ -108,6 +115,10 @@ func mountSPA(r *gin.Engine) {
 	fileServer := http.FileServer(http.FS(dist))
 	index, _ := fs.ReadFile(dist, "index.html")
 	r.NoRoute(func(c *gin.Context) {
+		if isCustom(c) {
+			custom(c.Writer, c.Request)
+			return
+		}
 		p := c.Request.URL.Path
 		if strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/v1/") {
 			c.JSON(404, gin.H{"error": "not found", "code": "not_found"})

@@ -55,7 +55,7 @@
     "accountType": "Account Type",
     "accountTypeExtra": "Each account type uses its own base URL; switching updates it automatically.",
     "type": "Type",
-    "typeExtra": "Choose one of Text / Image / Embedding. Cannot be changed after creation.",
+    "typeExtra": "Choose one of Text / Image / Embedding / Custom endpoint. Cannot be changed after creation.",
     "typeLocked": "Cannot be changed after creation",
     "name": "Name",
     "namePlaceholder": "e.g. OpenAI primary",
@@ -98,7 +98,12 @@
     "passthrough": "Pass through unmapped models",
     "passthroughExtra": "When on, model names that have no mapping are forwarded to this account unchanged. Useful when teammates use assorted coding clients with varying default model names.",
     "weight": "Weight",
-    "weightExtra": "Accounts sharing a priority are drawn in weighted-random order (default 1); weight 5 next to 95 is a 5% canary."
+    "weightExtra": "Accounts sharing a priority are drawn in weighted-random order (default 1); weight 5 next to 95 is a 5% canary.",
+    "endpoints": "Endpoint paths",
+    "endpointsExtra": "Client paths under /v1 that this account serves, e.g. /systemone. A client POST /v1/systemone is forwarded unchanged to \"<base URL>/systemone\" with only the model field rewritten and the key injected; the body must carry \"model\". Paths may not shadow built-in routes (/chat, /responses, /messages, /embeddings, /images, /models).",
+    "endpointsRequired": "At least one endpoint path is required",
+    "endpointsInvalid": "Endpoint paths may not contain a query string, fragment or whitespace",
+    "endpointsPlaceholder": "Type a path and press Enter, e.g. /systemone"
   },
   "test": {
     "success": "Connection succeeded",

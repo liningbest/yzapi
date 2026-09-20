@@ -78,6 +78,10 @@ const (
 	TypeText      = "text"
 	TypeImage     = "image"
 	TypeEmbedding = "embedding"
+	// TypeCustom: a non-chat JSON API (classification, ranking, structured decisions such as
+	// TypeSafe Jev). The gateway forwards the JSON body to one of the account's declared
+	// endpoint paths without protocol conversion.
+	TypeCustom = "custom"
 )
 
 // Wire protocols (how a request is shaped).
@@ -94,6 +98,10 @@ const (
 	CostLedgerUnverified  = "unverified"
 	ProtoOpenAIEmbeddings = "openai-embeddings"
 	ProtoOpenAIImages     = "openai-images"
+	// ProtoCustomJSON: POST /v1/<path> with a JSON body carrying "model"; the body is
+	// forwarded verbatim (model rewritten) to <base_url>/<path> and the JSON reply is
+	// returned as-is. Never converted to or from the chat protocols.
+	ProtoCustomJSON = "custom-json"
 )
 
 const (
@@ -173,15 +181,19 @@ type Account struct {
 	// PassthroughModels: any model name without an explicit mapping is forwarded to this
 	// account unchanged (typed by the account). Lets unknown coding clients use their
 	// default model names without a mapping per name.
-	PassthroughModels bool       `gorm:"not null;default:false" json:"passthrough_models"`
-	Enabled           bool       `gorm:"default:true;index" json:"enabled"`
-	Health            string     `gorm:"size:16;default:available" json:"health"`
-	CooldownUntil     *time.Time `json:"cooldown_until"`
-	LastError         string     `gorm:"size:512" json:"last_error"`
-	Note              string     `gorm:"size:255" json:"note"`
-	Extra             JSON       `gorm:"type:text" json:"extra"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
+	PassthroughModels bool `gorm:"not null;default:false" json:"passthrough_models"`
+	// Endpoints (custom accounts only): client paths under /v1 that this account serves,
+	// e.g. "/systemone" for POST /v1/systemone -> <base_url>/systemone. Normalised to a
+	// leading slash and no trailing slash; other account types keep this empty.
+	Endpoints     StringList `gorm:"type:text" json:"endpoints"`
+	Enabled       bool       `gorm:"default:true;index" json:"enabled"`
+	Health        string     `gorm:"size:16;default:available" json:"health"`
+	CooldownUntil *time.Time `json:"cooldown_until"`
+	LastError     string     `gorm:"size:512" json:"last_error"`
+	Note          string     `gorm:"size:255" json:"note"`
+	Extra         JSON       `gorm:"type:text" json:"extra"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 type ModelMapping struct {

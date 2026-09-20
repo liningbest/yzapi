@@ -53,6 +53,28 @@ try:
                 "protocols": ["openai-completions", "openai-responses"],
                 "mappings": [{"request_model": "mini", "upstream_model": "mock-mini"}], "priority": 10, "max_concurrency": 5, "note": "n1"}
     acc = req("POST", "/api/admin/accounts", acc_body, expect=200); AID = acc["id"]
+    # custom (non-chat JSON) accounts: endpoint paths are required, normalised, deduplicated and kept off built-in routes
+    cj = {"name": "mock-jev", "provider": "custom-json", "type": "custom", "base_url": f"http://{MOCK}/v1", "api_key": "sk-mock",
+          "mappings": [{"request_model": "jev", "upstream_model": "jev-1.13"}]}
+    def t_custom_create():
+        req("POST", "/api/admin/accounts", cj, expect=400)                                   # no endpoints
+        req("POST", "/api/admin/accounts", {**cj, "endpoints": ["/models/x"]}, expect=400)  # shadows a built-in route
+        req("POST", "/api/admin/accounts", {**cj, "endpoints": ["/a?b=1"]}, expect=400)     # query string
+        a = req("POST", "/api/admin/accounts", {**cj, "endpoints": ["systemone/", "/v1/systemone", " /rerank "]}, expect=200)
+        eq(a["type"], "custom"); eq(a["protocols"], ["custom-json"]); eq(a["endpoints"], ["/systemone", "/rerank"])
+        g = req("GET", f"/api/admin/accounts/{a['id']}", expect=200); eq(g["endpoints"], ["/systemone", "/rerank"])
+        dup = req("POST", "/api/admin/accounts", {**cj, "endpoints": ["/systemone", "/rerank"]}, expect=200); eq(dup["id"], a["id"])  # idempotent
+        req("POST", "/api/admin/accounts", {**cj, "endpoints": ["/systemone"]}, expect=409)                                        # same name, other endpoints
+        u = req("PUT", f"/api/admin/accounts/{a['id']}", {**cj, "endpoints": ["/systemone"], "skip_test": True}, expect=200); eq(u["endpoints"], ["/systemone"])
+        pre = req("POST", "/api/admin/accounts", {"name": "jev-preset", "provider": "typesafe", "type": "custom", "api_key": "sk-x",
+                                                  "mappings": [{"request_model": "jev-p", "upstream_model": "jev-1.13"}]}, expect=200)
+        eq(pre["endpoints"], ["/systemone"]); eq(pre["base_url"], "https://api.typesafe.ai/v1")  # preset fills path and base URL
+        req("DELETE", f"/api/admin/accounts/{pre['id']}", expect=200)
+        mg = req("POST", "/api/admin/model-groups", {"name": "jev-group", "type": "custom", "models": ["jev"]}, expect=200)
+        req("DELETE", f"/api/admin/model-groups/{mg['id']}", expect=200)
+        req("DELETE", f"/api/admin/accounts/{a['id']}", expect=200)
+        t = req("GET", f"/api/admin/accounts/{AID}", expect=200); eq(t["endpoints"], [])  # text accounts carry no endpoints
+    check("custom JSON account: endpoints validated, normalised, idempotent, preset-filled", t_custom_create)
     def t_acc_update():
         b = dict(acc_body, name="mock-a2", note="n2", priority=3, max_concurrency=7, api_key="******",
                  protocols=["openai-completions"], mappings=[{"request_model": "mini", "upstream_model": "mock-mini"}, {"request_model": "pro", "upstream_model": "mock-pro"}], skip_test=True)

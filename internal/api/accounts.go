@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"yzapi/internal/model"
+	"yzapi/internal/pricing"
 	"yzapi/internal/provider"
 )
 
@@ -41,11 +42,13 @@ type accountIn struct {
 	Weight         int    `json:"weight"`
 	MaxConcurrency int    `json:"max_concurrency"`
 	// PassthroughModels forwards unmapped model names to this account unchanged.
-	PassthroughModels bool   `json:"passthrough_models"`
-	Enabled           *bool  `json:"enabled"`
-	Note              string `json:"note"`
-	SkipTest          bool   `json:"skip_test"`
-	AccountID         uint   `json:"account_id"`
+	PassthroughModels bool `json:"passthrough_models"`
+	// Endpoints (custom accounts): client paths under /v1 served by this account.
+	Endpoints []string `json:"endpoints"`
+	Enabled   *bool    `json:"enabled"`
+	Note      string   `json:"note"`
+	SkipTest  bool     `json:"skip_test"`
+	AccountID uint     `json:"account_id"`
 }
 
 func (s *Server) accountView(a *model.Account) gin.H {
@@ -57,7 +60,7 @@ func (s *Server) accountView(a *model.Account) gin.H {
 		"id": a.ID, "name": a.Name, "provider": a.Provider, "account_type": a.AccountType, "type": a.Type,
 		"base_url": a.BaseURL, "has_key": key != "", "api_key_masked": maskKey(key),
 		"protocols": a.Protocols, "mappings": a.Mappings, "test_model": a.TestModel,
-		"priority": a.Priority, "weight": a.Weight, "max_concurrency": a.MaxConcurrency, "passthrough_models": a.PassthroughModels, "enabled": a.Enabled,
+		"priority": a.Priority, "weight": a.Weight, "max_concurrency": a.MaxConcurrency, "passthrough_models": a.PassthroughModels, "endpoints": endpointsView(a.Endpoints), "enabled": a.Enabled,
 		"health": a.Health, "cooldown_until": a.CooldownUntil, "last_error": a.LastError,
 		"note": a.Note, "created_at": a.CreatedAt, "updated_at": a.UpdatedAt,
 	}
@@ -134,8 +137,23 @@ func (s *Server) validateAccountIn(in *accountIn, existing *model.Account) strin
 	if existing != nil {
 		in.Type = existing.Type
 	}
-	if in.Type != model.TypeText && in.Type != model.TypeImage && in.Type != model.TypeEmbedding {
-		return "协议类型必须为 text / image / embedding"
+	if in.Type != model.TypeText && in.Type != model.TypeImage && in.Type != model.TypeEmbedding && in.Type != model.TypeCustom {
+		return "协议类型必须为 text / image / embedding / custom"
+	}
+	if in.Type == model.TypeCustom {
+		eps, msg := normalizeEndpoints(in.Endpoints)
+		if msg != "" {
+			return msg
+		}
+		if len(eps) == 0 && len(p.Endpoints) > 0 {
+			eps = append([]string(nil), p.Endpoints...)
+		}
+		if len(eps) == 0 {
+			return "自定义接口账号至少需要一个接口路径"
+		}
+		in.Endpoints = eps
+	} else {
+		in.Endpoints = nil
 	}
 	in.BaseURL = strings.TrimRight(strings.TrimSpace(in.BaseURL), "/")
 	if in.BaseURL == "" {
@@ -262,7 +280,7 @@ func (s *Server) createAccount(c *gin.Context) {
 	}
 	a := model.Account{Name: in.Name, Provider: in.Provider, AccountType: in.AccountType, Type: in.Type, BaseURL: in.BaseURL,
 		APIKeyEnc: enc, Protocols: in.Protocols, TestModel: in.TestModel, Priority: in.Priority, Weight: in.Weight, MaxConcurrency: in.MaxConcurrency, PassthroughModels: in.PassthroughModels,
-		Enabled: in.Enabled == nil || *in.Enabled, Health: model.HealthAvailable, Note: in.Note}
+		Endpoints: model.StringList(in.Endpoints), Enabled: in.Enabled == nil || *in.Enabled, Health: model.HealthAvailable, Note: in.Note}
 	for _, m := range in.Mappings {
 		a.Mappings = append(a.Mappings, model.ModelMapping{RequestModel: m.RequestModel, UpstreamModel: m.UpstreamModel})
 	}
@@ -334,6 +352,15 @@ func accountMatches(a *model.Account, in *accountIn, key string) bool {
 			}
 		}
 	}
+	if e1, e2 := set(a.Endpoints), set(in.Endpoints); len(e1) != len(e2) {
+		return false
+	} else {
+		for k := range e1 {
+			if !e2[k] {
+				return false
+			}
+		}
+	}
 	m1 := map[string]string{}
 	for _, m := range a.Mappings {
 		m1[m.RequestModel] = m.UpstreamModel
@@ -392,7 +419,7 @@ func (s *Server) updateAccount(c *gin.Context) {
 			// A plain []string in an Updates map is rendered by gorm as a SQL row value "(?, ?)"
 			// ("row value misused" on SQLite); StringList serialises to its JSON column form.
 			"api_key_enc": enc, "protocols": model.StringList(in.Protocols), "test_model": in.TestModel, "priority": in.Priority,
-			"weight": in.Weight, "max_concurrency": in.MaxConcurrency, "passthrough_models": in.PassthroughModels, "note": in.Note}
+			"weight": in.Weight, "max_concurrency": in.MaxConcurrency, "passthrough_models": in.PassthroughModels, "endpoints": model.StringList(in.Endpoints), "note": in.Note}
 		if in.Enabled != nil {
 			upd["enabled"] = *in.Enabled
 		}
@@ -658,6 +685,8 @@ func (s *Server) probeAccount(ctx context.Context, in *accountIn, key string) (b
 	switch in.Type {
 	case model.TypeImage:
 		return true, 0, "文生图账号保存时不做真实调用"
+	case model.TypeCustom:
+		return true, 0, "自定义接口账号保存时不做真实调用"
 	case model.TypeEmbedding:
 		url = base + "/embeddings"
 		body = map[string]any{"model": testModel, "input": "ping"}
@@ -762,8 +791,8 @@ func (s *Server) testAccountModel(c *gin.Context) {
 	}
 	key, _ := s.cipher.Decrypt(a.APIKeyEnc)
 	probe := &accountIn{Provider: a.Provider, Type: a.Type, BaseURL: a.BaseURL, Protocols: a.Protocols, TestModel: strings.TrimSpace(in.Model)}
-	if a.Type == model.TypeImage {
-		c.JSON(200, gin.H{"ok": true, "latency_ms": 0, "message": "文生图模型不做真实调用", "model": in.Model})
+	if a.Type == model.TypeImage || a.Type == model.TypeCustom {
+		c.JSON(200, gin.H{"ok": true, "latency_ms": 0, "message": "该类型账号不做真实调用", "model": in.Model})
 		return
 	}
 	ok2, lat, msg := s.probeAccount(c.Request.Context(), probe, key)
@@ -1010,4 +1039,58 @@ func geminiEndpoint(providerKey, accountType string, protocols []string) bool {
 		}
 	}
 	return false
+}
+
+// reservedEndpointPrefixes are the built-in /v1 routes a custom endpoint may not shadow.
+var reservedEndpointPrefixes = []string{"/chat", "/responses", "/messages", "/embeddings", "/images", "/models"}
+
+// normalizeEndpoints validates and normalises the endpoint paths of a custom account:
+// each becomes "/segment[/segment...]" with no trailing slash, query, fragment, ".." or
+// whitespace, at most 128 bytes, at most 20 distinct paths, and none may sit under a
+// built-in route. The second value is a user-facing error, empty when valid.
+func normalizeEndpoints(in []string) ([]string, string) {
+	seen := map[string]bool{}
+	var out []string
+	for _, raw := range in {
+		p := strings.TrimSpace(raw)
+		if p == "" {
+			continue
+		}
+		p = strings.TrimPrefix(p, "/v1")
+		if !strings.HasPrefix(p, "/") {
+			p = "/" + p
+		}
+		p = strings.TrimRight(p, "/")
+		switch {
+		case p == "" || p == "/":
+			return nil, "接口路径不能为空"
+		case len(p) > 128:
+			return nil, "接口路径不能超过 128 字节: " + pricing.TruncateUTF8(p, 40)
+		case strings.ContainsAny(p, "?# \t\n\r"):
+			return nil, "接口路径不能包含查询串、锚点或空白: " + p
+		case strings.Contains(p, "//") || strings.Contains(p, "/../") || strings.HasSuffix(p, "/..") || strings.Contains(p, "/./"):
+			return nil, "接口路径不合法: " + p
+		}
+		for _, r := range reservedEndpointPrefixes {
+			if p == r || strings.HasPrefix(p, r+"/") {
+				return nil, "接口路径与内置接口冲突: " + p
+			}
+		}
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	if len(out) > 20 {
+		return nil, "接口路径最多 20 条"
+	}
+	return out, ""
+}
+
+func endpointsView(eps model.StringList) []string {
+	if eps == nil {
+		return []string{}
+	}
+	return []string(eps)
 }

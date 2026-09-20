@@ -55,7 +55,7 @@
     "accountType": "帳號類型",
     "accountTypeExtra": "不同帳號類型對應不同的服務位址，切換後會自動更新。",
     "type": "協定類型",
-    "typeExtra": "文字 / 文生圖 / 向量三選一，建立後不可修改。",
+    "typeExtra": "文字 / 文生圖 / 向量 / 自訂介面四選一，建立後不可修改。",
     "typeLocked": "建立後不可修改",
     "name": "名稱",
     "namePlaceholder": "例如：OpenAI 主帳號",
@@ -98,7 +98,12 @@
     "passthrough": "透傳未映射模型",
     "passthroughExtra": "開啟後，未在映射中出現的模型名會原樣轉發給該帳號。適合同事使用各種程式設計客戶端、模型名不固定的場景；帳號類型決定它能接哪類請求。",
     "weight": "權重",
-    "weightExtra": "同優先級帳號按權重隨機分配，預設 1；給新帳號設 5、舊帳號設 95 即 5% 灰度。"
+    "weightExtra": "同優先級帳號按權重隨機分配，預設 1；給新帳號設 5、舊帳號設 95 即 5% 灰度。",
+    "endpoints": "介面路徑",
+    "endpointsExtra": "該帳號提供的客戶端路徑，寫在 /v1 之後，例如 /systemone。客戶端 POST /v1/systemone 會被原樣轉發到「服務位址 + /systemone」，只改寫 model 欄位並注入 Key；請求體必須帶 model。不能與內建介面（/chat、/responses、/messages、/embeddings、/images、/models）重名。",
+    "endpointsRequired": "至少填寫一個介面路徑",
+    "endpointsInvalid": "介面路徑不能包含查詢串、錨點或空白",
+    "endpointsPlaceholder": "輸入路徑後按 Enter，如 /systemone"
   },
   "test": {
     "success": "連線成功",

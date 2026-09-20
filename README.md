@@ -42,9 +42,9 @@ It is tuned for **coding tools**: Claude Code, Codex, OpenCode, Gemini CLI, Clin
 
 | Area | What you get |
 |---|---|
-| Unified API | `/v1/chat/completions`, `/v1/responses`, `/v1/messages`, `/v1/embeddings`, `/v1/images/generations`, `/v1/models`, native Gemini `/v1beta/models/*`; Bearer, `x-api-key` and `x-goog-api-key` auth |
+| Unified API | `/v1/chat/completions`, `/v1/responses`, `/v1/messages`, `/v1/embeddings`, `/v1/images/generations`, `/v1/models`, native Gemini `/v1beta/models/*`, plus custom JSON endpoints `POST /v1/<path>` for non-chat models (classification, ranking, TypeSafe Jev); Bearer, `x-api-key` and `x-goog-api-key` auth |
 | Protocol conversion | OpenAI Chat, OpenAI Responses, Anthropic Messages and Gemini converted pairwise, including streaming, tool calls, images, thinking content and budget mapping; same-protocol requests pass through untouched |
-| Account pool | 26 built-in provider presets, several Chinese providers with dedicated Anthropic-compatible endpoints; model mapping, model discovery, priority, weight, concurrency cap, health, cooldown, half-open probe, cache-hit self check |
+| Account pool | 28 built-in provider presets, several Chinese providers with dedicated Anthropic-compatible endpoints; model mapping, model discovery, priority, weight, concurrency cap, health, cooldown, half-open probe, cache-hit self check |
 | Model groups | Ordered failover; the group name can be used as the model name |
 | Users and groups | Seats, group concurrency, per-key concurrency, per-minute request and token limits, monthly token quota, authorised model groups; key expiry and model allow-list |
 | Smart routing | Virtual model name (default `yz-auto`); context rules, local rules and vector similarity; sample management, decision preview, decision log |
@@ -159,7 +159,7 @@ Model names are resolved leniently (case, vendor prefix, date suffix). `count_to
 
 ## Providers
 
-OpenAI, Anthropic, Google Gemini (native and OpenAI-compatible), DeepSeek, Alibaba Bailian, Tencent Cloud, Volcengine Ark, Zhipu, Moonshot, MiniMax, StepFun, Baidu Qianfan, SiliconFlow, xAI, Groq, Mistral, Together, Fireworks, Cerebras, OpenRouter, vLLM, Ollama, LM Studio, New API, plus custom OpenAI-compatible and Anthropic-compatible endpoints.
+OpenAI, Anthropic, Google Gemini (native and OpenAI-compatible), DeepSeek, Alibaba Bailian, Tencent Cloud, Volcengine Ark, Zhipu, Moonshot, MiniMax, StepFun, Baidu Qianfan, SiliconFlow, xAI, Groq, Mistral, Together, Fireworks, Cerebras, OpenRouter, vLLM, Ollama, LM Studio, New API, TypeSafe (Jev, via custom JSON endpoints), plus custom OpenAI-compatible, Anthropic-compatible and JSON endpoints.
 
 DeepSeek, Kimi, Zhipu, MiniMax and Bailian each have a dedicated Anthropic-compatible account type, so Claude Code can reach them on its own protocol.
 
@@ -204,8 +204,8 @@ Real models take hundreds of milliseconds to seconds before the first token, so 
 
 ```bash
 go test -race ./...   # unit and integration
-make smoke            # end to end against a mock upstream, 56 checks
-make crud             # full admin and user API round trip, 91 checks
+make smoke            # end to end against a mock upstream, 61 checks
+make crud             # full admin and user API round trip, 92 checks
 ```
 
 ## High availability

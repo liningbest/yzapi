@@ -56,6 +56,7 @@ interface FormValues {
   weight: number;
   max_concurrency: number;
   passthrough_models?: boolean;
+  endpoints?: string[];
   test_model?: string;
   note?: string;
   enabled: boolean;
@@ -97,6 +98,7 @@ function toPayload(v: FormValues, isEdit: boolean, skipTest: boolean, accountId?
     weight: v.weight ?? 1,
     max_concurrency: v.max_concurrency ?? 0,
     passthrough_models: v.passthrough_models ?? false,
+    ...(v.type === 'custom' ? { endpoints: (v.endpoints ?? []).map((x) => x.trim()).filter(Boolean) } : {}),
     enabled: v.enabled ?? true,
     note: v.note?.trim() || undefined,
     ...(skipTest ? { skip_test: true } : {}),
@@ -143,6 +145,7 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
       weight: a.weight ?? 1,
       max_concurrency: a.max_concurrency,
       passthrough_models: a.passthrough_models ?? false,
+      endpoints: a.endpoints ?? [],
       test_model: a.test_model || undefined,
       note: a.note,
       enabled: a.enabled,
@@ -182,6 +185,9 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
       }
       applyBaseUrl(p, at);
       form.setFieldValue('protocols', protocolOptions(p, ty, at));
+      if (p?.endpoints?.length && !(form.getFieldValue('endpoints') as string[] | undefined)?.length) {
+        form.setFieldValue('endpoints', p.endpoints);
+      }
     } else if ('account_type' in changed) {
       applyBaseUrl(provider, changed.account_type);
       form.setFieldValue('protocols', protocolOptions(provider, form.getFieldValue('type') as ModelType | undefined, changed.account_type));
@@ -682,6 +688,25 @@ export default function AccountDrawer({ open, id, providers, onClose, onSaved }:
                 />
               </Form.Item>
             </div>
+            {type === 'custom' && (
+              <Form.Item
+                name="endpoints"
+                label={t('accounts:form.endpoints')}
+                extra={t('accounts:form.endpointsExtra')}
+                rules={[
+                  { required: true, message: t('accounts:form.endpointsRequired') },
+                  {
+                    validator: async (_, v: string[] | undefined) => {
+                      const xs = (v ?? []).map((x) => x.trim()).filter(Boolean);
+                      if (!xs.length) throw new Error(t('accounts:form.endpointsRequired'));
+                      if (xs.some((x) => /[?#\s]/.test(x))) throw new Error(t('accounts:form.endpointsInvalid'));
+                    },
+                  },
+                ]}
+              >
+                <Select mode="tags" tokenSeparators={[',', ' ', '\n']} placeholder={t('accounts:form.endpointsPlaceholder')} open={false} className="yz-mono" />
+              </Form.Item>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', columnGap: 24, alignItems: 'start' }}>
               <Form.Item name="note" label={t('accounts:form.note')}>
                 <Input.TextArea rows={2} maxLength={500} showCount placeholder={t('common:common.notePlaceholder')} />

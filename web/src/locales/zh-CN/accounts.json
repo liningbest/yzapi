@@ -55,7 +55,7 @@
     "accountType": "账号类型",
     "accountTypeExtra": "不同账号类型对应不同的服务地址，切换后会自动更新。",
     "type": "协议类型",
-    "typeExtra": "文本 / 文生图 / 向量三选一，创建后不可修改。",
+    "typeExtra": "文本 / 文生图 / 向量 / 自定义接口四选一，创建后不可修改。",
     "typeLocked": "创建后不可修改",
     "name": "名称",
     "namePlaceholder": "例如：OpenAI 主账号",
@@ -98,7 +98,12 @@
     "passthrough": "透传未映射模型",
     "passthroughExtra": "开启后，未在映射中出现的模型名会原样转发给该账号。适合同事使用各种编程客户端、模型名不固定的场景；账号类型决定它能接哪类请求。",
     "weight": "权重",
-    "weightExtra": "同优先级账号按权重随机分配，默认 1；给新账号设 5、旧账号设 95 即 5% 灰度。"
+    "weightExtra": "同优先级账号按权重随机分配，默认 1；给新账号设 5、旧账号设 95 即 5% 灰度。",
+    "endpoints": "接口路径",
+    "endpointsExtra": "该账号提供的客户端路径，写在 /v1 之后，例如 /systemone。客户端 POST /v1/systemone 会被原样转发到「服务地址 + /systemone」，只改写 model 字段并注入 Key；请求体必须带 model。不能与内置接口（/chat、/responses、/messages、/embeddings、/images、/models）重名。",
+    "endpointsRequired": "至少填写一个接口路径",
+    "endpointsInvalid": "接口路径不能包含查询串、锚点或空白",
+    "endpointsPlaceholder": "输入路径后回车，如 /systemone"
   },
   "test": {
     "success": "连接成功",

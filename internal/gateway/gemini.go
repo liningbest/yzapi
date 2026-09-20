@@ -100,8 +100,8 @@ func (g *Gateway) handleGeminiModels(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 		}
-		if mi.Type == model.TypeImage {
-			continue
+		if mi.Type != model.TypeText && mi.Type != model.TypeEmbedding {
+			continue // images and custom JSON endpoints have no Gemini surface
 		}
 		out = append(out, geminiModelEntry(mi.Name, mi))
 	}

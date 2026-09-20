@@ -42,9 +42,9 @@ YZ AI Gateway 把团队用到的所有大模型供应商收拢到一个入口后
 
 | 模块 | 能力 |
 |---|---|
-| 统一接入 | `/v1/chat/completions`、`/v1/responses`、`/v1/messages`、`/v1/embeddings`、`/v1/images/generations`、`/v1/models`、Gemini 原生 `/v1beta/models/*`；Bearer、`x-api-key`、`x-goog-api-key` 认证 |
+| 统一接入 | `/v1/chat/completions`、`/v1/responses`、`/v1/messages`、`/v1/embeddings`、`/v1/images/generations`、`/v1/models`、Gemini 原生 `/v1beta/models/*`，以及非对话模型的自定义 JSON 接口 `POST /v1/<路径>`（分类、重排、TypeSafe Jev 等）；Bearer、`x-api-key`、`x-goog-api-key` 认证 |
 | 协议转换 | OpenAI Chat、OpenAI Responses、Anthropic Messages、Gemini 四种协议两两互转，含流式、工具调用、图片、思考内容与预算映射；同协议请求原样直传 |
-| 账号池 | 26 家内置供应商预设，多家国内供应商各带独立的 Anthropic 兼容入口；模型映射、发现模型、优先级、权重、并发上限、健康状态、自动冷却与半开探测、缓存命中自检 |
+| 账号池 | 28 家内置供应商预设，多家国内供应商各带独立的 Anthropic 兼容入口；模型映射、发现模型、优先级、权重、并发上限、健康状态、自动冷却与半开探测、缓存命中自检 |
 | 模型组 | 有序 failover，组名可直接当模型名调用 |
 | 用户与用户组 | 席位、组并发、单 Key 并发、每分钟请求 / Token 上限、月度 Token 配额、授权模型组；Key 有效期与模型白名单 |
 | 智能路由 | 虚拟模型名（默认 `yz-auto`）；上下文规则、本地规则、向量相似度三级判定；样本管理、决策预览、决策日志 |
@@ -161,7 +161,7 @@ curl https://gateway.example.com/v1/chat/completions \
 
 ## 支持的供应商
 
-OpenAI、Anthropic、Google Gemini（原生与 OpenAI 兼容）、DeepSeek、阿里云百炼、腾讯云、火山方舟、智谱、Moonshot、MiniMax、阶跃星辰、百度千帆、硅基流动、xAI、Groq、Mistral、Together、Fireworks、Cerebras、OpenRouter、vLLM、Ollama、LM Studio、New API，以及自定义 OpenAI 兼容 / Anthropic 兼容入口。
+OpenAI、Anthropic、Google Gemini（原生与 OpenAI 兼容）、DeepSeek、阿里云百炼、腾讯云、火山方舟、智谱、Moonshot、MiniMax、阶跃星辰、百度千帆、硅基流动、xAI、Groq、Mistral、Together、Fireworks、Cerebras、OpenRouter、vLLM、Ollama、LM Studio、New API、TypeSafe（Jev，走自定义 JSON 接口），以及自定义 OpenAI 兼容 / Anthropic 兼容 / JSON 接口。
 
 DeepSeek、Kimi、智谱、MiniMax、百炼各带独立的 Anthropic 兼容账号类型，Claude Code 可以同协议直连这些国产模型。
 
@@ -214,8 +214,8 @@ yzapi -reset-password admin
 
 ```bash
 go test -race ./...            # 单元与集成测试
-make smoke                     # 端到端：mock 上游 + 网关，56 项
-make crud                      # 管理 / 用户 API 全量往返，91 项
+make smoke                     # 端到端：mock 上游 + 网关，61 项
+make crud                      # 管理 / 用户 API 全量往返，92 项
 ```
 
 ## 高可用

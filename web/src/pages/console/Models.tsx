@@ -23,7 +23,7 @@ export default function Models() {
   const baseUrl = query.data?.base_url ?? '';
 
   const counts = useMemo(() => {
-    const c: Record<Category, number> = { all: models.length, text: 0, image: 0, embedding: 0 };
+    const c: Record<Category, number> = { all: models.length, text: 0, image: 0, embedding: 0, custom: 0 };
     for (const m of models) if (m.type in c) c[m.type] += 1;
     return c;
   }, [models]);

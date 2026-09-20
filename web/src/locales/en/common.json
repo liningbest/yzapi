@@ -193,14 +193,16 @@
   "type": {
     "text": "Text",
     "image": "Image",
-    "embedding": "Embedding"
+    "embedding": "Embedding",
+    "custom": "Custom endpoint"
   },
   "protocol": {
     "openai-completions": "OpenAI Chat Completions",
     "openai-responses": "OpenAI Responses",
     "anthropic-messages": "Anthropic Messages",
     "openai-embeddings": "OpenAI Embeddings",
-    "openai-images": "OpenAI Images"
+    "openai-images": "OpenAI Images",
+    "custom-json": "Custom JSON endpoint (POST /v1/<path>)"
   },
   "health": {
     "available": "Available",

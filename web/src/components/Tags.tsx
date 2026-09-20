@@ -63,6 +63,7 @@ export function ProtocolTag({ protocol }: { protocol: Protocol | string }) {
     'anthropic-messages': 'Anthropic',
     'openai-embeddings': 'Embeddings',
     'openai-images': 'Images',
+    'custom-json': 'Custom',
   };
   return (
     <Tooltip title={t(`protocol.${protocol}`, { defaultValue: protocol })}>

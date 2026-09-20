@@ -31,6 +31,21 @@ func main() {
 	mux.HandleFunc("/v1/embeddings", embeddings)
 	mux.HandleFunc("/v1/responses", responses)
 	mux.HandleFunc("/v1beta/models/", gemini) // /v1beta/models/{model}:generateContent | :streamGenerateContent
+	// Non-chat JSON API in the shape of TypeSafe's POST /v1/systemone: typed answers plus
+	// Responses-style usage names. Echoes the model so tests can check the rewrite.
+	mux.HandleFunc("/v1/systemone", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Model     string                     `json:"model"`
+			Questions map[string]json.RawMessage `json:"questions"`
+		}
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &in)
+		answers := map[string]any{}
+		for id := range in.Questions {
+			answers[id] = map[string]any{"type": "noul", "noul": 0.91, "confidence": 0.8}
+		}
+		writeJSON(w, map[string]any{"model": in.Model, "answers": answers, "usage": map[string]any{"input_tokens": 21, "output_tokens": 4}})
+	})
 	mux.HandleFunc("/v1/images/generations", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"created": time.Now().Unix(), "data": []map[string]any{{"url": "https://example.com/mock.png"}}})
 	})

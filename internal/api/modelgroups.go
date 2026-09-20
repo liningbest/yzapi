@@ -79,7 +79,7 @@ func validateModelGroup(in *modelGroupIn) string {
 	if in.Name == "" || len(in.Name) > 64 {
 		return "名称不能为空且不超过 64 字符"
 	}
-	if in.Type != model.TypeText && in.Type != model.TypeImage && in.Type != model.TypeEmbedding {
+	if in.Type != model.TypeText && in.Type != model.TypeImage && in.Type != model.TypeEmbedding && in.Type != model.TypeCustom {
 		return "协议类型无效"
 	}
 	var ms []string

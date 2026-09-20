@@ -193,14 +193,16 @@
   "type": {
     "text": "文本",
     "image": "文生图",
-    "embedding": "向量"
+    "embedding": "向量",
+    "custom": "自定义接口"
   },
   "protocol": {
     "openai-completions": "OpenAI Chat Completions",
     "openai-responses": "OpenAI Responses",
     "anthropic-messages": "Anthropic Messages",
     "openai-embeddings": "OpenAI Embeddings",
-    "openai-images": "OpenAI Images"
+    "openai-images": "OpenAI Images",
+    "custom-json": "自定义 JSON 接口（POST /v1/<路径>）"
   },
   "health": {
     "available": "可用",

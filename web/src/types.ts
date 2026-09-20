@@ -1,14 +1,15 @@
 // Shared TypeScript types mirroring docs/api.md
 
 export type Role = 'admin' | 'user';
-export type ModelType = 'text' | 'image' | 'embedding';
+export type ModelType = 'text' | 'image' | 'embedding' | 'custom';
 export type Protocol =
   | 'openai-completions'
   | 'openai-responses'
   | 'gemini-generate'
   | 'anthropic-messages'
   | 'openai-embeddings'
-  | 'openai-images';
+  | 'openai-images'
+  | 'custom-json';
 export type Health = 'available' | 'cooling' | 'unavailable';
 export type RangeKey = '24h' | '7d' | '30d' | 'custom';
 export type ModelKind = 'model' | 'virtual' | 'group';
@@ -135,6 +136,8 @@ export interface Provider {
   discover: boolean;
   custom: boolean;
   icon: string;
+  /** Pre-filled endpoint paths for custom (non-chat JSON) accounts. */
+  endpoints?: string[];
 }
 
 export interface RoutableModel {
@@ -170,6 +173,8 @@ export interface Account {
   max_concurrency: number;
   /** Unmapped model names are forwarded to this account unchanged. */
   passthrough_models: boolean;
+  /** Custom (non-chat JSON) accounts: client paths under /v1 this account serves. */
+  endpoints: string[];
   enabled: boolean;
   health: Health;
   cooldown_until: string | null;
@@ -193,6 +198,7 @@ export interface AccountInput {
   weight: number;
   max_concurrency: number;
   passthrough_models?: boolean;
+  endpoints?: string[];
   enabled: boolean;
   note?: string;
   skip_test?: boolean;
