@@ -7,7 +7,7 @@ import { userApi } from '@/api';
 import { PageHeader, SectionTitle } from '@/components';
 import { apiRoot } from './models/ApiDocModal';
 
-type ClientKey = 'claude-code' | 'codex' | 'opencode' | 'gemini-cli' | 'cline' | 'sdk' | 'custom';
+type ClientKey = 'claude-code' | 'codex' | 'opencode' | 'gemini-cli' | 'cline' | 'sdk' | 'images' | 'custom';
 
 const KEY = '<YOUR_API_KEY>';
 
@@ -19,7 +19,8 @@ export default function Guide() {
   const models = useQuery({ queryKey: ['user', 'models'], queryFn: userApi.models });
   const root = apiRoot(models.data?.base_url ?? '');
   const textModels = useMemo(() => (models.data?.models ?? []).filter((m) => m.type === 'text').map((m) => m.name), [models.data]);
-  const imageModel = useMemo(() => (models.data?.models ?? []).find((m) => m.type === 'image')?.name ?? 'gpt-image-2.5', [models.data]);
+  const imageModels = useMemo(() => (models.data?.models ?? []).filter((m) => m.type === 'image' && m.kind === 'model').map((m) => m.name), [models.data]);
+  const imageModel = imageModels[0] ?? 'gpt-image-2.5';
   const customModels = useMemo(() => (models.data?.models ?? []).filter((m) => m.type === 'custom' && m.kind === 'model' && (m.endpoints?.length ?? 0) > 0), [models.data]);
   const [model, setModel] = useState<string>('');
   const chosen = model || textModels[0] || 'gpt-5.5';
@@ -131,8 +132,37 @@ export default function Guide() {
             title: 'Python (anthropic)',
             code: [`import anthropic`, `client = anthropic.Anthropic(base_url="${root}", api_key="${KEY}")`, `m = client.messages.create(model="${chosen}", max_tokens=256, messages=[{"role": "user", "content": "Hello"}])`, `print(m.content[0].text)`].join('\n'),
           },
+        ],
+      },
+      images: {
+        // One image model serves generation, editing and variations; the paths differ.
+        steps: [t('console:guide.images.s1'), t('console:guide.images.s2'), t('console:guide.images.s3')],
+        blocks: [
+          { title: t('console:guide.images.available'), code: imageModels.length ? imageModels.map((m) => `${m}  ->  POST ${root}/v1/images/generations | /images/edits | /images/variations`).join('\n') : t('console:guide.images.none') },
           {
-            title: 'Python (openai, images: generate / edit / variation on one image model)',
+            title: t('console:guide.images.generate'),
+            code: [
+              `curl ${root}/v1/images/generations \\`,
+              `  -H "Authorization: Bearer ${KEY}" -H "Content-Type: application/json" \\`,
+              `  -d '{"model":"${imageModel}","prompt":"a cat by a rainy window","size":"1024x1024","n":1}'`,
+            ].join('\n'),
+          },
+          {
+            title: t('console:guide.images.edit'),
+            code: [
+              `curl ${root}/v1/images/edits \\`,
+              `  -H "Authorization: Bearer ${KEY}" \\`,
+              `  -F model=${imageModel} -F prompt="make it night" \\`,
+              `  -F "image[]=@a.png;type=image/png" -F "image[]=@b.png;type=image/png" \\`,
+              `  -F "mask=@mask.png;type=image/png"`,
+            ].join('\n'),
+          },
+          {
+            title: t('console:guide.images.variation'),
+            code: [`curl ${root}/v1/images/variations \\`, `  -H "Authorization: Bearer ${KEY}" \\`, `  -F model=${imageModel} -F "image=@a.png;type=image/png" -F n=2`].join('\n'),
+          },
+          {
+            title: 'Python (openai)',
             code: [
               `from openai import OpenAI`,
               `client = OpenAI(base_url="${root}/v1", api_key="${KEY}")`,
@@ -188,11 +218,11 @@ export default function Guide() {
         };
       })(),
     }),
-    [root, chosen, customModels, imageModel, t],
+    [root, chosen, customModels, imageModels, imageModel, t],
   );
 
   const current = snippets[tab];
-  const items = (['claude-code', 'codex', 'opencode', 'gemini-cli', 'cline', 'sdk', 'custom'] as ClientKey[]).map((k) => ({ key: k, label: t(`console:guide.tabs.${k}`) }));
+  const items = (['claude-code', 'codex', 'opencode', 'gemini-cli', 'cline', 'sdk', 'images', 'custom'] as ClientKey[]).map((k) => ({ key: k, label: t(`console:guide.tabs.${k}`) }));
 
   return (
     <div>

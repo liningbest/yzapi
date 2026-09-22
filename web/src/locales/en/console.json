@@ -199,6 +199,7 @@
       "gemini-cli": "Gemini CLI",
       "cline": "Cline / Roo Code",
       "sdk": "curl / SDK",
+      "images": "Images",
       "custom": "Custom endpoints / TypeSafe"
     },
     "claudeCode": {
@@ -240,6 +241,16 @@
       "s3": "The custom models and paths you are allowed to use are listed below; replace <YOUR_API_KEY> with your key",
       "available": "Available custom endpoints",
       "none": "No custom endpoint model is configured, or your user group is not authorised for one; the examples below use TypeSafe Jev."
+    },
+    "images": {
+      "s1": "An image model serves text-to-image, image-to-image (inpainting, multi-image composition) and variations: send JSON to /v1/images/generations for generation, and a multipart form with the image files to /v1/images/edits or /v1/images/variations",
+      "s2": "The form must include a model field; other fields (prompt, n, size, quality, mask, ...) follow the upstream; the total upload size is bounded by the request body limit set by the admin",
+      "s3": "The image models you are allowed to use are listed below; replace <YOUR_API_KEY> with your key and a.png / b.png / mask.png with your files",
+      "available": "Available image models",
+      "none": "No image model is configured, or your user group is not authorised for one; the examples below use gpt-image-2.5.",
+      "generate": "curl: generate",
+      "edit": "curl: edit / image-to-image (multipart)",
+      "variation": "curl: variation (multipart)"
     }
   }
 }

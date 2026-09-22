@@ -199,6 +199,7 @@
       "gemini-cli": "Gemini CLI",
       "cline": "Cline / Roo Code",
       "sdk": "curl / SDK",
+      "images": "圖像",
       "custom": "自訂介面 / TypeSafe"
     },
     "claudeCode": {
@@ -240,6 +241,16 @@
       "s3": "下面列出了你有權使用的自訂介面模型和路徑；把 <YOUR_API_KEY> 換成你的 Key",
       "available": "可用的自訂介面",
       "none": "管理員尚未設定自訂介面模型，或你所在的使用者群組沒有授權；下面的範例以 TypeSafe Jev 為例。"
+    },
+    "images": {
+      "s1": "圖像模型同時支援文生圖、圖生圖（含局部重繪、多圖合成）和變體：文生圖發 JSON 到 /v1/images/generations，圖生圖和變體用 multipart 表單上傳圖片到 /v1/images/edits、/v1/images/variations",
+      "s2": "表單裡必須帶 model 欄位，其餘欄位（prompt、n、size、quality、mask 等）按上游支援的填；一次上傳的總大小受管理員設定的最大請求體限制",
+      "s3": "下面列出了你有權使用的圖像模型；把 <YOUR_API_KEY> 換成你的 Key，把 a.png / b.png / mask.png 換成你的檔案",
+      "available": "可用的圖像模型",
+      "none": "管理員尚未設定圖像模型，或你所在的使用者群組沒有授權；下面的範例以 gpt-image-2.5 為例。",
+      "generate": "curl：文生圖",
+      "edit": "curl：圖生圖 / 編輯（multipart）",
+      "variation": "curl：變體（multipart）"
     }
   }
 }

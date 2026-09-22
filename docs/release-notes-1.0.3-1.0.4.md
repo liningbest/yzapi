@@ -390,3 +390,7 @@
 
 - 图片用量解析保留缓存明细：`prompt_tokens_details.cached_tokens` / `input_tokens_details.cached_tokens` 按所选命名对取值，缓存输入按缓存单价计费（1.0.48 引入的回归）。
 - multipart 按原始部分转发：`quoted-printable` 等 Content-Transfer-Encoding 的部分不再被解码，编码头与字节原样到达上游。
+
+## 1.0.51：接入指引新增「图像」标签页
+
+- 列出当前用户有权使用的图像模型及三个入口，附文生图（JSON）、图生图 / 编辑与变体（multipart 表单）的 curl 示例和 Python openai 示例；原 curl / SDK 页里的图片示例移到这里。中、繁、英三种文案。

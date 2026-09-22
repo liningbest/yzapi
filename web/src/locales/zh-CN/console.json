@@ -199,6 +199,7 @@
       "gemini-cli": "Gemini CLI",
       "cline": "Cline / Roo Code",
       "sdk": "curl / SDK",
+      "images": "图像",
       "custom": "自定义接口 / TypeSafe"
     },
     "claudeCode": {
@@ -240,6 +241,16 @@
       "s3": "下面列出了你有权使用的自定义接口模型和路径；把 <YOUR_API_KEY> 换成你的 Key",
       "available": "可用的自定义接口",
       "none": "管理员尚未配置自定义接口模型，或你所在的用户组没有授权；下面的示例以 TypeSafe Jev 为例。"
+    },
+    "images": {
+      "s1": "图像模型同时支持文生图、图生图（含局部重绘、多图合成）和变体：文生图发 JSON 到 /v1/images/generations，图生图和变体用 multipart 表单上传图片到 /v1/images/edits、/v1/images/variations",
+      "s2": "表单里必须带 model 字段，其余字段（prompt、n、size、quality、mask 等）按上游支持的填；一次上传的总大小受管理员设置的最大请求体限制",
+      "s3": "下面列出了你有权使用的图像模型；把 <YOUR_API_KEY> 换成你的 Key，把 a.png / b.png / mask.png 换成你的文件",
+      "available": "可用的图像模型",
+      "none": "管理员尚未配置图像模型，或你所在的用户组没有授权；下面的示例以 gpt-image-2.5 为例。",
+      "generate": "curl：文生图",
+      "edit": "curl：图生图 / 编辑（multipart）",
+      "variation": "curl：变体（multipart）"
     }
   }
 }
