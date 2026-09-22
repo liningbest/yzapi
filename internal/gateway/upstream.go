@@ -262,15 +262,24 @@ func usageFromJSON(proto string, raw []byte) (u convert.Usage, ok bool) {
 		}
 		return u, true
 	case model.ProtoOpenAIImages:
-		// gpt-image style replies carry input_tokens / output_tokens (with a details block);
-		// older image models report nothing. Same alias rule as custom endpoints, but a
-		// zero total stays "unknown" as it always did for images.
+		// Image replies use either the OpenAI chat names (prompt_/completion_tokens with
+		// prompt_tokens_details.cached_tokens) or the gpt-image / Responses names
+		// (input_/output_tokens with input_tokens_details.cached_tokens). Same alias rule
+		// as custom endpoints (OpenAI pair wins, never summed), and the cached count comes
+		// from the details block that belongs to the chosen pair, so cached input keeps
+		// its own price. A zero total stays "unknown" as it always did for images.
 		var r struct {
 			Usage *struct {
-				PromptTokens     *int `json:"prompt_tokens"`
-				CompletionTokens *int `json:"completion_tokens"`
-				InputTokens      *int `json:"input_tokens"`
-				OutputTokens     *int `json:"output_tokens"`
+				PromptTokens        *int `json:"prompt_tokens"`
+				CompletionTokens    *int `json:"completion_tokens"`
+				InputTokens         *int `json:"input_tokens"`
+				OutputTokens        *int `json:"output_tokens"`
+				PromptTokensDetails *struct {
+					CachedTokens int `json:"cached_tokens"`
+				} `json:"prompt_tokens_details"`
+				InputTokensDetails *struct {
+					CachedTokens int `json:"cached_tokens"`
+				} `json:"input_tokens_details"`
 			} `json:"usage"`
 		}
 		if json.Unmarshal(raw, &r) != nil || r.Usage == nil {
@@ -282,11 +291,23 @@ func usageFromJSON(proto string, raw []byte) (u convert.Usage, ok bool) {
 			}
 			return *p
 		}
+		cached := 0
 		switch {
 		case r.Usage.PromptTokens != nil || r.Usage.CompletionTokens != nil:
 			u.PromptTokens, u.CompletionTokens = deref(r.Usage.PromptTokens), deref(r.Usage.CompletionTokens)
+			if r.Usage.PromptTokensDetails != nil {
+				cached = r.Usage.PromptTokensDetails.CachedTokens
+			}
 		case r.Usage.InputTokens != nil || r.Usage.OutputTokens != nil:
 			u.PromptTokens, u.CompletionTokens = deref(r.Usage.InputTokens), deref(r.Usage.OutputTokens)
+			if r.Usage.InputTokensDetails != nil {
+				cached = r.Usage.InputTokensDetails.CachedTokens
+			}
+		}
+		if cached > 0 {
+			u.PromptTokensDetails = &struct {
+				CachedTokens int `json:"cached_tokens"`
+			}{CachedTokens: cached}
 		}
 		u.TotalTokens = u.PromptTokens + u.CompletionTokens
 		return u, u.TotalTokens > 0

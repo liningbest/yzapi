@@ -44,7 +44,10 @@ func parseMultipart(body []byte, contentType string) (*multipartBody, error) {
 	mr := multipart.NewReader(bytes.NewReader(body), boundary)
 	f := &multipartBody{}
 	for {
-		p, err := mr.NextPart()
+		// NextRawPart: NextPart would transparently decode quoted-printable bodies and
+		// strip the Content-Transfer-Encoding header, which breaks the "bytes and headers
+		// unchanged" contract. Raw parts are forwarded exactly as received.
+		p, err := mr.NextRawPart()
 		if err == io.EOF {
 			break
 		}

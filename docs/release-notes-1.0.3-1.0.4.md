@@ -377,7 +377,7 @@
 
 - 新入口 `POST /v1/images/edits`、`POST /v1/images/variations`，与 `generations` 共用同一个文生图账号和模型映射：一次设定同时支持文生图、图生图 / 局部重绘 / 多图合成、变体。
 - multipart 表单由网关解析后原样重编码转发（字段、文件名、Content-Type、字节不变，只改写 `model`），JSON 形态同样支持；响应原样回传。
-- 图片响应的 `usage`（`input_tokens` / `output_tokens` 或 `prompt_tokens` / `completion_tokens`）计入日志与计价，此前文生图不记用量。
+- 图片响应的 `usage` 新增 gpt-image 系列的 `input_tokens` / `output_tokens` 命名（此前只认 `prompt_tokens` / `completion_tokens`）。
 - 请求体上限沿用「性能设置 → 最大请求体」，多图编辑请按需调大。
 - 接入指引 curl / SDK 页新增图片生成与编辑示例。
 
@@ -385,3 +385,9 @@
 ## 1.0.49：账号类型「文生图」更名为「图像」
 
 - 该类型现已同时承接文生图、图生图与变体，界面与文档改称「图像」（繁体「圖像」，英文 Image），内部键 `image` 与接口字段不变。
+
+## 1.0.50：1.0.49 验收修复（`internal-docs/changes-2026-09-22-image-edits.md` 第 7 节）
+
+- 图片用量解析保留缓存明细：`prompt_tokens_details.cached_tokens` / `input_tokens_details.cached_tokens` 按所选命名对取值，缓存输入按缓存单价计费（1.0.48 引入的回归）。
+- multipart 按原始部分转发：`quoted-printable` 等 Content-Transfer-Encoding 的部分不再被解码，编码头与字节原样到达上游。
+
