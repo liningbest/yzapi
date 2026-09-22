@@ -390,4 +390,3 @@
 
 - 图片用量解析保留缓存明细：`prompt_tokens_details.cached_tokens` / `input_tokens_details.cached_tokens` 按所选命名对取值，缓存输入按缓存单价计费（1.0.48 引入的回归）。
 - multipart 按原始部分转发：`quoted-printable` 等 Content-Transfer-Encoding 的部分不再被解码，编码头与字节原样到达上游。
-
