@@ -693,7 +693,7 @@ func (s *Server) probeAccount(ctx context.Context, in *accountIn, key string) (b
 	)
 	switch in.Type {
 	case model.TypeImage:
-		return true, 0, "文生图账号保存时不做真实调用"
+		return true, 0, "图像账号保存时不做真实调用"
 	case model.TypeCustom:
 		return true, 0, "自定义接口账号保存时不做真实调用"
 	case model.TypeEmbedding:

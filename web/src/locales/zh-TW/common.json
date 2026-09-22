@@ -192,7 +192,7 @@
   },
   "type": {
     "text": "文字",
-    "image": "文生圖",
+    "image": "圖像",
     "embedding": "向量",
     "custom": "自訂介面"
   },

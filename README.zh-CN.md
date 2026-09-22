@@ -42,7 +42,7 @@ YZ AI Gateway 把团队用到的所有大模型供应商收拢到一个入口后
 
 | 模块 | 能力 |
 |---|---|
-| 统一接入 | `/v1/chat/completions`、`/v1/responses`、`/v1/messages`、`/v1/embeddings`、`/v1/images/generations` + `/edits` + `/variations`（一个文生图账号同时承接文生图、图生图与变体）、`/v1/models`、Gemini 原生 `/v1beta/models/*`，以及非对话模型的自定义 JSON 接口 `POST /v1/<路径>`（分类、重排、TypeSafe Jev 等）；Bearer、`x-api-key`、`x-goog-api-key` 认证 |
+| 统一接入 | `/v1/chat/completions`、`/v1/responses`、`/v1/messages`、`/v1/embeddings`、`/v1/images/generations` + `/edits` + `/variations`（一个图像账号同时承接文生图、图生图与变体）、`/v1/models`、Gemini 原生 `/v1beta/models/*`，以及非对话模型的自定义 JSON 接口 `POST /v1/<路径>`（分类、重排、TypeSafe Jev 等）；Bearer、`x-api-key`、`x-goog-api-key` 认证 |
 | 协议转换 | OpenAI Chat、OpenAI Responses、Anthropic Messages、Gemini 四种协议两两互转，含流式、工具调用、图片、思考内容与预算映射；同协议请求原样直传 |
 | 账号池 | 28 家内置供应商预设，多家国内供应商各带独立的 Anthropic 兼容入口；模型映射、发现模型、优先级、权重、并发上限、健康状态、自动冷却与半开探测、缓存命中自检 |
 | 模型组 | 有序 failover，组名可直接当模型名调用 |
