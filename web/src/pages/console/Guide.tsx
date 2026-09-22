@@ -19,6 +19,7 @@ export default function Guide() {
   const models = useQuery({ queryKey: ['user', 'models'], queryFn: userApi.models });
   const root = apiRoot(models.data?.base_url ?? '');
   const textModels = useMemo(() => (models.data?.models ?? []).filter((m) => m.type === 'text').map((m) => m.name), [models.data]);
+  const imageModel = useMemo(() => (models.data?.models ?? []).find((m) => m.type === 'image')?.name ?? 'gpt-image-2.5', [models.data]);
   const customModels = useMemo(() => (models.data?.models ?? []).filter((m) => m.type === 'custom' && m.kind === 'model' && (m.endpoints?.length ?? 0) > 0), [models.data]);
   const [model, setModel] = useState<string>('');
   const chosen = model || textModels[0] || 'gpt-5.5';
@@ -130,6 +131,17 @@ export default function Guide() {
             title: 'Python (anthropic)',
             code: [`import anthropic`, `client = anthropic.Anthropic(base_url="${root}", api_key="${KEY}")`, `m = client.messages.create(model="${chosen}", max_tokens=256, messages=[{"role": "user", "content": "Hello"}])`, `print(m.content[0].text)`].join('\n'),
           },
+          {
+            title: 'Python (openai, images: generate / edit / variation on one image model)',
+            code: [
+              `from openai import OpenAI`,
+              `client = OpenAI(base_url="${root}/v1", api_key="${KEY}")`,
+              `img = client.images.generate(model="${imageModel}", prompt="a cat by a rainy window", size="1024x1024")`,
+              `edit = client.images.edit(model="${imageModel}", image=[open("a.png", "rb"), open("b.png", "rb")], prompt="make it night")`,
+              `var = client.images.create_variation(model="${imageModel}", image=open("a.png", "rb"))`,
+              `print(img.data[0].url or img.data[0].b64_json[:20])`,
+            ].join('\n'),
+          },
         ],
       },
       custom: (() => {
@@ -176,7 +188,7 @@ export default function Guide() {
         };
       })(),
     }),
-    [root, chosen, customModels, t],
+    [root, chosen, customModels, imageModel, t],
   );
 
   const current = snippets[tab];

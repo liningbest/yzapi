@@ -66,6 +66,10 @@ BAD=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/admin/accounts"
   \"name\":\"mock-jev-bad\",\"provider\":\"custom-json\",\"type\":\"custom\",\"base_url\":\"http://$MOCK/v1\",\"api_key\":\"sk-mock\",
   \"endpoints\":[\"/chat/x\"],\"mappings\":[{\"request_model\":\"jev2\",\"upstream_model\":\"jev2\"}]}")
 if [ "$BAD" = "400" ]; then pass "custom endpoint under a built-in route is rejected"; else failx "custom endpoint under a built-in route is rejected ($BAD)"; fi
+ACC6=$(curl -sS -X POST "$BASE/api/admin/accounts" -H "$A" -H 'Content-Type: application/json' -d "{
+  \"name\":\"mock-image\",\"provider\":\"custom\",\"type\":\"image\",\"base_url\":\"http://$MOCK/v1\",\"api_key\":\"sk-mock\",
+  \"mappings\":[{\"request_model\":\"img\",\"upstream_model\":\"mock-image\"}]}")
+if [ "$(echo "$ACC6" | j "['type']" 2>/dev/null)" = "image" ]; then pass "create image account"; else echo "$ACC6"; failx "create image account"; fi
 ACC1_ID=$(echo "$ACC1" | j "['id']")
 UPD=$(curl -sS -X PUT "$BASE/api/admin/accounts/$ACC1_ID" -H "$A" -H 'Content-Type: application/json' -d "{
   \"name\":\"mock-openai-renamed\",\"provider\":\"custom\",\"type\":\"text\",\"base_url\":\"http://$MOCK/v1\",\"api_key\":\"******\",
@@ -81,7 +85,8 @@ MG1=$(curl -fsS -X POST "$BASE/api/admin/model-groups" -H "$A" -H 'Content-Type:
 MG2=$(curl -fsS -X POST "$BASE/api/admin/model-groups" -H "$A" -H 'Content-Type: application/json' -d '{"name":"strong","type":"text","models":["claude-mock","pro","gemini-mock"]}' | j "['id']")
 MG3=$(curl -fsS -X POST "$BASE/api/admin/model-groups" -H "$A" -H 'Content-Type: application/json' -d '{"name":"vectors","type":"embedding","models":["embed"]}' | j "['id']")
 MG4=$(curl -fsS -X POST "$BASE/api/admin/model-groups" -H "$A" -H 'Content-Type: application/json' -d '{"name":"decisions","type":"custom","models":["jev"]}' | j "['id']")
-UG=$(curl -fsS -X POST "$BASE/api/admin/user-groups" -H "$A" -H 'Content-Type: application/json' -d "{\"name\":\"dev\",\"max_concurrency\":10,\"key_max_concurrency\":5,\"token_quota\":1000000,\"model_group_ids\":[$MG1,$MG2,$MG3,$MG4]}" | j "['id']")
+MG5=$(curl -fsS -X POST "$BASE/api/admin/model-groups" -H "$A" -H 'Content-Type: application/json' -d '{"name":"pictures","type":"image","models":["img"]}' | j "['id']")
+UG=$(curl -fsS -X POST "$BASE/api/admin/user-groups" -H "$A" -H 'Content-Type: application/json' -d "{\"name\":\"dev\",\"max_concurrency\":10,\"key_max_concurrency\":5,\"token_quota\":1000000,\"model_group_ids\":[$MG1,$MG2,$MG3,$MG4,$MG5]}" | j "['id']")
 curl -fsS -X POST "$BASE/api/admin/users" -H "$A" -H 'Content-Type: application/json' -d "{\"username\":\"alice\",\"password\":\"AlicePass12345\",\"group_id\":$UG}" >/dev/null
 UT=$(curl -fsS -X POST "$BASE/api/auth/login" -H 'Content-Type: application/json' -d '{"username":"alice","password":"AlicePass12345"}' | j "['token']")
 curl -fsS -X POST "$BASE/api/auth/change-password" -H "Authorization: Bearer $UT" -H 'Content-Type: application/json' -d '{"old_password":"AlicePass12345","new_password":"AlicePass12345x"}' >/dev/null
@@ -134,6 +139,11 @@ code=$(curl -s -o /tmp/yz_gem_err -w '%{http_code}' "$BASE/v1beta/models/gemini-
 if [ "$code" = "401" ] && grep -q 'UNAUTHENTICATED' /tmp/yz_gem_err; then pass "gemini error shape (401 UNAUTHENTICATED)"; else failx "gemini error shape"; fi
 OUT=$(curl -fsS "$BASE/v1/embeddings" -H "$K" -H 'Content-Type: application/json' -d '{"model":"embed","input":"vec"}')
 if echo "$OUT" | grep -q '"embedding"'; then pass "embeddings"; else failx "embeddings"; fi
+printf '\x89PNG-not-really' > "$DATA/a.png"
+OUT=$(curl -sS "$BASE/v1/images/edits" -H "$K" -F model=img -F prompt="make it night" -F "image[]=@$DATA/a.png;type=image/png" -F "image[]=@$DATA/a.png;type=image/png" -F n=1)
+if echo "$OUT" | grep -q '"op":"edits"' && echo "$OUT" | grep -q '"model":"mock-image"' && echo "$OUT" | grep -q 'a.png:15' ; then pass "image edits: multipart forwarded on the image account with model rewritten and files intact"; else echo "$OUT"; failx "image edits"; fi
+OUT=$(curl -sS "$BASE/v1/images/variations" -H "$K" -F model=img -F "image=@$DATA/a.png;type=image/png")
+if echo "$OUT" | grep -q '"op":"variations"'; then pass "image variations on the same account"; else echo "$OUT"; failx "image variations"; fi
 OUT=$(curl -sS -D "$DATA/jev.h" "$BASE/v1/systemone" -H "$K" -H 'Content-Type: application/json' -d '{"model":"jev","state":{"temp":31},"questions":{"hot":{"type":"noul","instructions":"Is it hot?"}}}')
 if echo "$OUT" | grep -q '"answers"' && echo "$OUT" | grep -q '"model":"jev-1.13"' && grep -qi 'X-Upstream-Protocol: custom-json' "$DATA/jev.h"; then pass "custom JSON endpoint forwarded to the declaring account (model rewritten, reply untouched)"; else echo "$OUT"; failx "custom JSON endpoint"; fi
 CODE=$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/v1/systemtwo" -H "$K" -H 'Content-Type: application/json' -d '{"model":"jev"}')
@@ -204,6 +214,6 @@ if curl -fsS "$BASE/api/admin/settings" -H "$A" | grep -q '"performance"'; then 
 if curl -fsS "$BASE/api/admin/system/info" -H "$A" | grep -q '"go_version"'; then pass "system info"; else failx "system info"; fi
 
 echo
-EXPECTED=62
+EXPECTED=65
 if [ "$PASSED" -ne "$EXPECTED" ]; then echo "only $PASSED/$EXPECTED checks ran"; exit 1; fi
 echo "ALL $PASSED SMOKE TESTS PASSED"

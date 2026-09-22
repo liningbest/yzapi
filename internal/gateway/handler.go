@@ -35,9 +35,11 @@ type request struct {
 	raw          map[string]json.RawMessage
 	body         []byte
 	model        string
-	pathModel    string // model taken from the URL (Gemini); overrides the body
-	pathStream   bool   // streaming decided by the URL (Gemini streamGenerateContent)
-	endpointPath string // custom JSON endpoint: client path under /v1, e.g. "/systemone"
+	pathModel    string         // model taken from the URL (Gemini); overrides the body
+	pathStream   bool           // streaming decided by the URL (Gemini streamGenerateContent)
+	endpointPath string         // custom JSON endpoint: client path under /v1, e.g. "/systemone"
+	imagePath    string         // images: "/images/generations" | "/images/edits" | "/images/variations"
+	form         *multipartBody // set when the client sent multipart/form-data (image edits / variations)
 	stream       bool
 	includeUsage bool
 	text         string
@@ -279,7 +281,17 @@ func (g *Gateway) prepare(req *request) *GatewayError {
 		return newErr(400, "invalid_body", "Could not read request body")
 	}
 	req.body = body
-	if err := json.Unmarshal(body, &req.raw); err != nil || req.raw == nil {
+	if req.proto == model.ProtoOpenAIImages && isMultipart(req.r.Header.Get("Content-Type")) {
+		// Image edits / variations upload files: parse the form, take "model" from it and
+		// keep every part (files included) for verbatim re-encoding toward the upstream.
+		f, err := parseMultipart(body, req.r.Header.Get("Content-Type"))
+		if err != nil {
+			return newErr(400, "invalid_body", "Could not parse multipart form: "+err.Error())
+		}
+		req.form = f
+		mb, _ := json.Marshal(f.field("model"))
+		req.raw = map[string]json.RawMessage{"model": mb}
+	} else if err := json.Unmarshal(body, &req.raw); err != nil || req.raw == nil {
 		return ErrBadJSON
 	}
 	_ = json.Unmarshal(req.raw["model"], &req.model)
@@ -468,8 +480,34 @@ func (g *Gateway) HandleMessages(w http.ResponseWriter, r *http.Request) {
 func (g *Gateway) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	g.handleSimple(w, r, model.ProtoOpenAIEmbeddings)
 }
+
+// HandleImages serves POST /v1/images/generations (text to image). The same image
+// account and model mapping also serve edits and variations, see HandleImageEdits.
 func (g *Gateway) HandleImages(w http.ResponseWriter, r *http.Request) {
-	g.handleSimple(w, r, model.ProtoOpenAIImages)
+	g.handleImages(w, r, "/images/generations")
+}
+
+// HandleImageEdits serves POST /v1/images/edits (image to image / inpainting): a
+// multipart form with image(s), optional mask, prompt and model, or a JSON body for
+// upstreams that take images as URLs / base64. Forwarded verbatim with only "model"
+// rewritten.
+func (g *Gateway) HandleImageEdits(w http.ResponseWriter, r *http.Request) {
+	g.handleImages(w, r, "/images/edits")
+}
+
+// HandleImageVariations serves POST /v1/images/variations.
+func (g *Gateway) HandleImageVariations(w http.ResponseWriter, r *http.Request) {
+	g.handleImages(w, r, "/images/variations")
+}
+
+func (g *Gateway) handleImages(w http.ResponseWriter, r *http.Request, path string) {
+	req := g.newRequest(w, r, model.ProtoOpenAIImages)
+	req.imagePath = path
+	if e := g.prepare(req); e != nil {
+		g.fail(req, e)
+		return
+	}
+	g.runSimple(req)
 }
 
 // HandleCustom serves POST /v1/<path> for paths declared by custom (non-chat JSON)
@@ -715,6 +753,14 @@ func (g *Gateway) forward(req *request, cands []string) {
 			upstreamModel := up.mapModel(cand)
 			rec := attemptRecord{AccountID: up.ID, AccountName: up.Name, Provider: up.Provider, Protocol: proto, Model: upstreamModel}
 			body, dropUsage, err := g.buildBody(req, proto, upstreamModel)
+			upPath := req.endpointPath
+			if upPath == "" {
+				upPath = req.imagePath
+			}
+			contentType := ""
+			if req.form != nil {
+				contentType = req.form.outContentType
+			}
 			if err != nil {
 				ctr.release()
 				rec.Error = "conversion: " + err.Error()
@@ -729,14 +775,14 @@ func (g *Gateway) forward(req *request, cands []string) {
 			}
 			t0 := time.Now()
 			sent := false
-			resp, err := g.doUpstream(ctx, &upstreamCall{up: up, proto: proto, model: upstreamModel, path: req.endpointPath, body: body, stream: req.stream, headers: req.r.Header, sent: &sent})
+			resp, err := g.doUpstream(ctx, &upstreamCall{up: up, proto: proto, model: upstreamModel, path: upPath, contentType: contentType, body: body, stream: req.stream, headers: req.r.Header, sent: &sent})
 			// Older OpenAI-compatible servers reject stream_options; retry once without the injection.
 			if err == nil && resp.StatusCode == 400 && dropUsage {
 				msg, _ := readErrorBody(resp)
 				if strings.Contains(msg, "stream_options") {
 					if b2, e2 := stripStreamOptions(body); e2 == nil {
 						body, dropUsage = b2, false
-						resp, err = g.doUpstream(ctx, &upstreamCall{up: up, proto: proto, model: upstreamModel, path: req.endpointPath, body: body, stream: req.stream, headers: req.r.Header, sent: &sent})
+						resp, err = g.doUpstream(ctx, &upstreamCall{up: up, proto: proto, model: upstreamModel, path: upPath, contentType: contentType, body: body, stream: req.stream, headers: req.r.Header, sent: &sent})
 					}
 				} else {
 					resp.Body = io.NopCloser(strings.NewReader(msg))
@@ -1056,6 +1102,12 @@ func (g *Gateway) buildBody(req *request, proto, upstreamModel string) (body []b
 	if proto == req.proto && proto == model.ProtoGemini {
 		// Gemini carries the model in the URL and rejects unknown body fields.
 		return req.body, false, nil
+	}
+	if req.form != nil {
+		// Multipart (image edits / variations): re-encode every part unchanged, files
+		// included, with only the "model" field replaced by the upstream name.
+		b, err := req.form.encode(upstreamModel)
+		return b, false, err
 	}
 	if proto == req.proto {
 		raw := make(map[string]json.RawMessage, len(req.raw)+1)

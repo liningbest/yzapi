@@ -47,8 +47,47 @@ func main() {
 		writeJSON(w, map[string]any{"model": in.Model, "answers": answers, "usage": map[string]any{"input_tokens": 21, "output_tokens": 4}})
 	})
 	mux.HandleFunc("/v1/images/generations", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, map[string]any{"created": time.Now().Unix(), "data": []map[string]any{{"url": "https://example.com/mock.png"}}})
+		var in struct {
+			Model string `json:"model"`
+		}
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &in)
+		writeJSON(w, map[string]any{"created": time.Now().Unix(), "data": []map[string]any{{"url": "https://example.com/mock.png"}},
+			"usage": map[string]any{"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}, "received": map[string]any{"model": in.Model, "op": "generations"}})
 	})
+	// Image edits / variations take multipart uploads (or JSON for URL / base64 upstreams).
+	// The reply echoes what arrived so tests can check the model rewrite and the files.
+	imageForm := func(op string) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			received := map[string]any{"op": op}
+			if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+				if err := r.ParseMultipartForm(64 << 20); err != nil {
+					w.WriteHeader(400)
+					fmt.Fprintf(w, `{"error":{"message":"bad multipart: %s"}}`, err)
+					return
+				}
+				received["model"] = r.FormValue("model")
+				received["prompt"] = r.FormValue("prompt")
+				files := map[string][]string{}
+				for name, fhs := range r.MultipartForm.File {
+					for _, fh := range fhs {
+						files[name] = append(files[name], fmt.Sprintf("%s:%d", fh.Filename, fh.Size))
+					}
+				}
+				received["files"] = files
+			} else {
+				var in map[string]any
+				body, _ := io.ReadAll(r.Body)
+				_ = json.Unmarshal(body, &in)
+				received["model"], _ = in["model"].(string)
+				received["json"] = true
+			}
+			writeJSON(w, map[string]any{"created": time.Now().Unix(), "data": []map[string]any{{"url": "https://example.com/mock-" + op + ".png"}},
+				"usage": map[string]any{"input_tokens": 20, "output_tokens": 5}, "received": received})
+		}
+	}
+	mux.HandleFunc("/v1/images/edits", imageForm("edits"))
+	mux.HandleFunc("/v1/images/variations", imageForm("variations"))
 	log.Printf("mock upstream listening on %s", *addr)
 	log.Fatal(http.ListenAndServe(*addr, logReq(mux)))
 }

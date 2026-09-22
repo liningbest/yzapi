@@ -61,6 +61,8 @@ func New(cfg *config.Config, db *gorm.DB, gw *gateway.Gateway, mgmt *api.Server,
 	v1.GET("/models/:id", gin.WrapF(gw.HandleModel))
 	v1.POST("/embeddings", gin.WrapF(gw.HandleEmbeddings))
 	v1.POST("/images/generations", gin.WrapF(gw.HandleImages))
+	v1.POST("/images/edits", gin.WrapF(gw.HandleImageEdits))
+	v1.POST("/images/variations", gin.WrapF(gw.HandleImageVariations))
 	// Some clients omit /v1 or double it; be forgiving.
 	r.POST("/chat/completions", gin.WrapF(gw.HandleChat))
 	r.POST("/messages", gin.WrapF(gw.HandleMessages))

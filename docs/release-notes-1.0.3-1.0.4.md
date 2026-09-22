@@ -373,3 +373,11 @@
 
 - 供应商预设新增 `default_mappings`；TypeSafe (Jev) 预设为 `jev → jev-latest`（官方 SDK 默认模型 ID，另有 `jev-preview`、固定版本 `jev-1.13.0`）。管理界面选中供应商且映射为空时自动填入；创建接口未给映射且未开透传时服务端按预设填入。
 
+## 1.0.48：图生图与图片编辑（`internal-docs/changes-2026-09-22-image-edits.md`）
+
+- 新入口 `POST /v1/images/edits`、`POST /v1/images/variations`，与 `generations` 共用同一个文生图账号和模型映射：一次设定同时支持文生图、图生图 / 局部重绘 / 多图合成、变体。
+- multipart 表单由网关解析后原样重编码转发（字段、文件名、Content-Type、字节不变，只改写 `model`），JSON 形态同样支持；响应原样回传。
+- 图片响应的 `usage`（`input_tokens` / `output_tokens` 或 `prompt_tokens` / `completion_tokens`）计入日志与计价，此前文生图不记用量。
+- 请求体上限沿用「性能设置 → 最大请求体」，多图编辑请按需调大。
+- 接入指引 curl / SDK 页新增图片生成与编辑示例。
+

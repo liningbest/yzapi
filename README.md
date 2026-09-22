@@ -42,7 +42,7 @@ It is tuned for **coding tools**: Claude Code, Codex, OpenCode, Gemini CLI, Clin
 
 | Area | What you get |
 |---|---|
-| Unified API | `/v1/chat/completions`, `/v1/responses`, `/v1/messages`, `/v1/embeddings`, `/v1/images/generations`, `/v1/models`, native Gemini `/v1beta/models/*`, plus custom JSON endpoints `POST /v1/<path>` for non-chat models (classification, ranking, TypeSafe Jev); Bearer, `x-api-key` and `x-goog-api-key` auth |
+| Unified API | `/v1/chat/completions`, `/v1/responses`, `/v1/messages`, `/v1/embeddings`, `/v1/images/generations` + `/edits` + `/variations` (one image account serves text-to-image, image-to-image and variations), `/v1/models`, native Gemini `/v1beta/models/*`, plus custom JSON endpoints `POST /v1/<path>` for non-chat models (classification, ranking, TypeSafe Jev); Bearer, `x-api-key` and `x-goog-api-key` auth |
 | Protocol conversion | OpenAI Chat, OpenAI Responses, Anthropic Messages and Gemini converted pairwise, including streaming, tool calls, images, thinking content and budget mapping; same-protocol requests pass through untouched |
 | Account pool | 28 built-in provider presets, several Chinese providers with dedicated Anthropic-compatible endpoints; model mapping, model discovery, priority, weight, concurrency cap, health, cooldown, half-open probe, cache-hit self check |
 | Model groups | Ordered failover; the group name can be used as the model name |
@@ -204,7 +204,7 @@ Real models take hundreds of milliseconds to seconds before the first token, so 
 
 ```bash
 go test -race ./...   # unit and integration
-make smoke            # end to end against a mock upstream, 62 checks
+make smoke            # end to end against a mock upstream, 65 checks
 make crud             # full admin and user API round trip, 92 checks
 ```
 

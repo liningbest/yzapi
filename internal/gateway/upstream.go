@@ -44,14 +44,15 @@ func protoPath(proto, upstreamModel string, stream bool) string {
 
 // upstreamCall is one attempt against one account.
 type upstreamCall struct {
-	up      *Upstream
-	proto   string
-	model   string // upstream model name (needed for URL-addressed protocols)
-	path    string // custom JSON endpoint: client path under /v1, appended to the base URL
-	body    []byte
-	stream  bool
-	headers http.Header // selected client headers to forward
-	sent    *bool       // set once the request has been written to the upstream connection
+	up          *Upstream
+	proto       string
+	model       string // upstream model name (needed for URL-addressed protocols)
+	path        string // request-specific upstream path (custom endpoints, image edits / variations); empty = protocol default
+	contentType string // request body media type; empty = application/json
+	body        []byte
+	stream      bool
+	headers     http.Header // selected client headers to forward
+	sent        *bool       // set once the request has been written to the upstream connection
 }
 
 type attemptRecord struct {
@@ -82,14 +83,18 @@ func (g *Gateway) doUpstream(ctx context.Context, c *upstreamCall) (*http.Respon
 		ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{WroteRequest: func(httptrace.WroteRequestInfo) { *c.sent = true }})
 	}
 	target := c.up.BaseURL + protoPath(c.proto, c.model, c.stream)
-	if c.proto == model.ProtoCustomJSON {
+	if c.path != "" {
 		target = c.up.BaseURL + c.path
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(c.body))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	if c.contentType != "" {
+		req.Header.Set("Content-Type", c.contentType)
+	} else {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	req.Header.Set("User-Agent", "yzapi-gateway/1.0")
 	req.ContentLength = int64(len(c.body))
 	if c.proto == model.ProtoGemini {
@@ -256,6 +261,35 @@ func usageFromJSON(proto string, raw []byte) (u convert.Usage, ok bool) {
 			}{CachedTokens: r.Usage.InputTokensDetails.CachedTokens}
 		}
 		return u, true
+	case model.ProtoOpenAIImages:
+		// gpt-image style replies carry input_tokens / output_tokens (with a details block);
+		// older image models report nothing. Same alias rule as custom endpoints, but a
+		// zero total stays "unknown" as it always did for images.
+		var r struct {
+			Usage *struct {
+				PromptTokens     *int `json:"prompt_tokens"`
+				CompletionTokens *int `json:"completion_tokens"`
+				InputTokens      *int `json:"input_tokens"`
+				OutputTokens     *int `json:"output_tokens"`
+			} `json:"usage"`
+		}
+		if json.Unmarshal(raw, &r) != nil || r.Usage == nil {
+			return u, false
+		}
+		deref := func(p *int) int {
+			if p == nil {
+				return 0
+			}
+			return *p
+		}
+		switch {
+		case r.Usage.PromptTokens != nil || r.Usage.CompletionTokens != nil:
+			u.PromptTokens, u.CompletionTokens = deref(r.Usage.PromptTokens), deref(r.Usage.CompletionTokens)
+		case r.Usage.InputTokens != nil || r.Usage.OutputTokens != nil:
+			u.PromptTokens, u.CompletionTokens = deref(r.Usage.InputTokens), deref(r.Usage.OutputTokens)
+		}
+		u.TotalTokens = u.PromptTokens + u.CompletionTokens
+		return u, u.TotalTokens > 0
 	case model.ProtoCustomJSON:
 		// Non-chat APIs report either the OpenAI names (prompt_/completion_tokens) or the
 		// Responses / Anthropic names (input_/output_tokens). The two are aliases, never
