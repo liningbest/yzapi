@@ -51,7 +51,7 @@ It is tuned for **coding tools**: Claude Code, Codex, OpenCode, Gemini CLI, Clin
 | Compliance | Keyword matching (Aho-Corasick) plus semantic audit samples; policy groups with block / audit-only and risk levels; audit log; fails closed when rules cannot be loaded |
 | Pricing | Built-in reference prices; preview-then-apply sync from LiteLLM, EasyCLIProxyAPI, any URL or an uploaded file; separate cache-read and cache-write prices; USD ledger with switchable display currency |
 | Observability | Live overview, call logs (every account attempt, usage status, queue wait, upstream header time, first-content time, client tag), multi-dimensional usage reports, `/metrics` for Prometheus |
-| Config versions | Automatic snapshot before every change to accounts, model groups, prices and settings; view, tag and roll back |
+| Config versions & backups | Automatic snapshot before every change to accounts, model groups, prices and settings; view, tag and roll back. Full-instance backup archives (database snapshot, metering journal, secrets) downloadable from the console, daily automatic backups, one-click restore by upload or `yzapi -restore` on a fresh server |
 | User console | Model marketplace, setup guide with copy-ready configs per tool, API key management, personal usage and logs |
 | Auditing | Optional Elasticsearch 8.x / 9.x request and response body archiving with size cap and retention |
 
@@ -205,7 +205,7 @@ Real models take hundreds of milliseconds to seconds before the first token, so 
 ```bash
 go test -race ./...   # unit and integration
 make smoke            # end to end against a mock upstream, 65 checks
-make crud             # full admin and user API round trip, 92 checks
+make crud             # full admin and user API round trip, 93 checks
 ```
 
 ## High availability

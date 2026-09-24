@@ -394,3 +394,12 @@
 ## 1.0.51：接入指引新增「图像」标签页
 
 - 列出当前用户有权使用的图像模型及三个入口，附文生图（JSON）、图生图 / 编辑与变体（multipart 表单）的 curl 示例和 Python openai 示例；原 curl / SDK 页里的图片示例移到这里。中、繁、英三种文案。
+
+## 1.0.52：备份与还原（`internal-docs/changes-2026-09-24-backup-restore.md`）
+
+- 「设置 → 备份与还原」：一键生成整机备份包（`VACUUM INTO` 一致性数据库快照、计量 journal、`credential.key` 与 `jwt.key`，带 SHA-256 清单）并下载；上传备份包还原：校验通过后暂存，网关自行退出，容器 / systemd 拉起时在打开数据库前换入，被替换的目录保留在 `data/pre-restore-<时间>/`；校验失败不改动任何文件。
+- 命令行 `yzapi -restore <备份包>`：新服务器或停止的实例直接还原。
+- 每日自动备份：按本地时间整点生成到数据目录 `backups/`，只保留最新 N 份。
+- 只支持内嵌 SQLite；PostgreSQL 实例提示用 `pg_dump`。备份包含上游 Key 的解密材料，界面有提示。
+- 接口：`GET/POST /api/admin/backups`、`GET /api/admin/backups/:name/download`、`DELETE /api/admin/backups/:name`、`POST /api/admin/backups/restore`、`PUT /api/admin/settings/backup`。
+

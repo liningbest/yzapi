@@ -23,6 +23,7 @@ import SmartRouteTab from './settings/SmartRouteTab';
 import VectorTab from './settings/VectorTab';
 import PricingTab from './settings/PricingTab';
 import ConfigTab from './settings/ConfigTab';
+import BackupTab from './settings/BackupTab';
 
 export default function Settings() {
   const { t } = useTranslation(['settings', 'common']);
@@ -84,6 +85,12 @@ export default function Settings() {
       label: t('settings:tabs.config'),
       icon: <HistoryOutlined />,
       children: <ConfigTab />,
+    },
+    {
+      key: 'backup',
+      label: t('settings:tabs.backup'),
+      icon: <HistoryOutlined />,
+      children: <BackupTab data={data?.backup} />,
     },
     {
       key: 'elasticsearch',

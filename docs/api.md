@@ -189,6 +189,13 @@
 - `PUT /api/admin/settings/pricing {currency:"CNY"|"USD", usd_to_cny}`：**显示币种**与汇率。账本固定为美元：人民币单价行按汇率折成美元入账，展示时再按显示币种换算；切换显示币种或汇率只改变展示，历史金额随之整体换算，不会被换标签或混币种累加。`GET /api/public/info`、价目表与用量报表都返回当前 `currency`，价目表另带 `ledger:"USD"`。
 - 费用在每次尝试结束时按当时单价估算并冻结：`call_logs.cost_micros`（美元账本的百万分之一单位，`cost_ledger:"USD"` 标记该行已按账本记账；无标记的旧行由启动迁移与 journal 回放按库来源逐行判定并各处理一次，判定不了的标为 `"unverified"`：原始数值保留在 `cost_micros`，`cost_known=false`，日志的 `cost` 为 0 且 `cost_unverified=true`，小时汇总不计其金额、只计入 `cost_unverified` 条数，用量报表 `summary.cost_unverified` 与各分布项 `cost_unverified` 给出条数；对账结果 `Mismatch` 增加 `log_cost / rollup_cost / log_unverified / rollup_unverified`）、`cost_known`（任一有 Token 的尝试无单价、或任一尝试用量为 unknown / partial，则为 false：此时金额只是已知部分的下限）；小时聚合 `cost_micros` 按尝试账号归属。管理端日志列表 / 详情与用户日志都带按显示币种换算后的 `cost`；用量报表 `summary.cost`、各分布项 `cost`、趋势点 `cost` 以及 `currency`；概览 `cost.total`。输入 Token 分三段计价：缓存读（`cached_tokens`，缓存价）、缓存写（`cache_write_tokens`，来自 Anthropic `cache_creation_input_tokens`，按 `cache_write_per_m`，该行没填则按输入价）、其余按输入价。单价修改后不回溯历史记录。
 
+### 备份与还原 `/api/admin/backups`
+- 备份包是 tar.gz：`manifest.json`（`format:1`、`app_version`、`created_at`、`db_driver:"sqlite"`、`files` 每个文件的 SHA-256）加 `data/db/yzapi.db`（用 `VACUUM INTO` 在运行中取得的一致性快照）、`data/journal/*`（计量 journal 与检查点，还原后幂等回放）、`data/security/credential.key`（上游 Key 的加密密钥）与 `jwt.key`。**只支持内嵌 SQLite**；PostgreSQL 实例创建备份返回 400 `backup_unsupported`，请用 `pg_dump` 并单独保存 `data/security`。备份包含全部上游 Key 的解密材料，下载与保管按密钥对待。
+- `GET` → `{items:[{name,size,created_at}], pending_restore, db_driver, supported}`（数据目录 `backups/` 下的本地备份，新到旧）；`POST` 立即生成一份 → `{name,size,created_at}`，文件名 `yzapi-backup-<YYYYMMDD-HHMMSS>-<版本>.tar.gz`；`GET /:name/download` 下载（`application/gzip`）；`DELETE /:name`。文件名不合法 400，不存在 404。
+- `POST /restore`（multipart 字段 `file`，上限 2 GB）：解包到 `data/restore-staging/` 并校验（必须有 manifest、格式版本一致、路径只允许 `data/db/yzapi.db`、`data/journal/*`、`data/security/*`、manifest 列出的每个文件都在且校验和一致、包里没有 manifest 未列出的文件、必须含数据库与 `credential.key`、数据库能只读打开且含 `users` 表并通过 `integrity_check`），任一不满足返回 400 `backup_invalid` 且**不改动任何现有文件**。校验通过返回 `{staged:true, restart:"scheduled", backup:manifest}`，约 1.5 秒后进程向自己发 SIGTERM 优雅退出，由容器重启策略 / systemd `Restart=always` 拉起；下次启动在打开数据库之前把暂存文件换入，被替换的 `data/db`、`data/journal`、`data/security` 整体移到 `data/pre-restore-<时间>/` 保留。还原后的登录密码是备份时的密码。
+- 命令行：`yzapi -restore <备份包>` 在停止的实例或新服务器上直接还原并退出（同样的校验与换入），之后正常启动。
+- `PUT /api/admin/settings/backup {enabled, hour_local:0-23, keep_count:0-365}`：每日自动备份策略，按服务器本地时间在 `hour_local` 整点生成一份到 `backups/`，随后只保留最新 `keep_count` 份（0 为全部保留）；PostgreSQL 实例开启返回 400 `backup_unsupported`。`GET /api/admin/settings` 的 `backup` 节返回当前策略。
+
 ### 系统
 - `GET /api/admin/system/info` → `{version, go_version, db_driver, uptime_sec, started_at, data_dir}`
 

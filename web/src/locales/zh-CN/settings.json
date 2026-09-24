@@ -9,7 +9,8 @@
     "compliance": "内容合规",
     "elasticsearch": "Elasticsearch",
     "pricing": "计价",
-    "config": "配置版本"
+    "config": "配置版本",
+    "backup": "备份与还原"
   },
   "unit": {
     "days": "天",
@@ -334,5 +335,28 @@
     "reloadRuntime": "重新加载运行态",
     "reloadRuntimeDone": "运行态已从数据库重新加载",
     "reloadRuntimeHint": "某次保存返回「已写入数据库但运行态未刷新」时，在这里重新加载价目、网关、路由与合规的运行态"
+  },
+  "backup": {
+    "notice": "备份包包含数据库、计量 journal 与两个密钥文件（上游 API Key 的加密密钥、登录令牌密钥），拿到备份包等于拿到全部上游 Key，请妥善保管。",
+    "unsupported": "当前实例使用 PostgreSQL，内置备份只支持内嵌的 SQLite；请用 pg_dump 备份数据库，并单独保存数据目录下的 data/security。",
+    "pending": "已有一份还原包在等待应用：网关下次启动时会用它覆盖当前数据。",
+    "restoreStaged": "还原包已校验并暂存，网关正在退出，容器或 systemd 会自动拉起；约 10 秒后刷新页面并重新登录，登录密码是备份时的密码。",
+    "listTitle": "本地备份",
+    "createNow": "立即备份",
+    "restore": "上传备份包还原",
+    "restoreHint": "还原会用备份包替换当前的数据库、journal 与密钥，被替换的文件保留在数据目录 data/pre-restore-<时间>/ 下；新服务器首次部署可用命令行 yzapi -restore <备份包> 直接还原。",
+    "file": "文件",
+    "size": "大小",
+    "time": "创建时间",
+    "download": "下载",
+    "deleteConfirm": "删除这份备份？",
+    "created": "已生成 {{name}}",
+    "autoTitle": "自动备份",
+    "enabled": "每日自动备份",
+    "enabledExtra": "按服务器本地时间每天生成一份到数据目录 backups/。",
+    "hour": "执行时刻（小时）",
+    "hourExtra": "0–23，建议低峰时段。",
+    "keep": "保留份数",
+    "keepExtra": "只保留最新的 N 份，0 表示全部保留。"
   }
 }

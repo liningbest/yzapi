@@ -135,6 +135,12 @@ func (s *Server) Register(r *gin.Engine) {
 		admin.GET("/providers", s.listProviders)
 		admin.GET("/models", s.listModels)
 		admin.GET("/system/info", s.systemInfo)
+		bk := admin.Group("/backups")
+		bk.GET("", s.listBackups)
+		bk.POST("", s.createBackup)
+		bk.GET("/:name/download", s.downloadBackup)
+		bk.DELETE("/:name", s.deleteBackup)
+		bk.POST("/restore", s.restoreBackup)
 
 		acc := admin.Group("/accounts", s.autoSnapshot())
 		acc.GET("", s.listAccounts)
@@ -208,6 +214,7 @@ func (s *Server) Register(r *gin.Engine) {
 		se.PUT("/smart_route", s.putSmartRoute)
 		se.PUT("/compliance", s.putCompliance)
 		se.PUT("/elasticsearch", s.putElasticsearch)
+		se.PUT("/backup", s.putBackup)
 		se.POST("/elasticsearch/test", s.testElasticsearch)
 		se.GET("/elasticsearch/status", s.esStatus)
 

@@ -256,6 +256,38 @@ try:
         eq(req("GET", "/api/public/info", token="", expect=200)["site_name"], "My GW")
     check("settings basic round-trip + public info", t_basic)
     check("settings basic invalid base_url -> 400", lambda: req("PUT", "/api/admin/settings/basic", dict(st0["basic"], base_url="ftp://x"), expect=400))
+    def t_backup():
+        lst = req("GET", "/api/admin/backups", expect=200); eq(lst["supported"], True); eq(lst["pending_restore"], False)
+        info = req("POST", "/api/admin/backups", {}, expect=200); name = info["name"]
+        if not name.startswith("yzapi-backup-") or not name.endswith(".tar.gz") or info["size"] < 1000: raise AssertionError(info)
+        lst = req("GET", "/api/admin/backups", expect=200); eq([x["name"] for x in lst["items"]], [name])
+        r = urllib.request.Request(f"{BASE}/api/admin/backups/{name}/download"); r.add_header("Authorization", "Bearer " + TOKEN)
+        with urllib.request.urlopen(r, timeout=30) as resp:
+            data = resp.read(); eq(resp.headers.get("Content-Type"), "application/gzip")
+        if data[:2] != b"\x1f\x8b" or len(data) != info["size"]: raise AssertionError(("not gzip / size", len(data), info["size"]))
+        import gzip, io, tarfile
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tf:
+            names = tf.getnames(); m = json.load(tf.extractfile("manifest.json"))
+        for must in ("manifest.json", "data/db/yzapi.db", "data/security/credential.key", "data/security/jwt.key"):
+            if must not in names: raise AssertionError((must, names))
+        eq(m["format"], 1); eq(m["db_driver"], "sqlite"); eq(set(m["files"]), set(n for n in names if n != "manifest.json"))
+        req("GET", "/api/admin/backups/../../etc/passwd/download", expect=(400, 404))
+        req("DELETE", "/api/admin/backups/nope.tar.gz", expect=400)
+        req("DELETE", "/api/admin/backups/yzapi-backup-20260101-000000-x.tar.gz", expect=404)
+        # restore rejects a non-archive without touching anything (the instance keeps running)
+        body = b"--b\r\nContent-Disposition: form-data; name=\"file\"; filename=\"x.tar.gz\"\r\nContent-Type: application/gzip\r\n\r\nnot an archive\r\n--b--\r\n"
+        rr = urllib.request.Request(f"{BASE}/api/admin/backups/restore", data=body, method="POST"); rr.add_header("Authorization", "Bearer " + TOKEN); rr.add_header("Content-Type", "multipart/form-data; boundary=b")
+        try:
+            urllib.request.urlopen(rr, timeout=30); raise AssertionError("garbage restore accepted")
+        except urllib.error.HTTPError as e:
+            eq(e.code, 400); eq(json.loads(e.read().decode())["code"], "backup_invalid")
+        eq(req("GET", "/api/admin/backups", expect=200)["pending_restore"], False)
+        req("DELETE", f"/api/admin/backups/{name}", expect=200); eq(req("GET", "/api/admin/backups", expect=200)["items"], [])
+        req("PUT", "/api/admin/settings/backup", {"enabled": True, "hour_local": 24, "keep_count": 7}, expect=400)
+        req("PUT", "/api/admin/settings/backup", {"enabled": True, "hour_local": 2, "keep_count": 5}, expect=200)
+        b = req("GET", "/api/admin/settings", expect=200)["backup"]; eq(b["enabled"], True); eq(b["hour_local"], 2); eq(b["keep_count"], 5)
+        req("PUT", "/api/admin/settings/backup", {"enabled": False, "hour_local": 3, "keep_count": 7}, expect=200)
+    check("backup: create, list, download (valid gzip + manifest), guards, garbage restore rejected, policy round-trip", t_backup)
     def t_perf():
         p = dict(st0["performance"], max_concurrency=77, queue_size=11, max_retries=2)
         req("PUT", "/api/admin/settings/performance", p, expect=200)

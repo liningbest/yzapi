@@ -22,7 +22,7 @@ A clean deployment depends only on **whether the data directory on the server is
   data/db/yzapi.db            SQLite database (with -wal / -shm)
   data/journal/calls.jsonl    metering journal and checkpoints
   data/security/credential.key encryption key for upstream API Keys (if lost, no upstream credential can be decrypted)
-  data/security/jwt.secret    login token secret
+  data/security/jwt.key    login token secret
 ```
 
 It also creates the default user group and the `admin` administrator (the password comes from `YZAPI_INITIAL_ADMIN_PASSWORD`; if unset, one is generated randomly and printed to the log; a password change is forced on first login).

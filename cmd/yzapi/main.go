@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"yzapi/internal/api"
+	"yzapi/internal/backup"
 	"yzapi/internal/bootstrap"
 	"yzapi/internal/compliance"
 	"yzapi/internal/config"
@@ -34,6 +35,7 @@ var version = "dev"
 
 func main() {
 	resetUser := flag.String("reset-password", "", "reset the password of the given user and exit")
+	restoreFile := flag.String("restore", "", "restore a backup archive into the data directory and exit (run on a stopped instance or a fresh server)")
 	newPw := flag.String("password", "", "new password for -reset-password (random if empty)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
@@ -44,6 +46,24 @@ func main() {
 
 	cfg := config.Load()
 	setupLogging(cfg)
+
+	if *restoreFile != "" {
+		m, err := backup.RestoreFile(cfg.DataDir, *restoreFile)
+		if err != nil {
+			slog.Error("restore", "err", err)
+			os.Exit(1)
+		}
+		slog.Info("backup restored; start the gateway normally", "backup_created_at", m.CreatedAt, "backup_version", m.AppVersion)
+		return
+	}
+	// A restore staged through the admin API is applied here, before anything opens
+	// the database; the replaced files are kept under data/pre-restore-<time>/.
+	if applied, err := backup.ApplyPending(cfg.DataDir); err != nil {
+		slog.Error("applying staged restore failed; the previous data is untouched", "err", err)
+		os.Exit(1)
+	} else if applied {
+		slog.Warn("staged backup restore applied on start")
+	}
 
 	database, err := db.Open(cfg)
 	if err != nil {
@@ -135,6 +155,10 @@ func main() {
 			slog.Error("compliance index reload after settings change failed; previous index stays live", "err", err)
 		}
 	})
+
+	schedCtx, schedCancel := context.WithCancel(context.Background())
+	defer schedCancel()
+	mgmt.StartBackupScheduler(schedCtx)
 
 	srv := server.New(cfg, database, gw, mgmt, func(w *metrics.Writer) {
 		ls := logs.Stats()

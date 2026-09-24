@@ -1,5 +1,8 @@
 import { del, get, http, patch, post, put } from './client';
 import type {
+  BackupInfo,
+  BackupList,
+  BackupSettings,
   ConfigRestoreResult,
   PriceImportOptions,
   PriceImportResult,
@@ -182,6 +185,30 @@ export const runtimeApi = {
   reload: () => post<{ reloaded: string[] }>(`${A}/runtime/reload`, {}),
 };
 
+export const backupApi = {
+  list: () => get<BackupList>(`${A}/backups`),
+  create: () => post<BackupInfo>(`${A}/backups`, {}),
+  remove: (name: string) => del<{ deleted: boolean }>(`${A}/backups/${encodeURIComponent(name)}`),
+  /** Downloads through the authenticated client and hands the browser a blob (no token in the URL). */
+  download: async (name: string) => {
+    const r = await http.get(`${A}/backups/${encodeURIComponent(name)}/download`, { responseType: 'blob', timeout: 0 });
+    const url = URL.createObjectURL(r.data as Blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  },
+  /** Stages the archive; the server exits afterwards and comes back restored. */
+  restore: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return http.post<{ staged: boolean; restart: string }>(`${A}/backups/restore`, fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 0 }).then((r) => r.data);
+  },
+};
+
 export const configSnapshotsApi = {
   list: () => get<{ items: ConfigSnapshotRow[]; total: number }>(`${A}/config/snapshots`),
   create: (reason: string) => post<unknown>(`${A}/config/snapshots`, { reason }),
@@ -212,6 +239,7 @@ export const settingsApi = {
   all: () => get<AllSettings>(`${A}/settings`),
   savePricing: (body: PricingSettings) => put<PricingSettings>(`${A}/settings/pricing`, body),
   saveBasic: (body: BasicSettings) => put<BasicSettings>(`${A}/settings/basic`, body),
+  saveBackup: (body: BackupSettings) => put<BackupSettings>(`${A}/settings/backup`, body),
   savePerformance: (body: PerformanceSettings) => put<PerformanceSettings>(`${A}/settings/performance`, body),
   saveVector: (body: VectorSettings) => put<VectorSettings>(`${A}/settings/vector`, body),
   testVector: (body: VectorSettings) => post<VectorTestResult>(`${A}/settings/vector/test`, body, { skipErrorToast: true }),

@@ -829,7 +829,27 @@ export interface PriceImportResult {
 
 export type ModelPriceInput = Omit<ModelPrice, 'id' | 'builtin' | 'updated_at'>;
 
+export interface BackupSettings {
+  enabled: boolean;
+  hour_local: number;
+  keep_count: number;
+}
+
+export interface BackupInfo {
+  name: string;
+  size: number;
+  created_at: string;
+}
+
+export interface BackupList {
+  items: BackupInfo[];
+  pending_restore: boolean;
+  db_driver: string;
+  supported: boolean;
+}
+
 export interface AllSettings {
+  backup: BackupSettings;
   pricing: PricingSettings;
   basic: BasicSettings;
   performance: PerformanceSettings;

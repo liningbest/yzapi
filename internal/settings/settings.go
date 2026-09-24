@@ -85,7 +85,15 @@ type Pricing struct {
 	USDToCNY float64 `json:"usd_to_cny"` // rate used to convert CNY price rows into the ledger and the ledger into a CNY display
 }
 
+// Backup is the automatic local backup policy (Settings → Backup & restore).
+type Backup struct {
+	Enabled   bool `json:"enabled"`
+	HourLocal int  `json:"hour_local"` // 0-23, server local time
+	KeepCount int  `json:"keep_count"` // newest archives kept; 0 = keep all
+}
+
 type All struct {
+	Backup        Backup        `json:"backup"`
 	Pricing       Pricing       `json:"pricing"`
 	Basic         Basic         `json:"basic"`
 	Performance   Performance   `json:"performance"`
@@ -97,6 +105,7 @@ type All struct {
 
 func Defaults() All {
 	return All{
+		Backup: Backup{Enabled: false, HourLocal: 3, KeepCount: 7},
 		Basic: Basic{
 			BaseURL:            "http://127.0.0.1:8080/v1",
 			LogRetentionDays:   30,
@@ -181,6 +190,8 @@ func (s *Store) Reload() error {
 			_ = json.Unmarshal([]byte(r.Value), &all.Compliance)
 		case "elasticsearch":
 			_ = json.Unmarshal([]byte(r.Value), &all.Elasticsearch)
+		case "backup":
+			_ = json.Unmarshal([]byte(r.Value), &all.Backup)
 		case "pricing":
 			_ = json.Unmarshal([]byte(r.Value), &all.Pricing)
 		}
@@ -241,3 +252,4 @@ func (s *Store) SetSmartRoute(v SmartRoute) error       { return s.save("smart_r
 func (s *Store) SetCompliance(v Compliance) error       { return s.save("compliance", v) }
 func (s *Store) SetElasticsearch(v Elasticsearch) error { return s.save("elasticsearch", v) }
 func (s *Store) SetPricing(v Pricing) error             { return s.save("pricing", v) }
+func (s *Store) SetBackup(v Backup) error               { return s.save("backup", v) }

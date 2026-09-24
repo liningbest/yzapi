@@ -20,7 +20,7 @@ yzapi 是单个二进制（前端已内嵌），运行时只依赖一个数据�
   data/db/yzapi.db            SQLite 数据库（含 -wal / -shm）
   data/journal/calls.jsonl    计量 journal 与检查点
   data/security/credential.key 上游 API Key 的加密密钥（丢失则所有上游凭据不可解密）
-  data/security/jwt.secret    登录令牌密钥
+  data/security/jwt.key    登录令牌密钥
 ```
 
 并创建默认用户组和 `admin` 管理员（密码来自 `YZAPI_INITIAL_ADMIN_PASSWORD`，未设置则随机生成并打印到日志；首次登录强制改密）。
@@ -142,7 +142,7 @@ curl -N https://<域名>/v1/chat/completions -H "Authorization: Bearer sk-..." -
 
 ### 3.6 备份
 
-备份整个数据目录 `/opt/1panel/apps/yzapi/data`（数据库、journal、两个密钥缺一不可）。1Panel「计划任务 → 备份目录」可以定时打包；SQLite 处于 WAL 模式，低峰期直接打包目录即可，要求完全一致时先在编排里停止容器再打包。
+首选管理端「设置 → 备份与还原」：一键生成备份包（数据库一致性快照、journal、两个密钥）并下载，可开每日自动备份保留最新 N 份（存在数据目录 `backups/`）；迁移或回退时在新实例的同一页面上传备份包，校验通过后网关自行退出、容器拉起后即为还原后的状态；新服务器首次部署也可以先 `docker run --rm -v /opt/1panel/apps/yzapi/data:/opt/yzapi ghcr.io/liningbest/yzapi:<版本> yzapi -restore /opt/yzapi/<备份包>`（把备份包先放到数据目录里）再正常启动。备份包含全部上游 Key 的解密材料，按密钥保管。兜底办法仍是备份整个数据目录 `/opt/1panel/apps/yzapi/data`（数据库、journal、两个密钥缺一不可）：1Panel「计划任务 → 备份目录」可以定时打包；SQLite 处于 WAL 模式，低峰期直接打包目录即可，要求完全一致时先在编排里停止容器再打包。
 
 ### 3.7 升级
 

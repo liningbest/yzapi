@@ -9,7 +9,8 @@
     "compliance": "Compliance",
     "elasticsearch": "Elasticsearch",
     "pricing": "Pricing",
-    "config": "Config versions"
+    "config": "Config versions",
+    "backup": "Backup & restore"
   },
   "unit": {
     "days": "days",
@@ -334,5 +335,28 @@
     "reloadRuntime": "Reload runtime",
     "reloadRuntimeDone": "Runtime reloaded from the database",
     "reloadRuntimeHint": "When a save reports “written to the database but the runtime was not refreshed”, reload the price, gateway, route and compliance runtimes here"
+  },
+  "backup": {
+    "notice": "An archive contains the database, the metering journal and both secret files (the key that encrypts upstream API keys and the login token secret). Whoever holds an archive holds every upstream key; store it accordingly.",
+    "unsupported": "This instance runs on PostgreSQL; built-in backups cover the embedded SQLite database only. Use pg_dump for the database and keep data/security from the data directory separately.",
+    "pending": "A staged restore is waiting: the gateway will replace the current data with it on its next start.",
+    "restoreStaged": "The archive was verified and staged; the gateway is exiting and the container or systemd will bring it back. Reload this page in about 10 seconds and sign in with the password that was valid when the backup was taken.",
+    "listTitle": "Local backups",
+    "createNow": "Back up now",
+    "restore": "Restore from archive",
+    "restoreHint": "A restore replaces the current database, journal and secrets with the archive; the replaced files are kept under data/pre-restore-<time>/ in the data directory. On a new server, restore before the first start with: yzapi -restore <archive>.",
+    "file": "File",
+    "size": "Size",
+    "time": "Created",
+    "download": "Download",
+    "deleteConfirm": "Delete this backup?",
+    "created": "Created {{name}}",
+    "autoTitle": "Automatic backups",
+    "enabled": "Daily automatic backup",
+    "enabledExtra": "Writes one archive per day into backups/ under the data directory, at server local time.",
+    "hour": "Hour of day",
+    "hourExtra": "0-23; pick an off-peak hour.",
+    "keep": "Archives to keep",
+    "keepExtra": "Keeps the newest N archives; 0 keeps all."
   }
 }
