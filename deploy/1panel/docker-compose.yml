@@ -1,14 +1,14 @@
 # yzapi on 1Panel（容器 → 编排 → 创建编排，粘贴本文件）
 #
 # 前置：
-#   1. 镜像已存在于服务器（1Panel 镜像 → 构建 / 导入 / 拉取），标签与下面 image 一致
+#   1. 镜像从 GitHub 容器仓库公开拉取（无需登录）：ghcr.io/liningbest/yzapi:<版本>，版本号见 GitHub Releases
 #   2. 数据目录已创建并归属容器用户（镜像内以 uid 10001 运行）：
 #        mkdir -p /opt/1panel/apps/yzapi/data && chown -R 10001:10001 /opt/1panel/apps/yzapi
 #   3. 用 1Panel「网站 → 反向代理」对外提供 HTTPS，因此这里只绑定 127.0.0.1
 #
 services:
   yzapi:
-    image: yzapi/gateway:1.0.0
+    image: ghcr.io/liningbest/yzapi:1.0.51
     container_name: yzapi
     restart: unless-stopped
     ports:
