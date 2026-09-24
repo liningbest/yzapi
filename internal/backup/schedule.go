@@ -36,7 +36,6 @@ func RunScheduler(ctx context.Context, db *gorm.DB, dataDir, appVersion string, 
 			if day == lastDay {
 				continue
 			}
-			lastDay = day
 			// The in-memory marker is lost on restart; an archive already written in this
 			// hour (scheduled or manual) counts as today's run.
 			if list, err := List(dataDir); err == nil && len(list) > 0 {
@@ -47,9 +46,10 @@ func RunScheduler(ctx context.Context, db *gorm.DB, dataDir, appVersion string, 
 			}
 			info, err := CreateLocal(ctx, db, dataDir, appVersion)
 			if err != nil {
-				slog.Error("scheduled backup failed", "err", err)
+				slog.Error("scheduled backup failed; retrying next minute within this hour", "err", err)
 				continue
 			}
+			lastDay = day
 			pruned, _ := Prune(dataDir, p.KeepCount)
 			slog.Info("scheduled backup written", "name", info.Name, "bytes", info.Size, "pruned", pruned)
 		}

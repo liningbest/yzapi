@@ -62,6 +62,7 @@ func main() {
 	}
 	// A restore staged through the admin API is applied here, before anything opens
 	// the database; the replaced files are kept under data/pre-restore-<time>/.
+	backup.CleanupIncoming(cfg.DataDir)
 	if _, pending := backup.Pending(cfg.DataDir); pending {
 		if why := backup.Unsupported(cfg.DBDriver, cfg.DBDSN); why != "" {
 			slog.Error("a restore is staged but this configuration cannot apply it; remove data/restore-staging or restore the default database settings", "err", why)

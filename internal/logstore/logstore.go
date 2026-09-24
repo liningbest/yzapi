@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -56,6 +57,7 @@ type Store struct {
 	fixCost  func(*model.CallLog) // converts records journaled by an older binary into the cost ledger
 
 	ckpt         atomic.Int64 // committed offset
+	gen          atomic.Int64 // journal generation (bumped on rotation), mirrored in the database
 	notify       chan struct{}
 	stop         chan struct{}
 	wg           sync.WaitGroup
@@ -91,6 +93,16 @@ func New(db *gorm.DB, dataDir string, retentionDays func() int, opts ...Option) 
 	if err := s.openJournal(); err != nil {
 		return nil, err
 	}
+	// Mirror the file checkpoint into the database. The file checkpoint is written after
+	// each commit, so it never claims more than the database holds.
+	if gen, _, _, err := JournalState(db); err == nil {
+		s.gen.Store(gen)
+		if err := saveJournalState(db, gen, s.ckpt.Load()); err != nil {
+			slog.Warn("recording the journal boundary failed; backups taken before the next commit replay the whole journal", "err", err)
+		}
+	} else {
+		slog.Warn("reading the journal boundary failed", "err", err)
+	}
 	if n, err := s.drain(); err != nil {
 		slog.Warn("journal replay incomplete; will keep retrying in background", "err", err, "replayed", n)
 	} else if n > 0 {
@@ -119,6 +131,45 @@ func New(db *gorm.DB, dataDir string, retentionDays func() int, opts ...Option) 
 // purgedKey is the settings row that records how far raw call logs have been purged.
 // Rebuilding the rollup for hours before it would replace real history with zeros.
 const purgedKey = "logs_purged_before"
+
+// journalStateKey stores "<generation>:<offset>" in the settings table: the journal
+// offset up to which every record is committed, written in the same transaction as the
+// commit itself. A database snapshot therefore carries its own exact replay boundary,
+// which a backup uses as the restored checkpoint (see internal/backup). Rotation bumps
+// the generation, because offsets restart at 0.
+const journalStateKey = "journal_state"
+
+// RotateMu serialises journal rotation against a backup's copy of the journal files
+// (process-wide, across Store instances): a copy taken under it and the generation read
+// with it describe the same file contents.
+var RotateMu sync.Mutex
+
+// JournalState returns the committed journal boundary recorded in db. ok is false when
+// none has been recorded (databases written before this marker existed).
+func JournalState(db *gorm.DB) (gen, offset int64, ok bool, err error) {
+	var row model.Setting
+	if err := db.Where("key = ?", journalStateKey).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, 0, false, nil
+		}
+		return 0, 0, false, err
+	}
+	g, o, found := strings.Cut(row.Value, ":")
+	if !found {
+		return 0, 0, false, fmt.Errorf("journal state %q is malformed", row.Value)
+	}
+	if gen, err = strconv.ParseInt(g, 10, 64); err != nil {
+		return 0, 0, false, fmt.Errorf("journal state %q is malformed", row.Value)
+	}
+	if offset, err = strconv.ParseInt(o, 10, 64); err != nil || offset < 0 {
+		return 0, 0, false, fmt.Errorf("journal state %q is malformed", row.Value)
+	}
+	return gen, offset, true, nil
+}
+
+func saveJournalState(db *gorm.DB, gen, offset int64) error {
+	return db.Save(&model.Setting{Key: journalStateKey, Value: strconv.FormatInt(gen, 10) + ":" + strconv.FormatInt(offset, 10), UpdatedAt: time.Now()}).Error
+}
 
 // PurgedBefore returns the persisted purge boundary. ok is false only when no boundary
 // has ever been written; a failed read or an unparsable value is an error, which callers
@@ -384,7 +435,7 @@ func (s *Store) drain() (int, error) {
 			s.maybeRotate()
 			return total, nil
 		}
-		if err := s.commit(batch); err != nil {
+		if err := s.commitAt(batch, next); err != nil {
 			return total, err
 		}
 		if took > 0 {
@@ -434,8 +485,17 @@ func (s *Store) readBatch() ([]*model.CallLog, int64, error) {
 
 // commit inserts the batch and updates the hourly rollup in one transaction, skipping
 // request ids that already exist so replays are idempotent.
-func (s *Store) commit(batch []*model.CallLog) error {
+func (s *Store) commit(batch []*model.CallLog) error { return s.commitAt(batch, -1) }
+
+// commitAt commits a batch and, when next >= 0, records next as the committed journal
+// boundary in the same transaction.
+func (s *Store) commitAt(batch []*model.CallLog, next int64) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
+		if next >= 0 {
+			if err := saveJournalState(tx, s.gen.Load(), next); err != nil {
+				return err
+			}
+		}
 		ids := make([]string, 0, len(batch))
 		for _, l := range batch {
 			ids = append(ids, l.RequestID)
@@ -914,14 +974,24 @@ func Reconcile(db *gorm.DB, from, to time.Time) ([]Mismatch, error) {
 
 // maybeRotate truncates a fully committed, large journal so it does not grow forever.
 func (s *Store) maybeRotate() {
+	RotateMu.Lock()
+	defer RotateMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.f == nil || s.size < rotateAfter || s.ckpt.Load() != s.size {
 		return
 	}
-	if err := s.f.Truncate(0); err != nil {
+	// New generation first: a backup never sees new-generation offsets paired with the
+	// old generation's content. On a failed truncate the old boundary is put back.
+	gen := s.gen.Load()
+	if err := saveJournalState(s.db, gen+1, 0); err != nil {
 		return
 	}
+	if err := s.f.Truncate(0); err != nil {
+		_ = saveJournalState(s.db, gen, s.size)
+		return
+	}
+	s.gen.Store(gen + 1)
 	if _, err := s.f.Seek(0, io.SeekStart); err != nil {
 		return
 	}

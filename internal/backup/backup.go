@@ -7,6 +7,7 @@ package backup
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -20,12 +21,15 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+
+	"yzapi/internal/logstore"
 )
 
 // FormatVersion is bumped when the archive layout changes incompatibly.
@@ -49,6 +53,7 @@ const (
 	stagingDir     = "data/restore-staging"
 	pendingName    = "pending.json"
 	checkpointName = "calls.ckpt"
+	journalName    = "calls.jsonl"
 	backupsDir     = "backups"
 )
 
@@ -74,14 +79,16 @@ func Unsupported(driver, dsn string) string {
 // Create writes a backup archive of dataDir to w.
 //
 // Consistency without pausing the gateway: the journal and secret files are copied
-// first, then the database is snapshotted with VACUUM INTO, and the archive is written
-// only from those private copies, with every checksum computed from the same bytes that
-// are archived. Every record in the copied journal is therefore either already in the
-// snapshot or replayed from it on restore, and the archive's checkpoint is written as 0
-// so the restored instance replays the whole copied journal; the journal commit is
-// idempotent by request_id, so records the snapshot already holds are skipped. Appends,
-// commits, checkpoint moves and rotations that happen while the archive is written do
-// not touch the copies.
+// first, under logstore.RotateMu together with the journal generation, then the
+// database is snapshotted with VACUUM INTO, and the archive is written only from those
+// private copies, with every checksum computed from the same bytes that are archived.
+// The archived checkpoint is the replay boundary the snapshot itself records (the
+// journal writer stores "generation:offset" in the same transaction as each commit):
+// records before it are in the snapshot and are never replayed, records after it are
+// replayed on restore. If the generation moved between the copy and the snapshot, the
+// copied journal was rotated away, which only happens once it is fully committed, so the
+// whole copy is marked committed. With no recorded boundary (a database from before the
+// marker) the checkpoint is 0 and the restore relies on request_id deduplication.
 func Create(ctx context.Context, db *gorm.DB, dataDir, appVersion string, w io.Writer) (Manifest, error) {
 	m := Manifest{Format: FormatVersion, AppVersion: appVersion, CreatedAt: time.Now(), Files: map[string]string{}}
 	if db == nil || db.Dialector.Name() != "sqlite" {
@@ -98,7 +105,15 @@ func Create(ctx context.Context, db *gorm.DB, dataDir, appVersion string, w io.W
 	defer os.RemoveAll(tmp)
 	type entry struct{ rel, src string }
 	var entries []entry
-	// 1. Secrets and journal: private copies, checksummed while copying.
+	// 1. Secrets and journal: private copies, checksummed while copying; the journal
+	// copy and its generation are taken under the rotation lock.
+	journalCopy := ""
+	logstore.RotateMu.Lock()
+	var gen0 int64
+	var genErr error
+	if db.Migrator().HasTable("settings") { // no table: no recorded boundary, generation 0
+		gen0, _, _, genErr = logstore.JournalState(db)
+	}
 	for _, dir := range []string{securityDir, journalDir} {
 		names, _ := os.ReadDir(filepath.Join(dataDir, filepath.FromSlash(dir)))
 		for _, n := range names {
@@ -106,32 +121,26 @@ func Create(ctx context.Context, db *gorm.DB, dataDir, appVersion string, w io.W
 				continue
 			}
 			rel := dir + "/" + n.Name()
-			dst := filepath.Join(tmp, filepath.FromSlash(rel))
 			if rel == journalDir+"/"+checkpointName {
-				continue // written below as "0": replay the whole copied journal
+				continue // derived from the snapshot below
 			}
+			dst := filepath.Join(tmp, filepath.FromSlash(rel))
 			sum, err := copyFile(filepath.Join(dataDir, filepath.FromSlash(rel)), dst)
 			if err != nil {
+				logstore.RotateMu.Unlock()
 				return m, err
 			}
 			m.Files[rel] = sum
 			entries = append(entries, entry{rel, dst})
+			if rel == journalDir+"/"+journalName {
+				journalCopy = dst
+			}
 		}
 	}
-	ckRel := journalDir + "/" + checkpointName
-	ckDst := filepath.Join(tmp, filepath.FromSlash(ckRel))
-	if err := os.MkdirAll(filepath.Dir(ckDst), 0o750); err != nil {
-		return m, err
+	logstore.RotateMu.Unlock()
+	if genErr != nil {
+		return m, fmt.Errorf("read journal boundary: %w", genErr)
 	}
-	if err := os.WriteFile(ckDst, []byte("0"), 0o600); err != nil {
-		return m, err
-	}
-	sum, err := fileSHA256(ckDst)
-	if err != nil {
-		return m, err
-	}
-	m.Files[ckRel] = sum
-	entries = append(entries, entry{ckRel, ckDst})
 	// 2. Database snapshot, taken after the journal copy.
 	snap := filepath.Join(tmp, filepath.FromSlash(dbRel))
 	if err := os.MkdirAll(filepath.Dir(snap), 0o750); err != nil {
@@ -140,12 +149,28 @@ func Create(ctx context.Context, db *gorm.DB, dataDir, appVersion string, w io.W
 	if err := db.WithContext(ctx).Exec("VACUUM INTO ?", snap).Error; err != nil {
 		return m, fmt.Errorf("database snapshot: %w", err)
 	}
-	if sum, err = fileSHA256(snap); err != nil {
+	// 3. Checkpoint for the restored journal, from the snapshot's own boundary.
+	ck, err := restoredCheckpoint(snap, journalCopy, gen0)
+	if err != nil {
 		return m, err
 	}
-	m.Files[dbRel] = sum
-	entries = append([]entry{{dbRel, snap}}, entries...)
-	// 3. Archive the private copies only.
+	ckRel := journalDir + "/" + checkpointName
+	ckDst := filepath.Join(tmp, filepath.FromSlash(ckRel))
+	if err := os.MkdirAll(filepath.Dir(ckDst), 0o750); err != nil {
+		return m, err
+	}
+	if err := os.WriteFile(ckDst, []byte(strconv.FormatInt(ck, 10)), 0o600); err != nil {
+		return m, err
+	}
+	for _, e := range []entry{{ckRel, ckDst}, {dbRel, snap}} {
+		sum, err := fileSHA256(e.src)
+		if err != nil {
+			return m, err
+		}
+		m.Files[e.rel] = sum
+	}
+	entries = append([]entry{{dbRel, snap}}, append(entries, entry{ckRel, ckDst})...)
+	// 4. Archive the private copies only.
 	gz := gzip.NewWriter(w)
 	tw := tar.NewWriter(gz)
 	mb, _ := json.MarshalIndent(m, "", "  ")
@@ -161,6 +186,73 @@ func Create(ctx context.Context, db *gorm.DB, dataDir, appVersion string, w io.W
 		return m, err
 	}
 	return m, gz.Close()
+}
+
+// restoredCheckpoint returns the checkpoint to archive for the copied journal: the
+// committed boundary recorded in the snapshot when it refers to the copied generation,
+// clamped to the copy's last complete line; the whole copy when the generation moved
+// (the copy was rotated away, so it was fully committed); 0 without a recorded boundary.
+func restoredCheckpoint(snapPath, journalCopy string, gen0 int64) (int64, error) {
+	if journalCopy == "" {
+		return 0, nil
+	}
+	complete, err := completeLines(journalCopy)
+	if err != nil {
+		return 0, err
+	}
+	sdb, err := gorm.Open(sqlite.Open(snapPath+"?mode=ro"), &gorm.Config{Logger: logger.Discard})
+	if err != nil {
+		return 0, err
+	}
+	if sqlDB, err := sdb.DB(); err == nil {
+		defer sqlDB.Close()
+	}
+	var tables int64
+	if err := sdb.Raw("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='settings'").Scan(&tables).Error; err != nil {
+		return 0, err
+	}
+	if tables == 0 {
+		return 0, nil
+	}
+	gen1, off1, ok, err := logstore.JournalState(sdb)
+	if err != nil {
+		return 0, fmt.Errorf("journal boundary in snapshot: %w", err)
+	}
+	switch {
+	case !ok:
+		return 0, nil
+	case gen1 != gen0:
+		return complete, nil
+	default:
+		return min(off1, complete), nil
+	}
+}
+
+// completeLines returns the length of the file up to and including its last newline.
+func completeLines(path string) (int64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return 0, err
+	}
+	size := st.Size()
+	const chunk = 64 << 10
+	for end := size; end > 0; {
+		start := max(end-chunk, 0)
+		buf := make([]byte, end-start)
+		if _, err := f.ReadAt(buf, start); err != nil && err != io.EOF {
+			return 0, err
+		}
+		if i := bytes.LastIndexByte(buf, '\n'); i >= 0 {
+			return start + int64(i) + 1, nil
+		}
+		end = start
+	}
+	return 0, nil
 }
 
 // ErrRestorePending: a validated restore is already waiting for the next start.
@@ -336,6 +428,15 @@ func Pending(dataDir string) (*Manifest, bool) {
 		return nil, false
 	}
 	return &m, true
+}
+
+// CleanupIncoming removes private upload directories left by a process that stopped
+// before publishing them (they are never valid after a restart: publishing is a rename).
+func CleanupIncoming(dataDir string) {
+	dirs, _ := filepath.Glob(filepath.Join(dataDir, "data", "restore-incoming-*"))
+	for _, d := range dirs {
+		_ = os.RemoveAll(d)
+	}
 }
 
 // ErrIncompleteRestore: after applying, a required file is missing; the staged data and
