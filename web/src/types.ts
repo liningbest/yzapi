@@ -846,6 +846,7 @@ export interface BackupList {
   pending_restore: boolean;
   db_driver: string;
   supported: boolean;
+  unsupported_reason?: string;
 }
 
 export interface AllSettings {

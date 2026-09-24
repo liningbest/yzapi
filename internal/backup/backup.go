@@ -42,13 +42,14 @@ type Manifest struct {
 }
 
 const (
-	manifestName = "manifest.json"
-	dbRel        = "data/db/yzapi.db"
-	journalDir   = "data/journal"
-	securityDir  = "data/security"
-	stagingDir   = "data/restore-staging"
-	pendingName  = "pending.json"
-	backupsDir   = "backups"
+	manifestName   = "manifest.json"
+	dbRel          = "data/db/yzapi.db"
+	journalDir     = "data/journal"
+	securityDir    = "data/security"
+	stagingDir     = "data/restore-staging"
+	pendingName    = "pending.json"
+	checkpointName = "calls.ckpt"
+	backupsDir     = "backups"
 )
 
 // allowedPrefixes are the only archive paths a manifest may list.
@@ -57,45 +58,94 @@ var allowedPrefixes = []string{dbRel, journalDir + "/", securityDir + "/"}
 // ErrUnsupportedDriver: backups cover the embedded SQLite database only.
 var ErrUnsupportedDriver = errors.New("backup supports the embedded SQLite database only; use pg_dump for PostgreSQL")
 
-// Create writes a backup archive of dataDir to w. The database is copied with
-// VACUUM INTO on the live connection, which yields a consistent snapshot without
-// stopping writers; journal and secret files are copied as they are (the journal is
-// replayed idempotently after a restore).
+// Unsupported returns why the built-in backup cannot serve this configuration, or "" when
+// it can: only the embedded SQLite database at its default path inside the data
+// directory, because a restore installs data/db/yzapi.db and nothing else.
+func Unsupported(driver, dsn string) string {
+	switch {
+	case driver != "" && driver != "sqlite":
+		return "内置备份只支持内嵌 SQLite；PostgreSQL 请用 pg_dump 备份数据库，并单独保存数据目录下的 data/security"
+	case strings.TrimSpace(dsn) != "":
+		return "内置备份只支持默认路径的 SQLite（数据目录下的 data/db/yzapi.db）；当前通过 YZAPI_DB_DSN 使用了自定义数据库路径，请自行备份该文件与 data/security"
+	}
+	return ""
+}
+
+// Create writes a backup archive of dataDir to w.
+//
+// Consistency without pausing the gateway: the journal and secret files are copied
+// first, then the database is snapshotted with VACUUM INTO, and the archive is written
+// only from those private copies, with every checksum computed from the same bytes that
+// are archived. Every record in the copied journal is therefore either already in the
+// snapshot or replayed from it on restore, and the archive's checkpoint is written as 0
+// so the restored instance replays the whole copied journal; the journal commit is
+// idempotent by request_id, so records the snapshot already holds are skipped. Appends,
+// commits, checkpoint moves and rotations that happen while the archive is written do
+// not touch the copies.
 func Create(ctx context.Context, db *gorm.DB, dataDir, appVersion string, w io.Writer) (Manifest, error) {
 	m := Manifest{Format: FormatVersion, AppVersion: appVersion, CreatedAt: time.Now(), Files: map[string]string{}}
 	if db == nil || db.Dialector.Name() != "sqlite" {
 		return m, ErrUnsupportedDriver
 	}
 	m.DBDriver = "sqlite"
+	if _, err := os.Stat(filepath.Join(dataDir, securityDir, "credential.key")); err != nil {
+		return m, errors.New("credential.key is missing; refusing to write a backup that could not decrypt its own accounts")
+	}
 	tmp, err := os.MkdirTemp(dataDir, ".backup-*")
 	if err != nil {
 		return m, err
 	}
 	defer os.RemoveAll(tmp)
-	snap := filepath.Join(tmp, "yzapi.db")
+	type entry struct{ rel, src string }
+	var entries []entry
+	// 1. Secrets and journal: private copies, checksummed while copying.
+	for _, dir := range []string{securityDir, journalDir} {
+		names, _ := os.ReadDir(filepath.Join(dataDir, filepath.FromSlash(dir)))
+		for _, n := range names {
+			if !n.Type().IsRegular() {
+				continue
+			}
+			rel := dir + "/" + n.Name()
+			dst := filepath.Join(tmp, filepath.FromSlash(rel))
+			if rel == journalDir+"/"+checkpointName {
+				continue // written below as "0": replay the whole copied journal
+			}
+			sum, err := copyFile(filepath.Join(dataDir, filepath.FromSlash(rel)), dst)
+			if err != nil {
+				return m, err
+			}
+			m.Files[rel] = sum
+			entries = append(entries, entry{rel, dst})
+		}
+	}
+	ckRel := journalDir + "/" + checkpointName
+	ckDst := filepath.Join(tmp, filepath.FromSlash(ckRel))
+	if err := os.MkdirAll(filepath.Dir(ckDst), 0o750); err != nil {
+		return m, err
+	}
+	if err := os.WriteFile(ckDst, []byte("0"), 0o600); err != nil {
+		return m, err
+	}
+	sum, err := fileSHA256(ckDst)
+	if err != nil {
+		return m, err
+	}
+	m.Files[ckRel] = sum
+	entries = append(entries, entry{ckRel, ckDst})
+	// 2. Database snapshot, taken after the journal copy.
+	snap := filepath.Join(tmp, filepath.FromSlash(dbRel))
+	if err := os.MkdirAll(filepath.Dir(snap), 0o750); err != nil {
+		return m, err
+	}
 	if err := db.WithContext(ctx).Exec("VACUUM INTO ?", snap).Error; err != nil {
 		return m, fmt.Errorf("database snapshot: %w", err)
 	}
-	type entry struct{ rel, src string }
-	entries := []entry{{dbRel, snap}}
-	for _, dir := range []string{journalDir, securityDir} {
-		names, _ := os.ReadDir(filepath.Join(dataDir, dir))
-		for _, n := range names {
-			if n.Type().IsRegular() {
-				entries = append(entries, entry{dir + "/" + n.Name(), filepath.Join(dataDir, dir, n.Name())})
-			}
-		}
+	if sum, err = fileSHA256(snap); err != nil {
+		return m, err
 	}
-	if _, err := os.Stat(filepath.Join(dataDir, securityDir, "credential.key")); err != nil {
-		return m, errors.New("credential.key is missing; refusing to write a backup that could not decrypt its own accounts")
-	}
-	for _, e := range entries {
-		sum, err := fileSHA256(e.src)
-		if err != nil {
-			return m, err
-		}
-		m.Files[e.rel] = sum
-	}
+	m.Files[dbRel] = sum
+	entries = append([]entry{{dbRel, snap}}, entries...)
+	// 3. Archive the private copies only.
 	gz := gzip.NewWriter(w)
 	tw := tar.NewWriter(gz)
 	mb, _ := json.MarshalIndent(m, "", "  ")
@@ -113,19 +163,69 @@ func Create(ctx context.Context, db *gorm.DB, dataDir, appVersion string, w io.W
 	return m, gz.Close()
 }
 
-// Stage unpacks and validates an archive into dataDir/data/restore-staging and marks it
-// pending. Nothing live is touched; ApplyPending swaps the files in on the next start.
-// Every listed file must be present with a matching checksum, paths are confined to the
-// three data directories, and the database must open and contain the users table.
+// ErrRestorePending: a validated restore is already waiting for the next start.
+var ErrRestorePending = errors.New("a restore is already staged and waiting for the next start")
+
+// maxExtracted bounds the total unpacked size of an archive.
+const maxExtracted = 16 << 30
+
+// Stage unpacks and validates an archive and, only when it is complete and valid,
+// publishes it as dataDir/data/restore-staging with a pending marker; ApplyPending swaps
+// it in on the next start. Each upload is unpacked into its own private directory, so a
+// rejected or concurrent upload never touches a restore that is already staged, and the
+// publish is a single rename, so at most one restore can be pending: a second valid
+// archive is refused with ErrRestorePending. Every listed file must be present with a
+// matching checksum, paths are confined to the three data directories, and the database
+// must open and contain the users table. Nothing live is touched.
 func Stage(dataDir string, r io.Reader) (Manifest, error) {
 	var m Manifest
+	if err := os.MkdirAll(filepath.Join(dataDir, "data"), 0o750); err != nil {
+		return m, err
+	}
+	// Validate first so a bad archive is reported as bad even while another restore is
+	// pending; only a valid archive can meet ErrRestorePending at publish time.
+	work, err := os.MkdirTemp(filepath.Join(dataDir, "data"), "restore-incoming-*")
+	if err != nil {
+		return m, err
+	}
+	defer os.RemoveAll(work) // a no-op after a successful publish (renamed away)
+	m, err = unpack(work, r)
+	if err != nil {
+		return m, err
+	}
+	// Every staged restore carries all three directories, so during ApplyPending a
+	// missing staged directory always means "already installed", never "absent".
+	for _, d := range []string{"data/db", journalDir, securityDir} {
+		if err := os.MkdirAll(filepath.Join(work, filepath.FromSlash(d)), 0o750); err != nil {
+			return m, err
+		}
+	}
+	pb, _ := json.Marshal(m)
+	if err := os.WriteFile(filepath.Join(work, pendingName), pb, 0o600); err != nil {
+		return m, err
+	}
 	staging := filepath.Join(dataDir, stagingDir)
-	if err := os.RemoveAll(staging); err != nil {
+	if _, err := os.Stat(staging); err == nil {
+		if _, ok := Pending(dataDir); ok {
+			return m, ErrRestorePending
+		}
+		// Leftover of a finished restore whose cleanup was interrupted: no marker, safe to drop.
+		if err := os.RemoveAll(staging); err != nil {
+			return m, err
+		}
+	}
+	if err := os.Rename(work, staging); err != nil {
+		if _, ok := Pending(dataDir); ok {
+			return m, ErrRestorePending // lost a race with a concurrent upload
+		}
 		return m, err
 	}
-	if err := os.MkdirAll(staging, 0o750); err != nil {
-		return m, err
-	}
+	return m, nil
+}
+
+// unpack extracts and validates an archive into dir.
+func unpack(dir string, r io.Reader) (Manifest, error) {
+	var m Manifest
 	gz, err := gzip.NewReader(r)
 	if err != nil {
 		return m, fmt.Errorf("not a gzip archive: %w", err)
@@ -133,6 +233,7 @@ func Stage(dataDir string, r io.Reader) (Manifest, error) {
 	tr := tar.NewReader(gz)
 	seen := map[string]string{}
 	haveManifest := false
+	var total int64
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
@@ -156,24 +257,34 @@ func Stage(dataDir string, r io.Reader) (Manifest, error) {
 			haveManifest = true
 			continue
 		}
+		if h.Typeflag != tar.TypeReg && h.Typeflag != tar.TypeRegA {
+			return m, fmt.Errorf("archive member is not a regular file: %s", name)
+		}
 		if !allowedPath(name) {
 			return m, fmt.Errorf("archive path not allowed: %s", name)
 		}
-		dst := filepath.Join(staging, filepath.FromSlash(name))
+		if _, dup := seen[name]; dup {
+			return m, fmt.Errorf("archive lists %s twice", name)
+		}
+		dst := filepath.Join(dir, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
 			return m, err
 		}
-		f, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+		f, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
 		if err != nil {
 			return m, err
 		}
 		hsh := sha256.New()
-		if _, err := io.Copy(io.MultiWriter(f, hsh), tr); err != nil {
-			f.Close()
+		n, err := io.Copy(io.MultiWriter(f, hsh), io.LimitReader(tr, maxExtracted-total+1))
+		total += n
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
 			return m, err
 		}
-		if err := f.Close(); err != nil {
-			return m, err
+		if total > maxExtracted {
+			return m, errors.New("archive unpacks to more than 16 GB")
 		}
 		seen[name] = hex.EncodeToString(hsh.Sum(nil))
 	}
@@ -208,15 +319,10 @@ func Stage(dataDir string, r io.Reader) (Manifest, error) {
 			return m, fmt.Errorf("backup is incomplete: %s is missing", must)
 		}
 	}
-	if err := checkDatabase(filepath.Join(staging, filepath.FromSlash(dbRel))); err != nil {
+	if err := checkDatabase(filepath.Join(dir, filepath.FromSlash(dbRel))); err != nil {
 		return m, fmt.Errorf("database in backup: %w", err)
 	}
-	pb, _ := json.Marshal(m)
-	tmp := filepath.Join(staging, pendingName+".tmp")
-	if err := os.WriteFile(tmp, pb, 0o600); err != nil {
-		return m, err
-	}
-	return m, os.Rename(tmp, filepath.Join(staging, pendingName))
+	return m, nil
 }
 
 // Pending reports whether a staged restore is waiting for the next start.
@@ -232,40 +338,86 @@ func Pending(dataDir string) (*Manifest, bool) {
 	return &m, true
 }
 
+// ErrIncompleteRestore: after applying, a required file is missing; the staged data and
+// the set-aside directories are left for manual recovery and the gateway must not start.
+var ErrIncompleteRestore = errors.New("restore incomplete")
+
 // ApplyPending swaps a staged restore into place. Must run before the database is
-// opened. The replaced directories are kept under data/pre-restore-<timestamp>/ so a
-// bad restore can be undone by hand. Returns false when nothing was pending.
+// opened. It is resumable after an interruption at any point and decides from the file
+// system alone: for each of data/db, data/journal and data/security, a directory still
+// present in the staging area has not been installed yet, so the live one (the old
+// data) is moved aside and the staged one moved in; a directory no longer in the
+// staging area was installed by an earlier run and is left alone (Stage guarantees
+// all three exist when staged). The old directories go to one data/pre-restore-<time>/
+// per restore (its name is recorded in the staging area, so a resumed run reuses it).
+// The pending marker is removed only after the database and credential key are
+// verified in place. Returns false when nothing was pending.
 func ApplyPending(dataDir string) (bool, error) {
 	staging := filepath.Join(dataDir, stagingDir)
 	if _, ok := Pending(dataDir); !ok {
 		return false, nil
 	}
-	keep := filepath.Join(dataDir, "data", "pre-restore-"+time.Now().Format("20060102-150405"))
-	if err := os.MkdirAll(keep, 0o750); err != nil {
+	keep, err := asideDir(dataDir)
+	if err != nil {
 		return false, err
 	}
 	for _, rel := range []string{"data/db", journalDir, securityDir} {
+		src := filepath.Join(staging, filepath.FromSlash(rel))
+		if _, err := os.Stat(src); err != nil {
+			continue // installed by an earlier, interrupted run
+		}
 		cur := filepath.Join(dataDir, filepath.FromSlash(rel))
 		if _, err := os.Stat(cur); err == nil {
+			if err := os.MkdirAll(keep, 0o750); err != nil {
+				return false, err
+			}
 			if err := os.Rename(cur, filepath.Join(keep, filepath.Base(rel))); err != nil {
 				return false, fmt.Errorf("set aside %s: %w", rel, err)
 			}
 		}
-	}
-	for _, rel := range []string{"data/db", journalDir, securityDir} {
-		src := filepath.Join(staging, filepath.FromSlash(rel))
-		dst := filepath.Join(dataDir, filepath.FromSlash(rel))
-		if _, err := os.Stat(src); err != nil {
-			continue // a backup without a journal directory restores an empty journal
-		}
-		if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
+		if err := os.MkdirAll(filepath.Dir(cur), 0o750); err != nil {
 			return false, err
 		}
-		if err := os.Rename(src, dst); err != nil {
+		if err := os.Rename(src, cur); err != nil {
 			return false, fmt.Errorf("install %s: %w", rel, err)
 		}
 	}
+	for _, must := range []string{dbRel, securityDir + "/credential.key"} {
+		if _, err := os.Stat(filepath.Join(dataDir, filepath.FromSlash(must))); err != nil {
+			return false, fmt.Errorf("%w: %s is missing after the swap; staged files remain in %s and the previous data in data/pre-restore-*", ErrIncompleteRestore, must, stagingDir)
+		}
+	}
+	if err := os.Remove(filepath.Join(staging, pendingName)); err != nil {
+		return false, err
+	}
 	return true, os.RemoveAll(staging)
+}
+
+// asideDir returns this restore's pre-restore directory, recording a new name in the
+// staging area the first time so an interrupted run resumes into the same directory.
+func asideDir(dataDir string) (string, error) {
+	rec := filepath.Join(dataDir, stagingDir, "aside")
+	if b, err := os.ReadFile(rec); err == nil {
+		name := strings.TrimSpace(string(b))
+		if strings.HasPrefix(name, "pre-restore-") && !strings.ContainsAny(name, "/\\") {
+			return filepath.Join(dataDir, "data", name), nil
+		}
+	}
+	name := "pre-restore-" + time.Now().Format("20060102-150405")
+	for i := 1; ; i++ {
+		if _, err := os.Stat(filepath.Join(dataDir, "data", name)); os.IsNotExist(err) {
+			break
+		}
+		name = fmt.Sprintf("pre-restore-%s-%d", time.Now().Format("20060102-150405"), i)
+	}
+	tmp := rec + ".tmp"
+	if err := os.WriteFile(tmp, []byte(name), 0o600); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmp, rec); err != nil {
+		return "", err
+	}
+	return filepath.Join(dataDir, "data", name), nil
 }
 
 // RestoreFile stages an archive from disk and applies it immediately (offline use:
@@ -456,6 +608,32 @@ func fileSHA256(path string) (string, error) {
 	defer f.Close()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// copyFile copies src to dst (creating parent directories) and returns the SHA-256 of
+// the bytes written, so a checksum always describes exactly the archived copy.
+func copyFile(src, dst string) (string, error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return "", err
+	}
+	defer in.Close()
+	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
+		return "", err
+	}
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return "", err
+	}
+	h := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(out, h), in); err != nil {
+		out.Close()
+		return "", err
+	}
+	if err := out.Close(); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil

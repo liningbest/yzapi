@@ -48,6 +48,10 @@ func main() {
 	setupLogging(cfg)
 
 	if *restoreFile != "" {
+		if why := backup.Unsupported(cfg.DBDriver, cfg.DBDSN); why != "" {
+			slog.Error("restore", "err", why)
+			os.Exit(1)
+		}
 		m, err := backup.RestoreFile(cfg.DataDir, *restoreFile)
 		if err != nil {
 			slog.Error("restore", "err", err)
@@ -58,8 +62,16 @@ func main() {
 	}
 	// A restore staged through the admin API is applied here, before anything opens
 	// the database; the replaced files are kept under data/pre-restore-<time>/.
+	if _, pending := backup.Pending(cfg.DataDir); pending {
+		if why := backup.Unsupported(cfg.DBDriver, cfg.DBDSN); why != "" {
+			slog.Error("a restore is staged but this configuration cannot apply it; remove data/restore-staging or restore the default database settings", "err", why)
+			os.Exit(1)
+		}
+	}
 	if applied, err := backup.ApplyPending(cfg.DataDir); err != nil {
-		slog.Error("applying staged restore failed; the previous data is untouched", "err", err)
+		// Refuse to start: the swap is resumable (the next start continues it), and
+		// starting now could initialise an empty database over a half-applied restore.
+		slog.Error("applying the staged restore did not complete; the gateway will not start until it does. Staged files: data/restore-staging, previous data: data/pre-restore-*", "err", err)
 		os.Exit(1)
 	} else if applied {
 		slog.Warn("staged backup restore applied on start")

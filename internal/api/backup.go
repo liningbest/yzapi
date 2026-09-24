@@ -19,6 +19,13 @@ import (
 // instance are tens of MB; 2 GB leaves ample room).
 const restoreUploadLimit = 2 << 30
 
+// backupUnsupported explains why this instance cannot use the built-in backup, or "".
+// Only the embedded SQLite database at its default path is covered: a restore installs
+// files into the data directory, which a custom DSN (or PostgreSQL) would never read.
+func (s *Server) backupUnsupported() string {
+	return backup.Unsupported(s.cfg.DBDriver, s.cfg.DBDSN)
+}
+
 // listBackups: local archives, newest first, plus whether a restore is staged.
 func (s *Server) listBackups(c *gin.Context) {
 	items, err := backup.List(s.cfg.DataDir)
@@ -27,11 +34,16 @@ func (s *Server) listBackups(c *gin.Context) {
 		return
 	}
 	_, pending := backup.Pending(s.cfg.DataDir)
-	c.JSON(200, gin.H{"items": items, "pending_restore": pending, "db_driver": s.cfg.DBDriver, "supported": s.db.Dialector.Name() == "sqlite"})
+	why := s.backupUnsupported()
+	c.JSON(200, gin.H{"items": items, "pending_restore": pending, "db_driver": s.cfg.DBDriver, "supported": why == "", "unsupported_reason": why})
 }
 
 // createBackup writes a new archive into the local backup directory.
 func (s *Server) createBackup(c *gin.Context) {
+	if why := s.backupUnsupported(); why != "" {
+		fail(c, 400, "backup_unsupported", why)
+		return
+	}
 	info, err := backup.CreateLocal(c.Request.Context(), s.db, s.cfg.DataDir, s.version)
 	if err != nil {
 		if errors.Is(err, backup.ErrUnsupportedDriver) {
@@ -82,6 +94,10 @@ func (s *Server) deleteBackup(c *gin.Context) {
 // rejected archive (bad checksum, foreign file, not a yzapi database) leaves the
 // instance exactly as it was.
 func (s *Server) restoreBackup(c *gin.Context) {
+	if why := s.backupUnsupported(); why != "" {
+		fail(c, 400, "backup_unsupported", why)
+		return
+	}
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, restoreUploadLimit)
 	fh, err := c.FormFile("file")
 	if err != nil {
@@ -96,6 +112,10 @@ func (s *Server) restoreBackup(c *gin.Context) {
 	defer f.Close()
 	m, err := backup.Stage(s.cfg.DataDir, f)
 	if err != nil {
+		if errors.Is(err, backup.ErrRestorePending) {
+			fail(c, 409, "restore_pending", "已有一份还原包在等待应用，网关重启后即生效；请等重启完成后再上传新的备份包")
+			return
+		}
 		if errors.Is(err, backup.ErrUnsupportedDriver) {
 			fail(c, 400, "backup_unsupported", err.Error())
 			return
@@ -126,8 +146,8 @@ func (s *Server) putBackup(c *gin.Context) {
 		badRequest(c, "keep_count must be 0-365")
 		return
 	}
-	if in.Enabled && s.db.Dialector.Name() != "sqlite" {
-		fail(c, 400, "backup_unsupported", backup.ErrUnsupportedDriver.Error())
+	if why := s.backupUnsupported(); in.Enabled && why != "" {
+		fail(c, 400, "backup_unsupported", why)
 		return
 	}
 	if err := s.st.SetBackup(in); err != nil {

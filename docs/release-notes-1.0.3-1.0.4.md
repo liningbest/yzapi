@@ -400,6 +400,14 @@
 - 「设置 → 备份与还原」：一键生成整机备份包（`VACUUM INTO` 一致性数据库快照、计量 journal、`credential.key` 与 `jwt.key`，带 SHA-256 清单）并下载；上传备份包还原：校验通过后暂存，网关自行退出，容器 / systemd 拉起时在打开数据库前换入，被替换的目录保留在 `data/pre-restore-<时间>/`；校验失败不改动任何文件。
 - 命令行 `yzapi -restore <备份包>`：新服务器或停止的实例直接还原。
 - 每日自动备份：按本地时间整点生成到数据目录 `backups/`，只保留最新 N 份。
-- 只支持内嵌 SQLite；PostgreSQL 实例提示用 `pg_dump`。备份包含上游 Key 的解密材料，界面有提示。
+- 只支持默认路径的内嵌 SQLite；PostgreSQL 或自定义 `YZAPI_DB_DSN` 时明确拒绝并说明原因。备份包含上游 Key 的解密材料，界面有提示。
 - 接口：`GET/POST /api/admin/backups`、`GET /api/admin/backups/:name/download`、`DELETE /api/admin/backups/:name`、`POST /api/admin/backups/restore`、`PUT /api/admin/settings/backup`。
+
+## 1.0.53：1.0.52 验收修复（`internal-docs/changes-2026-09-24-backup-restore.md` 第 5 节）
+
+- 热备一致性：先复制 journal 与密钥再对数据库取快照，归档只写副本、校验和来自归档字节；包内检查点固定为 0，还原后整份 journal 幂等重放。打包期间的追加、提交、检查点推进与轮转不再导致包无法还原或漏计量。
+- 换入可续做：按"暂存里还在 = 未装入"逐目录续做，保留目录名持久化，最后确认数据库与密钥在位才清除等待标记；确认失败拒绝启动。
+- 上传隔离：每次上传在私有目录解包校验，坏包不影响已在等待的还原；同时只允许一份等待中的还原，再传有效包返回 409 `restore_pending`。
+- 自定义 `YZAPI_DB_DSN` 的 SQLite 与 PostgreSQL 在列表、创建、还原、自动备份和命令行还原中一致拒绝。
+- 自动备份在该小时已有备份时跳过，重启不重复生成；解包总量上限 16 GB。
 

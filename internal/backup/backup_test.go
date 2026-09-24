@@ -71,7 +71,9 @@ func TestBackupRoundTrip(t *testing.T) {
 	if _, err := RestoreFile(dst, archive); err != nil {
 		t.Fatal(err)
 	}
-	for p, want := range map[string]string{"data/journal/calls.jsonl": `{"id":"a"}` + "\n", "data/journal/calls.ckpt": "12", "data/security/credential.key": "KEY-BYTES", "data/security/jwt.secret": "JWT-BYTES"} {
+	// The checkpoint is archived as 0 on purpose: the restored instance replays the whole
+	// copied journal (commits are idempotent by request_id).
+	for p, want := range map[string]string{"data/journal/calls.jsonl": `{"id":"a"}` + "\n", "data/journal/calls.ckpt": "0", "data/security/credential.key": "KEY-BYTES", "data/security/jwt.secret": "JWT-BYTES"} {
 		b, err := os.ReadFile(filepath.Join(dst, p))
 		if err != nil || string(b) != want {
 			t.Fatalf("%s: %q %v", p, b, err)

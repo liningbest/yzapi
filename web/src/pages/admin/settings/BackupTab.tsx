@@ -70,7 +70,7 @@ export default function BackupTab({ data }: Props) {
   return (
     <div>
       <Alert type="warning" showIcon message={t('settings:backup.notice')} style={{ marginBottom: 16 }} />
-      {unsupported && <Alert type="info" showIcon message={t('settings:backup.unsupported')} style={{ marginBottom: 16 }} />}
+      {unsupported && <Alert type="info" showIcon message={list.data?.unsupported_reason || t('settings:backup.unsupported')} style={{ marginBottom: 16 }} />}
       {list.data?.pending_restore && <Alert type="warning" showIcon message={t('settings:backup.pending')} style={{ marginBottom: 16 }} />}
       {restoring && <Alert type="warning" showIcon message={t('settings:backup.restoreStaged')} style={{ marginBottom: 16 }} />}
 
