@@ -17,7 +17,7 @@ type Policy struct {
 
 // RunScheduler takes a daily backup at the configured local hour while the policy is
 // enabled, then prunes to KeepCount. It returns when ctx is cancelled. A failed run is
-// logged and retried the next day; the tick is one minute so a change of hour applies
+// logged and retried on the next minute tick within the same hour; the tick is one minute so a change of hour applies
 // without a restart.
 func RunScheduler(ctx context.Context, db *gorm.DB, dataDir, appVersion string, policy func() Policy) {
 	var lastDay string

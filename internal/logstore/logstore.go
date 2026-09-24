@@ -93,10 +93,21 @@ func New(db *gorm.DB, dataDir string, retentionDays func() int, opts ...Option) 
 	if err := s.openJournal(); err != nil {
 		return nil, err
 	}
-	// Mirror the file checkpoint into the database. The file checkpoint is written after
-	// each commit, so it never claims more than the database holds.
-	if gen, _, _, err := JournalState(db); err == nil {
+	// Reconcile the two checkpoints. The database boundary is written in the same
+	// transaction as the commit, the file checkpoint only afterwards, so after a crash
+	// between the two the database is ahead: it wins (records before it are committed and
+	// must not be replayed, since their raw rows may already be purged). It is used only
+	// when it lies inside the current file on a line boundary; otherwise (a rotation
+	// recorded but not yet performed, or a restored journal shorter than the source's
+	// boundary) the file checkpoint stands. The larger value is then written to both.
+	if gen, off, ok, err := JournalState(db); err == nil {
 		s.gen.Store(gen)
+		if ok && off > s.ckpt.Load() && s.lineBoundary(off) {
+			s.ckpt.Store(off)
+			if werr := os.WriteFile(s.ckptPath, []byte(strconv.FormatInt(off, 10)), 0o640); werr != nil {
+				slog.Warn("writing the journal checkpoint failed", "err", werr)
+			}
+		}
 		if err := saveJournalState(db, gen, s.ckpt.Load()); err != nil {
 			slog.Warn("recording the journal boundary failed; backups taken before the next commit replay the whole journal", "err", err)
 		}
@@ -251,6 +262,22 @@ func (s *Store) openJournal() error {
 	s.f, s.size = f, size
 	s.ckpt.Store(ck)
 	return nil
+}
+
+// lineBoundary reports whether off is a valid checkpoint for the open journal: within
+// the file and either 0 or just after a newline.
+func (s *Store) lineBoundary(off int64) bool {
+	if off < 0 || off > s.size {
+		return false
+	}
+	if off == 0 {
+		return true
+	}
+	b := make([]byte, 1)
+	if _, err := s.f.ReadAt(b, off-1); err != nil {
+		return false
+	}
+	return b[0] == '\n'
 }
 
 // Record appends a call log to the journal. It never blocks on the database.
